@@ -1,0 +1,137 @@
+@using HartsysDatasetEditor.Core.Models
+@using HartsysDatasetEditor.Core.Utilities
+
+<MudCard Class="@GetCardClass()"
+         Elevation="@(_isHovered ? 4 : 1)"
+         @onmouseenter="@(() => _isHovered = true)"
+         @onmouseleave="@(() => _isHovered = false)"
+         @onclick="@HandleClick">
+    
+    @* Selection Checkbox (Top-Left) *@
+    <div class="image-card-checkbox">
+        <MudCheckBox T="bool" 
+                    Checked="@IsSelected" 
+                    CheckedChanged="@((bool value) => HandleToggleSelect())"
+                    Color="Color.Primary"
+                    Size="Size.Small"
+                    @onclick:stopPropagation="true" />
+    </div>
+    
+    @* Image with Lazy Loading *@
+    <div class="image-card-image-container">
+        @if (_imageLoaded)
+        {
+            <img src="@_imageUrl" 
+                 alt="@Item.Id" 
+                 class="image-card-image"
+                 loading="lazy"
+                 @onload="@(() => _imageLoaded = true)"
+                 @onerror="@HandleImageError" />
+        }
+        else
+        {
+            <div class="image-loading-placeholder">
+                <MudProgressCircular Color="Color.Primary" Size="Size.Small" Indeterminate="true" />
+            </div>
+        }
+    </div>
+    
+    @* Metadata Overlay (Shown on Hover) *@
+    @if (_isHovered && _showMetadataOverlay)
+    {
+        <div class="image-card-overlay">
+            <MudStack Spacing="1">
+                @if (!string.IsNullOrEmpty(Item.Photographer))
+                {
+                    <MudText Typo="Typo.caption" Style="color: white;">
+                        <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" /> @Item.Photographer
+                    </MudText>
+                }
+                @if (Item.Width > 0 && Item.Height > 0)
+                {
+                    <MudText Typo="Typo.caption" Style="color: white;">
+                        <MudIcon Icon="@Icons.Material.Filled.AspectRatio" Size="Size.Small" /> @Item.Width × @Item.Height
+                    </MudText>
+                }
+                @if (Item.Tags.Count > 0)
+                {
+                    <MudText Typo="Typo.caption" Style="color: white;">
+                        <MudIcon Icon="@Icons.Material.Filled.Tag" Size="Size.Small" /> @string.Join(", ", Item.Tags.Take(3))
+                    </MudText>
+                }
+            </MudStack>
+        </div>
+    }
+</MudCard>
+
+@code {
+    private string GetCardClass() => _isHovered ? "image-card hovered" : "image-card";
+
+    // TODO: Move to separate .razor.cs file following component pattern
+}
+
+<style>
+    .image-card {
+        position: relative;
+        overflow: hidden;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        aspect-ratio: 1 / 1;
+    }
+
+    .image-card.hovered {
+        transform: translateY(-4px);
+    }
+
+    .image-card-checkbox {
+        position: absolute;
+        top: 8px;
+        left: 8px;
+        z-index: 2;
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 4px;
+        padding: 2px;
+    }
+
+    .image-card-image-container {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f5f5f5;
+    }
+
+    .image-card-image {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+
+    .image-loading-placeholder {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+        background-size: 200% 100%;
+        animation: loading 1.5s ease-in-out infinite;
+    }
+
+    @@keyframes loading {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+
+    .image-card-overlay {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+        padding: 12px;
+        z-index: 1;
+    }
+</style>

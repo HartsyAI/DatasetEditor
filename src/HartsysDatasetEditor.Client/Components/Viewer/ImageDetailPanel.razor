@@ -1,0 +1,37 @@
+@* TODO: Replace placeholder layout with spec once UX delivers final sidebar design. *@
+<MudPaper Class="pa-4 h-100" Elevation="1">
+    <MudStack Spacing="3">
+        <MudSkeleton Width="100%" Height="200px" Class="rounded-lg" />
+        <MudText Typo="Typo.h5">Selected Image</MudText>
+        <MudText Typo="Typo.body1" Class="mud-text-secondary">
+            TODO: Bind to selected image metadata via DatasetState.SelectedItem.
+        </MudText>
+
+        <MudDivider />
+
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.subtitle2">Metadata</MudText>
+            <MudSkeleton Width="80%" Height="20px" />
+            <MudSkeleton Width="60%" Height="20px" />
+            <MudSkeleton Width="70%" Height="20px" />
+        </MudStack>
+
+        <MudDivider />
+
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.subtitle2">Actions</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="true">
+                TODO: Primary action (download, open, etc.)
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Disabled="true">
+                TODO: Secondary action (favorite, share, etc.)
+            </MudButton>
+        </MudStack>
+    </MudStack>
+</MudPaper>
+
+@code {
+    // TODO: Inject DatasetState to observe selection changes and hydrate panel.
+    // TODO: Consider passing ImageItem as parameter for stateless reuse.
+    // TODO: Use ViewState for toggling section visibility based on user preferences.
+}

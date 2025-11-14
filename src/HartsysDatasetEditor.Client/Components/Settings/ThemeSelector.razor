@@ -1,0 +1,34 @@
+@* Allows users to toggle between light and dark modes. *@
+<MudStack Spacing="2">
+    <MudText Typo="Typo.subtitle1">Theme</MudText>
+    <MudToggleIconButton CheckedIcon="@Icons.Material.Filled.DarkMode"
+                         UncheckedIcon="@Icons.Material.Filled.LightMode"
+                         Color="Color.Primary"
+                         Checked="@_isDark"
+                         CheckedChanged="@OnThemeChangedAsync" />
+    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+        TODO: Bind to ViewState.Settings.ThemeMode to reflect persisted preference.
+    </MudText>
+</MudStack>
+
+@code {
+    /// <summary>
+    /// TODO: Replace with ThemeMode enum once ViewState exposes strongly-typed mode.
+    /// </summary>
+    [Parameter] public bool IsDark { get; set; }
+
+    /// <summary>
+    /// Emitted when the toggle changes. Settings page should handle persistence via LocalStorageInterop once available.
+    /// </summary>
+    [Parameter] public EventCallback<bool> OnThemeChanged { get; set; }
+
+    private bool _isDark => IsDark;
+
+    private async Task OnThemeChangedAsync(bool value)
+    {
+        if (OnThemeChanged.HasDelegate)
+        {
+            await OnThemeChanged.InvokeAsync(value);
+        }
+    }
+}

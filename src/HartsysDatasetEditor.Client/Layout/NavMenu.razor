@@ -1,0 +1,46 @@
+@using HartsysDatasetEditor.Core.Utilities
+
+<MudNavMenu>
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">
+        Dashboard
+    </MudNavLink>
+    
+    <MudNavLink Href="/dataset-viewer" Icon="@Icons.Material.Filled.Collections">
+        Dataset Viewer
+    </MudNavLink>
+    
+    <MudNavLink Href="/settings" Icon="@Icons.Material.Filled.Settings">
+        Settings
+    </MudNavLink>
+    
+    <MudDivider Class="my-2" />
+    
+    <MudNavGroup Title="Recent Datasets" Icon="@Icons.Material.Filled.History" Expanded="false">
+        @if (_recentDatasets.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Class="px-4 py-2 mud-text-secondary">
+                No recent datasets
+            </MudText>
+        }
+        else
+        {
+            @foreach (string datasetName in _recentDatasets)
+            {
+                <MudNavLink Href="@GetDatasetUrl(datasetName)" 
+                           Icon="@Icons.Material.Filled.Folder">
+                    @datasetName
+                </MudNavLink>
+            }
+        }
+    </MudNavGroup>
+    
+    <MudDivider Class="my-2" />
+    
+    <MudText Typo="Typo.caption" Class="px-4 py-2 mud-text-disabled">
+        v1.0.0-MVP
+    </MudText>
+</MudNavMenu>
+
+@code {
+    // TODO: Move to separate .razor.cs file following component pattern
+}

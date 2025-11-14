@@ -1,0 +1,39 @@
+@* Visual summary of key dataset statistics (counts, modality breakdown, etc.). *@
+<MudPaper Class="pa-4" Elevation="0">
+    <MudStack Spacing="2">
+        <MudText Typo="Typo.h5">Dataset statistics</MudText>
+        <MudText Typo="Typo.body1" Class="mud-text-secondary">
+            TODO: Replace skeleton placeholders with MudCharts once analytics data is wired in.
+        </MudText>
+
+        <MudDivider />
+
+        <MudGrid>
+            @* TODO: Bind to computed stats from DatasetState once FilterService exposes analytics extension methods. *@
+            <MudItem xs="6">
+                <MudPaper Class="pa-3" Elevation="1">
+                    <MudSkeleton Width="60%" Height="18px" />
+                    <MudSkeleton Width="40%" Height="30px" Class="mt-2" />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6">
+                <MudPaper Class="pa-3" Elevation="1">
+                    <MudSkeleton Width="60%" Height="18px" />
+                    <MudSkeleton Width="40%" Height="30px" Class="mt-2" />
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudDivider />
+
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.subtitle2">Tags overview</MudText>
+            <MudSkeleton Width="100%" Height="160px" />
+        </MudStack>
+    </MudStack>
+</MudPaper>
+
+@code {
+    // TODO: Accept a strongly-typed statistics view model to keep presentation separate from computation logic.
+    // TODO: Integrate with future analytics service or FilterState-derived computed metrics.
+}

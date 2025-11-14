@@ -1,0 +1,97 @@
+@* Controls for view mode, grid density, and detail panel visibility. *@
+<MudStack Spacing="3">
+    <MudText Typo="Typo.subtitle1">View preferences</MudText>
+
+    <MudSegmentedControl T="string"
+                         Mandatory="true"
+                         Value="@_selectedViewModeLabel"
+                         ValueChanged="@OnViewModeChangedAsync">
+        @foreach (var mode in _viewModes)
+        {
+            <MudSegmentedControlItem Value="@mode">
+                @mode
+            </MudSegmentedControlItem>
+        }
+    </MudSegmentedControl>
+
+    <MudSlider T="int"
+               Min="1"
+               Max="6"
+               Step="1"
+               Value="@GridColumns"
+               ValueChanged="@OnGridColumnsChangedAsync"
+               Color="Color.Primary"
+               Label="Grid columns"
+               Immediate="true" />
+
+    <MudSwitch T="bool"
+               Checked="@ShowMetadataOverlay"
+               CheckedChanged="@OnShowMetadataOverlayChangedAsync"
+               Color="Color.Primary"
+               Label="Show metadata overlay" />
+</MudStack>
+
+@code {
+    private readonly IEnumerable<string> _viewModes = new[]
+    {
+        ViewMode.Grid.ToString(),
+        ViewMode.Gallery.ToString(),
+        ViewMode.List.ToString()
+    };
+
+    private string _selectedViewModeLabel => SelectedViewMode.ToString();
+
+    /// <summary>
+    /// Selected view mode. Settings page should bind to ViewState.Settings.ViewMode.
+    /// </summary>
+    [Parameter] public ViewMode SelectedViewMode { get; set; } = ViewMode.Grid;
+
+    /// <summary>
+    /// Raised when a new view mode is selected.
+    /// </summary>
+    [Parameter] public EventCallback<ViewMode> OnViewModeChanged { get; set; }
+
+    /// <summary>
+    /// Number of grid columns to render. Bind to ViewState.Settings.GridColumns.
+    /// </summary>
+    [Parameter] public int GridColumns { get; set; } = 4;
+
+    /// <summary>
+    /// Occurs when grid columns slider changes.
+    /// </summary>
+    [Parameter] public EventCallback<int> OnGridColumnsChanged { get; set; }
+
+    /// <summary>
+    /// Controls whether metadata overlay appears on image cards.
+    /// </summary>
+    [Parameter] public bool ShowMetadataOverlay { get; set; } = true;
+
+    /// <summary>
+    /// Raised when metadata overlay toggle changes.
+    /// </summary>
+    [Parameter] public EventCallback<bool> OnShowMetadataOverlayChanged { get; set; }
+
+    private async Task OnViewModeChangedAsync(string? value)
+    {
+        if (Enum.TryParse<ViewMode>(value, out var mode) && OnViewModeChanged.HasDelegate)
+        {
+            await OnViewModeChanged.InvokeAsync(mode);
+        }
+    }
+
+    private async Task OnGridColumnsChangedAsync(int value)
+    {
+        if (OnGridColumnsChanged.HasDelegate)
+        {
+            await OnGridColumnsChanged.InvokeAsync(value);
+        }
+    }
+
+    private async Task OnShowMetadataOverlayChangedAsync(bool value)
+    {
+        if (OnShowMetadataOverlayChanged.HasDelegate)
+        {
+            await OnShowMetadataOverlayChanged.InvokeAsync(value);
+        }
+    }
+}

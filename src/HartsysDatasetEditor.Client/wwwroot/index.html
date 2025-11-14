@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Hartsy's Dataset Editor</title>
+    <base href="/" />
+    
+    <!-- MudBlazor CSS -->
+    <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
+    
+    <!-- Google Fonts (Roboto) -->
+    <link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css?family=Material+Icons" rel="stylesheet" />
+    
+    <!-- Custom CSS -->
+    <link href="css/app.css" rel="stylesheet" />
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="favicon.png" />
+    
+    <!-- Meta tags for SEO -->
+    <meta name="description" content="A powerful tool for viewing, filtering, and managing billion-scale AI image datasets" />
+    <meta name="keywords" content="dataset, AI, images, viewer, editor" />
+</head>
+<body>
+    <div id="app">
+        <div style="display: flex; align-items: center; justify-content: center; height: 100vh; flex-direction: column;">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="12" cy="12" r="10" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-dasharray="63" stroke-dashoffset="63">
+                    <animate attributeName="stroke-dashoffset" values="63;0" dur="2s" repeatCount="indefinite" />
+                </circle>
+            </svg>
+            <p style="margin-top: 20px; font-family: 'Roboto', sans-serif; color: #64748B;">Loading Hartsy's Dataset Editor...</p>
+        </div>
+    </div>
+
+    <div id="blazor-error-ui">
+        An unhandled error has occurred.
+        <a href="" class="reload">Reload</a>
+        <a class="dismiss">🗙</a>
+    </div>
+    
+    <!-- MudBlazor JS -->
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    
+    <!-- Custom JS -->
+    <script src="js/interop.js"></script>
+    
+    <!-- Blazor WebAssembly -->
+    <script src="_framework/blazor.webassembly.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>HartsysDatasetEditor.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- No external dependencies for MVP - keep lightweight -->
+    <!-- TODO: Add FluentValidation when validation becomes complex -->
+    <!-- TODO: Add AutoMapper if mapping becomes repetitive -->
+  </ItemGroup>
+
+</Project>

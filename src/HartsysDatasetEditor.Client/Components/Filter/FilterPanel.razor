@@ -1,0 +1,115 @@
+@using HartsysDatasetEditor.Core.Utilities
+
+<MudPaper Class="pa-4" Style="height: 100%;" Elevation="0">
+    <MudStack Spacing="3">
+        <MudText Typo="Typo.h6">Filters</MudText>
+        
+        @* Search Bar *@
+        <MudTextField @bind-Value="@_searchQuery"
+                     Label="Search"
+                     Placeholder="Search images..."
+                     Variant="Variant.Outlined"
+                     Adornment="Adornment.Start"
+                     AdornmentIcon="@Icons.Material.Filled.Search"
+                     OnDebounceIntervalElapsed="@HandleSearchChanged"
+                     DebounceInterval="500"
+                     Immediate="false"
+                     Clearable="true" />
+        
+        @* Clear All Filters Button *@
+        @if (FilterState.HasActiveFilters)
+        {
+            <MudButton Variant="Variant.Text" 
+                      Color="Color.Secondary" 
+                      StartIcon="@Icons.Material.Filled.Clear"
+                      OnClick="@ClearAllFilters"
+                      FullWidth="true">
+                Clear All Filters
+            </MudButton>
+        }
+        
+        <MudDivider />
+        
+        @* Tags Filter *@
+        <MudExpansionPanels MultiExpansion="true">
+            <MudExpansionPanel Text="Tags" IsInitiallyExpanded="true">
+                @if (_availableTags.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">No tags available</MudText>
+                }
+                else
+                {
+                    <MudStack Spacing="1">
+                        @foreach (string tag in _availableTags.Take(10))
+                        {
+                            <MudCheckBox T="bool"
+                                         Checked="@_selectedTags[tag]"
+                                         CheckedChanged="@((bool value) => HandleTagChanged(tag, value))"
+                                         Label="@tag"
+                                         Color="Color.Primary"
+                                         Dense="true" />
+                        }
+                        @if (_availableTags.Count > 10)
+                        {
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                Showing 10 of @_availableTags.Count tags
+                            </MudText>
+                        }
+                    </MudStack>
+                }
+            </MudExpansionPanel>
+            
+            @* Dimensions Filter *@
+            <MudExpansionPanel Text="Dimensions">
+                <MudStack Spacing="2">
+                    <MudTextField @bind-Value="@_minWidth"
+                                 Label="Min Width"
+                                 Variant="Variant.Outlined"
+                                 InputType="InputType.Number"
+                                 Adornment="Adornment.End"
+                                 AdornmentText="px"
+                                 OnDebounceIntervalElapsed="@HandleDimensionsChanged"
+                                 DebounceInterval="500" />
+                    
+                    <MudTextField @bind-Value="@_maxWidth"
+                                 Label="Max Width"
+                                 Variant="Variant.Outlined"
+                                 InputType="InputType.Number"
+                                 Adornment="Adornment.End"
+                                 AdornmentText="px"
+                                 OnDebounceIntervalElapsed="@HandleDimensionsChanged"
+                                 DebounceInterval="500" />
+                    
+                    <MudTextField @bind-Value="@_minHeight"
+                                 Label="Min Height"
+                                 Variant="Variant.Outlined"
+                                 InputType="InputType.Number"
+                                 Adornment="Adornment.End"
+                                 AdornmentText="px"
+                                 OnDebounceIntervalElapsed="@HandleDimensionsChanged"
+                                 DebounceInterval="500" />
+                    
+                    <MudTextField @bind-Value="@_maxHeight"
+                                 Label="Max Height"
+                                 Variant="Variant.Outlined"
+                                 InputType="InputType.Number"
+                                 Adornment="Adornment.End"
+                                 AdornmentText="px"
+                                 OnDebounceIntervalElapsed="@HandleDimensionsChanged"
+                                 DebounceInterval="500" />
+                </MudStack>
+            </MudExpansionPanel>
+            
+            @* Date Range Filter *@
+            <MudExpansionPanel Text="Date Range">
+                <DateRangeFilter From="@_dateFrom"
+                                 To="@_dateTo"
+                                 OnDateRangeChanged="@HandleDateRangeChanged" />
+            </MudExpansionPanel>
+        </MudExpansionPanels>
+    </MudStack>
+</MudPaper>
+
+@code {
+    // TODO: Move to separate .razor.cs file following component pattern
+}

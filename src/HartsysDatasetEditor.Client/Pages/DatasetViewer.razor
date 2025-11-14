@@ -1,0 +1,127 @@
+@page "/dataset-viewer"
+@using HartsysDatasetEditor.Client.Components.Dataset
+@using HartsysDatasetEditor.Client.Components.Viewer
+@using HartsysDatasetEditor.Client.Components.Filter
+@using HartsysDatasetEditor.Core.Utilities
+
+<PageTitle>Dataset Viewer - Hartsy's Dataset Editor</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.False" Class="pa-0">
+    @if (_isLoading)
+    {
+        <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Style="height: 80vh;">
+            <MudProgressCircular Color="Color.Primary" Size="Size.Large" Indeterminate="true" />
+            <MudText Typo="Typo.h6">Loading dataset...</MudText>
+        </MudStack>
+    }
+    else if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <MudAlert Severity="Severity.Error" Class="ma-4">
+            @_errorMessage
+            <MudButton Color="Color.Error" Variant="Variant.Text" OnClick="@ClearError">Dismiss</MudButton>
+        </MudAlert>
+    }
+    else if (_datasetState.CurrentDataset == null)
+    {
+        <!-- No Dataset Loaded - Show Upload Component -->
+        <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Style="height: 80vh;" Spacing="4">
+            <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Size="Size.Large" Color="Color.Primary" />
+            <MudText Typo="Typo.h4">No Dataset Loaded</MudText>
+            <MudText Typo="Typo.body1" Class="mud-text-secondary">
+                Upload a dataset file to get started
+            </MudText>
+            <DatasetUploader />
+        </MudStack>
+    }
+    else
+    {
+        <!-- Dataset Loaded - Show Viewer -->
+        <MudGrid Spacing="0" Style="height: calc(100vh - 64px);">
+            <!-- Left Panel - Filters -->
+            @if (_viewState.ShowFilterPanel)
+            {
+                <MudItem Xs="12" Md="3" Lg="2" Style="height: 100%; overflow-y: auto; border-right: 1px solid var(--mud-palette-divider);">
+                    <FilterPanel />
+                </MudItem>
+            }
+            
+            <!-- Main Content - Viewer -->
+            <MudItem Xs="12" 
+                     Md="@(_viewState.ShowFilterPanel ? 9 : 12)" 
+                     Lg="@(_viewState.ShowFilterPanel && _viewState.ShowDetailPanel ? 8 : _viewState.ShowFilterPanel ? 10 : _viewState.ShowDetailPanel ? 10 : 12)"
+                     Style="height: 100%; overflow-y: auto;">
+                <MudStack Spacing="2" Class="pa-4">
+                    <!-- Top Action Bar -->
+                    <MudPaper Elevation="1" Class="pa-3">
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudIconButton Icon="@Icons.Material.Filled.FilterList" 
+                                             Color="Color.Primary" 
+                                             OnClick="@_viewState.ToggleFilterPanel"
+                                             Title="Toggle filters" />
+                                <MudText Typo="Typo.h6">@_datasetState.CurrentDataset.Name</MudText>
+                                <MudChip T="string" Value="@(_filteredCount.ToString("N0"))"
+                                         Size="Size.Small"
+                                         Color="Color.Info">
+                                    @_filteredCount.ToString("N0") items
+                                </MudChip>
+                                @if (_datasetState.HasSelection)
+                                {
+                                    <MudChip T="string" Value="@(_datasetState.SelectedCount.ToString())"
+                                             Size="Size.Small"
+                                             Color="Color.Primary">
+                                        @_datasetState.SelectedCount selected
+                                    </MudChip>
+                                }
+                            </MudStack>
+                            
+                            <MudStack Row="true" Spacing="1">
+                                <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+                                    <MudIconButton Icon="@Icons.Material.Filled.GridView" 
+                                                 Color="@(_viewMode == ViewMode.Grid ? Color.Primary : Color.Default)"
+                                                 OnClick="@(() => SetViewMode(ViewMode.Grid))"
+                                                 Title="Grid view" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.ViewList" 
+                                                 Color="@(_viewMode == ViewMode.List ? Color.Primary : Color.Default)"
+                                                 OnClick="@(() => SetViewMode(ViewMode.List))"
+                                                 Title="List view" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.ViewModule" 
+                                                 Color="@(_viewMode == ViewMode.Gallery ? Color.Primary : Color.Default)"
+                                                 OnClick="@(() => SetViewMode(ViewMode.Gallery))"
+                                                 Title="Gallery view" />
+                                </MudButtonGroup>
+                                
+                                <MudIconButton Icon="@Icons.Material.Filled.Info" 
+                                             Color="Color.Default" 
+                                             OnClick="@_viewState.ToggleDetailPanel"
+                                             Title="Toggle details" />
+                            </MudStack>
+                        </MudStack>
+                    </MudPaper>
+                    
+                    <!-- Viewer Container -->
+                    <ViewerContainer FilteredItems="@_filteredItems" 
+                                   OnItemSelected="@HandleItemSelected" />
+                </MudStack>
+            </MudItem>
+            
+            <!-- Right Panel - Details (TODO: Create ImageDetailPanel component) -->
+            @if (_viewState.ShowDetailPanel && _datasetState.SelectedItem != null)
+            {
+                <MudItem Xs="12" Md="3" Lg="2" Style="height: 100%; overflow-y: auto; border-left: 1px solid var(--mud-palette-divider);">
+                    <MudPaper Class="pa-4">
+                        <MudText Typo="Typo.h6" Class="mb-3">Details</MudText>
+                        <MudText Typo="Typo.body2">
+                            Selected: @_datasetState.SelectedItem.Id
+                        </MudText>
+                        <!-- TODO: Replace with ImageDetailPanel component -->
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+</MudContainer>
+
+@code {
+    // TODO: Move to separate .razor.cs file following component pattern
+}

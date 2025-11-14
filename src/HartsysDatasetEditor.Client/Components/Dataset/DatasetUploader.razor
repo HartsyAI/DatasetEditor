@@ -1,0 +1,84 @@
+@using HartsysDatasetEditor.Core.Utilities
+@using Microsoft.AspNetCore.Components.Forms
+
+<MudPaper Class="pa-4" Elevation="2">
+    <MudStack Spacing="3">
+        <MudText Typo="Typo.h6">Upload Dataset</MudText>
+        
+        @* Drag-Drop Upload Zone *@
+        <div class="upload-dropzone @(_isDragging ? "dragging" : "")"
+             @ondragenter="@HandleDragEnter"
+             @ondragleave="@HandleDragLeave"
+             @ondragover:preventDefault="true"
+             @ondrop="@HandleDrop"
+             @ondrop:preventDefault="true">
+            
+            <MudStack AlignItems="AlignItems.Center" Spacing="2">
+                <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Size="Size.Large" Color="Color.Primary" />
+                <MudText Typo="Typo.h6">Drag & Drop TSV File</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">or</MudText>
+                
+                <InputFile id="fileInput" 
+                          OnChange="@HandleFileSelected" 
+                          accept=".tsv,.tsv000,.csv,.csv000,.txt"
+                          style="display: none;" />
+                
+                <MudButton Variant="Variant.Filled" 
+                          Color="Color.Primary" 
+                          StartIcon="@Icons.Material.Filled.Folder"
+                          OnClick="@OpenFilePickerAsync">
+                    Browse Files
+                </MudButton>
+                
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    Supported formats: TSV, TSV000 (Unsplash), CSV, CSV000
+                </MudText>
+            </MudStack>
+        </div>
+        
+        @* Upload Progress *@
+        @if (_isUploading)
+        {
+            <MudStack Spacing="2">
+                <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                <MudText Typo="Typo.body2" Align="Align.Center">
+                    @_uploadStatus
+                </MudText>
+            </MudStack>
+        }
+        
+        @* Error Display *@
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Dense="true">
+                @_errorMessage
+            </MudAlert>
+        }
+    </MudStack>
+</MudPaper>
+
+@code {
+    // TODO: Move to separate .razor.cs file following component pattern
+}
+
+<style>
+    .upload-dropzone {
+        border: 2px dashed var(--mud-palette-primary);
+        border-radius: 8px;
+        padding: 48px 24px;
+        text-align: center;
+        transition: all 0.3s ease;
+        background: var(--mud-palette-background-grey);
+        cursor: pointer;
+    }
+
+    .upload-dropzone.dragging {
+        border-color: var(--mud-palette-success);
+        background: var(--mud-palette-success-lighten);
+        transform: scale(1.02);
+    }
+
+    .upload-dropzone:hover {
+        background: var(--mud-palette-action-default-hover);
+    }
+</style>

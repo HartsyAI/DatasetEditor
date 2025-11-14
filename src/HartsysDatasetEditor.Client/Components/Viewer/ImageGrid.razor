@@ -1,0 +1,67 @@
+@using HartsysDatasetEditor.Core.Models
+@using HartsysDatasetEditor.Core.Interfaces
+@using HartsysDatasetEditor.Core.Utilities
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+
+<div class="image-grid columns-@_gridColumns">
+    @if (FilteredItems == null || FilteredItems.Count == 0)
+    {
+        <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="pa-8">
+            <MudIcon Icon="@Icons.Material.Filled.ImageNotSupported" Size="Size.Large" Color="Color.Secondary" />
+            <MudText Typo="Typo.h6" Class="mud-text-secondary">No images to display</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Try adjusting your filters or upload a dataset
+            </MudText>
+        </MudStack>
+    }
+    else
+    {
+        @* CRITICAL: Virtualize component for handling billions of images *@
+        @* Only renders visible items + overscan buffer *@
+        @* Prevents DOM bloat and maintains constant memory usage *@
+        <Virtualize Items="@FilteredItems" ItemSize="250" OverscanCount="10" Context="item">
+            <ImageCard Item="@((ImageItem)item)" 
+                      IsSelected="@IsItemSelected(item)"
+                      OnClick="@(() => HandleItemClick(item))"
+                      OnToggleSelect="@(() => HandleToggleSelection(item))" />
+        </Virtualize>
+    }
+</div>
+
+@code {
+    // TODO: Move to separate .razor.cs file following component pattern
+}
+
+<style>
+    /* Grid layout with dynamic columns */
+    .image-grid {
+        display: grid;
+        gap: 16px;
+        padding: 16px;
+        width: 100%;
+    }
+
+    .image-grid.columns-1 { grid-template-columns: repeat(1, 1fr); }
+    .image-grid.columns-2 { grid-template-columns: repeat(2, 1fr); }
+    .image-grid.columns-3 { grid-template-columns: repeat(3, 1fr); }
+    .image-grid.columns-4 { grid-template-columns: repeat(4, 1fr); }
+    .image-grid.columns-5 { grid-template-columns: repeat(5, 1fr); }
+    .image-grid.columns-6 { grid-template-columns: repeat(6, 1fr); }
+    .image-grid.columns-7 { grid-template-columns: repeat(7, 1fr); }
+    .image-grid.columns-8 { grid-template-columns: repeat(8, 1fr); }
+
+    /* Responsive breakpoints */
+    @@media (max-width: 960px) {
+        .image-grid.columns-6,
+        .image-grid.columns-7,
+        .image-grid.columns-8 { 
+            grid-template-columns: repeat(4, 1fr); 
+        }
+    }
+
+    @@media (max-width: 600px) {
+        .image-grid { 
+            grid-template-columns: repeat(2, 1fr) !important; 
+        }
+    }
+</style>

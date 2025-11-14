@@ -53,3 +53,13 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+/src/HartsysDatasetEditor.Api/obj
+/src/HartsysDatasetEditor.Api/bin
+/src/HartsysDatasetEditor.Client/bin
+/src/HartsysDatasetEditor.Client/obj
+/src/HartsysDatasetEditor.Contracts/bin
+/src/HartsysDatasetEditor.Contracts/obj
+/src/HartsysDatasetEditor.Core/bin
+/src/HartsysDatasetEditor.Core/obj
+/.vs
