@@ -155,20 +155,20 @@
 ### Phase A – Infrastructure Setup
 - [x] Add `HartsysDatasetEditor.Api` (ASP.NET Core) project.
 - [x] Create shared contracts project (`HartsysDatasetEditor.Contracts`).
-- [ ] Configure solution to host WASM + API together (aspnet-hosted). 
+- [x] Configure solution to host WASM + API together (aspnet-hosted). 
 - [x] Add README section summarizing architecture and how to run both projects.
 
 ### Phase B – API Skeleton
 - [x] `POST /api/datasets` -> returns datasetId.
 - [x] `POST /api/datasets/{id}/upload` -> accepts multipart (stub ingestion for now).
 - [x] `GET /api/datasets/{id}/items` -> returns stubbed page from in-memory store.
-- [ ] Swagger UI + CORS configuration.
+- [x] Swagger UI + CORS configuration.
 
 ### Phase C – Client Refactor
-- [ ] Replace local `DatasetLoader` usage with API-backed service.
-- [ ] Implement `DatasetCacheService` and update viewer to use `ItemsProvider`.
-- [ ] Add placeholder ingestion status UI (polling `GET /api/datasets/{id}`).
-- [ ] Implement IndexedDB caching (optional initial stub).
+- [x] Replace local `DatasetLoader` usage with API-backed service.
+- [x] Implement `DatasetCacheService` and update viewer to use `ItemsProvider`.
+- [x] Add placeholder ingestion status UI (polling `GET /api/datasets/{id}`).
+- [x] Implement IndexedDB caching (optional initial stub).
 
 ### Phase D – Ingestion & Persistence
 - [ ] Implement ingestion background service with streaming parser.

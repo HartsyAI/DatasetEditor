@@ -4,11 +4,13 @@ using MudBlazor.Services;
 using Blazored.LocalStorage;
 using HartsysDatasetEditor.Client;
 using HartsysDatasetEditor.Client.Services;
+using HartsysDatasetEditor.Client.Services.Api;
 using HartsysDatasetEditor.Client.Services.StateManagement;
 using HartsysDatasetEditor.Core.Services;
 using HartsysDatasetEditor.Core.Services.Parsers;
 using HartsysDatasetEditor.Core.Services.Providers;
 using HartsysDatasetEditor.Core.Utilities;
+using Microsoft.Extensions.Options;
 using System.Threading.Tasks;
 
 WebAssemblyHostBuilder builder = WebAssemblyHostBuilder.CreateDefault(args);
@@ -17,6 +19,18 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 
 // HTTP Client for future API calls
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
+
+// Dataset API client configuration
+builder.Services.AddOptions<DatasetApiOptions>()
+    .Bind(builder.Configuration.GetSection("DatasetApi"))
+    .Validate(options => !string.IsNullOrWhiteSpace(options.BaseAddress), "DatasetApi:BaseAddress must be configured.")
+    .ValidateOnStart();
+
+builder.Services.AddHttpClient<DatasetApiClient>((sp, client) =>
+{
+    var options = sp.GetRequiredService<IOptions<DatasetApiOptions>>().Value;
+    client.BaseAddress = new Uri(options.BaseAddress!, UriKind.Absolute);
+});
 
 // MudBlazor services
 builder.Services.AddMudServices();
@@ -28,7 +42,8 @@ builder.Services.AddBlazoredLocalStorage();
 builder.Services.AddSingleton<ParserRegistry>();
 builder.Services.AddSingleton<ModalityProviderRegistry>();
 builder.Services.AddScoped<FormatDetector>();
-builder.Services.AddScoped<DatasetLoader>();
+builder.Services.AddScoped<DatasetCacheService>();
+builder.Services.AddScoped<DatasetIndexedDbCache>();
 builder.Services.AddScoped<FilterService>();
 builder.Services.AddScoped<SearchService>();
 

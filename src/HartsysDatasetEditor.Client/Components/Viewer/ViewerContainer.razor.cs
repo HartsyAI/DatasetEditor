@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web.Virtualization;
 using HartsysDatasetEditor.Client.Services.StateManagement;
 using HartsysDatasetEditor.Core.Interfaces;
 using HartsysDatasetEditor.Core.Enums;
@@ -14,6 +15,9 @@ public partial class ViewerContainer : IDisposable
 
     /// <summary>List of filtered items to display in the viewer.</summary>
     [Parameter] public List<IDatasetItem> FilteredItems { get; set; } = new();
+
+    /// <summary>Optional virtualized items provider for incremental loading.</summary>
+    [Parameter] public ItemsProviderDelegate<IDatasetItem>? ItemsProvider { get; set; }
 
     /// <summary>Event callback when an item is selected.</summary>
     [Parameter] public EventCallback<IDatasetItem> OnItemSelected { get; set; }

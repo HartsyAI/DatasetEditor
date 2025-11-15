@@ -5,7 +5,8 @@
 @* Dynamically render the appropriate viewer based on modality and view mode *@
 @if (_modality == Modality.Image)
 {
-    <ImageGrid FilteredItems="@FilteredItems" 
+    <ImageGrid FilteredItems="@FilteredItems"
+               ItemsProvider="@ItemsProvider"
                OnItemSelected="@OnItemSelected" />
 }
 else if (_modality == Modality.Text)

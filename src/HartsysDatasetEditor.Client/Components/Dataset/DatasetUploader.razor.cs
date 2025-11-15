@@ -3,12 +3,10 @@ using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
 using HartsysDatasetEditor.Client.Services;
+using HartsysDatasetEditor.Client.Services.Api;
 using HartsysDatasetEditor.Client.Services.StateManagement;
-using HartsysDatasetEditor.Core.Interfaces;
-using HartsysDatasetEditor.Core.Models;
-using HartsysDatasetEditor.Core.Services;
+using HartsysDatasetEditor.Contracts.Datasets;
 using HartsysDatasetEditor.Core.Utilities;
-using DatasetModel = HartsysDatasetEditor.Core.Models.Dataset;
 
 namespace HartsysDatasetEditor.Client.Components.Dataset;
 
@@ -16,7 +14,8 @@ namespace HartsysDatasetEditor.Client.Components.Dataset;
 public partial class DatasetUploader
 {
     [Inject] public IJSRuntime JsRuntime { get; set; } = default!;
-    [Inject] public DatasetLoader DatasetLoader { get; set; } = default!;
+    [Inject] public DatasetApiClient DatasetApiClient { get; set; } = default!;
+    [Inject] public DatasetCacheService DatasetCacheService { get; set; } = default!;
     [Inject] public DatasetState DatasetState { get; set; } = default!;
     [Inject] public NotificationService NotificationService { get; set; } = default!;
     [Inject] public NavigationService NavigationService { get; set; } = default!;
@@ -96,73 +95,39 @@ public partial class DatasetUploader
 
             Logs.Info($"Processing file: {file.Name} ({file.Size} bytes)");
 
-            // Read file content
-            _uploadStatus = "Reading file...";
-            Logs.Info("Opening read stream for uploaded file");
-
-            string fileContent;
-            using Stream stream = file.OpenReadStream(MaxFileSize);
-            using StreamReader reader = new(stream);
-            fileContent = await reader.ReadToEndAsync();
-            Logs.Info("Completed reading uploaded file stream");
-
-            if (string.IsNullOrWhiteSpace(fileContent))
-            {
-                throw new Exception("File is empty");
-            }
-
-            Logs.Info($"File read successfully: {fileContent.Length} characters");
-
-            // Notify viewer once file is safely read to avoid disposing the input element mid-stream
             DatasetState.SetLoading(true);
 
-            // Parse dataset
-            _uploadStatus = "Parsing dataset...";
+            _uploadStatus = "Creating dataset...";
             StateHasChanged();
 
-            (DatasetModel dataset, IAsyncEnumerable<IDatasetItem> itemStream) = await DatasetLoader.LoadDatasetFromTextAsync(
-                fileContent,
-                file.Name,
-                Path.GetFileNameWithoutExtension(file.Name));
+            string datasetName = Path.GetFileNameWithoutExtension(file.Name);
+            DatasetDetailDto? dataset = await DatasetApiClient.CreateDatasetAsync(
+                new CreateDatasetRequest(datasetName, $"Uploaded via UI on {DateTime.UtcNow:O}"));
 
-            List<IDatasetItem> items = [];
-            int parsedCount = 0;
-
-            await foreach (IDatasetItem item in itemStream)
+            if (dataset is null)
             {
-                items.Add(item);
-                parsedCount++;
-
-                // Update progress every 1000 items (roughly) to keep UI responsive.
-                if (parsedCount % 1000 == 0)
-                {
-                    _uploadStatus = $"Parsed {parsedCount:N0} items...";
-                    StateHasChanged();
-                }
+                throw new Exception("Dataset creation failed.");
             }
 
-            // Align dataset metadata with parsed results.
-            dataset.TotalItems = parsedCount;
-            dataset.UpdatedAt = DateTime.UtcNow;
-            dataset.CreatedAt = dataset.CreatedAt == default ? DateTime.UtcNow : dataset.CreatedAt;
+            Guid datasetId = dataset.Id;
 
-            // TODO: Stream items directly into DatasetState instead of materializing full list once incremental rendering is ready.
-
-            Logs.Info($"Dataset parsed successfully: {parsedCount} items");
-
-            // Load into state
-            _uploadStatus = "Loading dataset...";
+            _uploadStatus = "Uploading file to API...";
             StateHasChanged();
 
-            DatasetState.LoadDataset(dataset, items);
+            await using Stream stream = file.OpenReadStream(MaxFileSize);
+            await DatasetApiClient.UploadDatasetAsync(datasetId, stream, file.Name, file.ContentType);
+
+            _uploadStatus = "Loading dataset from API...";
+            StateHasChanged();
+
+            await DatasetCacheService.LoadFirstPageAsync(datasetId);
+
             DatasetState.SetLoading(false);
 
-            // Show success notification
-            NotificationService.ShowSuccess($"Dataset loaded successfully: {items.Count:N0} items");
+            NotificationService.ShowSuccess($"Dataset '{dataset.Name}' ingested successfully.");
 
-            // Navigate to dataset viewer
-            await Task.Delay(500); // Brief delay to show success message
-            NavigationService.NavigateToDataset(dataset.Id);
+            await Task.Delay(500);
+            NavigationService.NavigateToDataset(datasetId.ToString());
 
         }
         catch (Exception ex)

@@ -19,12 +19,24 @@
         @* CRITICAL: Virtualize component for handling billions of images *@
         @* Only renders visible items + overscan buffer *@
         @* Prevents DOM bloat and maintains constant memory usage *@
-        <Virtualize Items="@FilteredItems" ItemSize="250" OverscanCount="10" Context="item">
-            <ImageCard Item="@((ImageItem)item)" 
-                      IsSelected="@IsItemSelected(item)"
-                      OnClick="@(() => HandleItemClick(item))"
-                      OnToggleSelect="@(() => HandleToggleSelection(item))" />
-        </Virtualize>
+        @if (ItemsProvider is null)
+        {
+            <Virtualize Items="@FilteredItems" ItemSize="250" OverscanCount="10" Context="item">
+                <ImageCard Item="@((ImageItem)item)" 
+                          IsSelected="@IsItemSelected(item)"
+                          OnClick="@(() => HandleItemClick(item))"
+                          OnToggleSelect="@(() => HandleToggleSelection(item))" />
+            </Virtualize>
+        }
+        else
+        {
+            <Virtualize ItemsProvider="@ItemsProvider" ItemSize="250" OverscanCount="10" Context="item">
+                <ImageCard Item="@((ImageItem)item)" 
+                          IsSelected="@IsItemSelected(item)"
+                          OnClick="@(() => HandleItemClick(item))"
+                          OnToggleSelect="@(() => HandleToggleSelection(item))" />
+            </Virtualize>
+        }
     }
 </div>
 

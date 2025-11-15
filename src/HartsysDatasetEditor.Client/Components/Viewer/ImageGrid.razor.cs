@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web.Virtualization;
 using HartsysDatasetEditor.Client.Services.StateManagement;
 using HartsysDatasetEditor.Core.Interfaces;
 using HartsysDatasetEditor.Core.Models;
@@ -15,6 +16,9 @@ public partial class ImageGrid : IDisposable
 
     /// <summary>List of filtered items to display in the grid.</summary>
     [Parameter] public List<IDatasetItem> FilteredItems { get; set; } = new();
+
+    /// <summary>Optional items provider for virtualized paging.</summary>
+    [Parameter] public ItemsProviderDelegate<IDatasetItem>? ItemsProvider { get; set; }
 
     /// <summary>Event callback when an item is selected for detail view.</summary>
     [Parameter] public EventCallback<IDatasetItem> OnItemSelected { get; set; }

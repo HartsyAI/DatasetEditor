@@ -51,6 +51,24 @@ public class DatasetState
         NotifyStateChanged();
         Logs.Info($"Dataset loaded: {dataset.Name} with {items.Count} items");
     }
+
+    /// <summary>Appends additional items to the current dataset (e.g., next API page).</summary>
+    /// <param name="items">Items to append.</param>
+    public void AppendItems(IEnumerable<IDatasetItem> items)
+    {
+        if (items == null)
+        {
+            return;
+        }
+
+        int beforeCount = Items.Count;
+        Items.AddRange(items);
+        if (Items.Count != beforeCount)
+        {
+            NotifyStateChanged();
+            Logs.Info($"Appended {Items.Count - beforeCount} new items (total {Items.Count})");
+        }
+    }
     
     /// <summary>Sets the loading state and clears any previous errors.</summary>
     /// <param name="isLoading">Whether dataset is currently loading.</param>

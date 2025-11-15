@@ -3,6 +3,7 @@
 @using HartsysDatasetEditor.Client.Components.Viewer
 @using HartsysDatasetEditor.Client.Components.Filter
 @using HartsysDatasetEditor.Core.Utilities
+@using HartsysDatasetEditor.Contracts.Datasets
 
 <PageTitle>Dataset Viewer - Hartsy's Dataset Editor</PageTitle>
 
@@ -51,6 +52,37 @@
                      Lg="@(_viewState.ShowFilterPanel && _viewState.ShowDetailPanel ? 8 : _viewState.ShowFilterPanel ? 10 : _viewState.ShowDetailPanel ? 10 : 12)"
                      Style="height: 100%; overflow-y: auto;">
                 <MudStack Spacing="2" Class="pa-4">
+                    @if (_datasetDetail is not null)
+                    {
+                        <MudAlert Severity="@GetStatusSeverity(_datasetDetail.Status)" Variant="Variant.Filled" Dense="true">
+                            <MudStack Spacing="1">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                    <MudText Typo="Typo.subtitle2">Ingestion status</MudText>
+                                    <MudChip T="string" Color="Color.Dark" Variant="Variant.Text" Size="Size.Small">
+                                        @_datasetDetail.Status
+                                    </MudChip>
+                                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                        Last updated @(_datasetDetail.UpdatedAt.ToLocalTime().ToString("g")) • Total items: @_datasetDetail.TotalItems
+                                    </MudText>
+                                    <MudTooltip Text="Refresh status now">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                                                       Disabled="@_isStatusRefreshing"
+                                                       Color="Color.Default"
+                                                       OnClick="@(() => RefreshStatusAsync())" />
+                                    </MudTooltip>
+                                </MudStack>
+
+                                @if (_datasetDetail.Status == IngestionStatusDto.Pending || _datasetDetail.Status == IngestionStatusDto.Processing)
+                                {
+                                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                        Ingestion still running—viewer auto-refreshes every few seconds until completion.
+                                    </MudText>
+                                }
+                            </MudStack>
+                        </MudAlert>
+                    }
+
                     <!-- Top Action Bar -->
                     <MudPaper Elevation="1" Class="pa-3">
                         <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
@@ -95,13 +127,22 @@
                                              Color="Color.Default" 
                                              OnClick="@_viewState.ToggleDetailPanel"
                                              Title="Toggle details" />
+
+                                <MudTooltip Text="Store paged results locally so paging is faster when you revisit the dataset.">
+                                    <MudSwitch T="bool"
+                                               Checked="@_isIndexedDbEnabled"
+                                               CheckedChanged="@((bool enabled) => ToggleOfflineCacheAsync(enabled))"
+                                               Color="Color.Primary"
+                                               Label="IndexedDB cache (beta)" />
+                                </MudTooltip>
                             </MudStack>
                         </MudStack>
                     </MudPaper>
                     
                     <!-- Viewer Container -->
-                    <ViewerContainer FilteredItems="@_filteredItems" 
-                                   OnItemSelected="@HandleItemSelected" />
+                    <ViewerContainer FilteredItems="@_filteredItems"
+                                     ItemsProvider="@ProvideItemsAsync"
+                                     OnItemSelected="@HandleItemSelected" />
                 </MudStack>
             </MudItem>
             
