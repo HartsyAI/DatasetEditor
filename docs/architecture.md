@@ -156,11 +156,11 @@
 - [x] Add `HartsysDatasetEditor.Api` (ASP.NET Core) project.
 - [x] Create shared contracts project (`HartsysDatasetEditor.Contracts`).
 - [ ] Configure solution to host WASM + API together (aspnet-hosted). 
-- [ ] Add README section summarizing architecture and how to run both projects.
+- [x] Add README section summarizing architecture and how to run both projects.
 
 ### Phase B – API Skeleton
 - [x] `POST /api/datasets` -> returns datasetId.
-- [ ] `POST /api/datasets/{id}/upload` -> accepts multipart (stub ingestion for now).
+- [x] `POST /api/datasets/{id}/upload` -> accepts multipart (stub ingestion for now).
 - [x] `GET /api/datasets/{id}/items` -> returns stubbed page from in-memory store.
 - [ ] Swagger UI + CORS configuration.
 

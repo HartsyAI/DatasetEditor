@@ -85,6 +85,39 @@ HartsysDatasetEditor/
 └── README.md
 ```
 
+## 🏛️ Architecture Summary
+
+The editor follows a strictly API-first workflow so that every client action flows through the HTTP layer before touching storage. High-level components:
+
+- **Blazor WebAssembly Client** – virtualized viewers, upload wizard, and caching services that call the API via typed `HttpClient` wrappers. Prefetch and IndexedDB caching are planned per [docs/architecture.md](docs/architecture.md).
+- **ASP.NET Core Minimal API** – orchestrates dataset lifecycle, ingestion coordination, and cursor-based item paging. Background hosted services handle ingestion and stub persistence today.
+- **Backing Services** – pluggable storage (blob), database (PostgreSQL/Dynamo), and search index (Elastic/OpenSearch) abstractions so we can swap implementations as we scale.
+
+See the detailed blueprint, data flows, and phased roadmap in `docs/architecture.md` for deeper dives.
+
+## ▶️ Running the API + Client Together
+
+1. **Start the API**
+   ```bash
+   dotnet run --project src/HartsysDatasetEditor.Api
+   ```
+   By default this listens on `https://localhost:7085`. Trust the dev certificate the first time.
+
+2. **Start the Blazor WASM client**
+   ```bash
+   dotnet run --project src/HartsysDatasetEditor.Client
+   ```
+   The dev server hosts the static client at `https://localhost:5001`.
+
+3. **Configure the client-to-API base address**
+   - The client reads `DatasetApi:BaseAddress` from `wwwroot/appsettings.Development.json`. Leave it at the default `https://localhost:7085` or update it if the API port changes.
+
+4. **Browse the app**
+   - Navigate to `https://localhost:5001`. The client will call the API for dataset lists/items.
+   - Verify CORS is enabled for the WASM origin once the API CORS policy is implemented (see roadmap).
+
+When deploying as an ASP.NET Core hosted app, the API project can serve the WASM assets directly; until then, the two projects run side-by-side as above.
+
 ## 🎯 Key Technologies
 
 - **ASP.NET Core 8.0**: Minimal API hosting and background services

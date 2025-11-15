@@ -9,6 +9,7 @@
     <!-- Blazor WebAssembly -->
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="8.0.*" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="8.0.*" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.*" />
     
     <!-- MudBlazor UI Framework -->
     <PackageReference Include="MudBlazor" Version="7.8.*" />
@@ -23,6 +24,7 @@
   <ItemGroup>
     <!-- Reference to Core library -->
     <ProjectReference Include="..\HartsysDatasetEditor.Core\HartsysDatasetEditor.Core.csproj" />
+    <ProjectReference Include="..\HartsysDatasetEditor.Contracts\HartsysDatasetEditor.Contracts.csproj" />
   </ItemGroup>
 
 </Project>
