@@ -33,7 +33,6 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-app.UseHttpsRedirection();
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 app.UseRouting();
@@ -97,11 +96,11 @@ app.MapPost("/api/datasets/{datasetId:guid}/upload", async (
     return Results.Accepted($"/api/datasets/{datasetId}", new { datasetId, fileName = file.FileName });
 }).Accepts<IFormFile>("multipart/form-data").WithName("UploadDatasetFile");
 app.MapGet("/api/datasets/{datasetId:guid}/items", async (Guid datasetId, int? pageSize, string? cursor,
-    [AsParameters] FilterRequest filter, IDatasetItemRepository repository,
+    IDatasetItemRepository repository,
     CancellationToken cancellationToken) =>
 {
     int size = pageSize.GetValueOrDefault(100);
-    (IReadOnlyList<DatasetItemDto>? items, string? nextCursor) = await repository.GetPageAsync(datasetId, filter,
+    (IReadOnlyList<DatasetItemDto>? items, string? nextCursor) = await repository.GetPageAsync(datasetId, null,
         cursor, size, cancellationToken);
     PageResponse<DatasetItemDto> response = new()
     {

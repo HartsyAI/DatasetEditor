@@ -4,7 +4,7 @@ namespace HartsysDatasetEditor.Contracts.Common;
 public sealed record FilterRequest
 {
     public string? SearchQuery { get; init; }
-    public IReadOnlyCollection<string> Tags { get; init; } = Array.Empty<string>();
+    public string[] Tags { get; init; } = Array.Empty<string>();
     public DateTime? DateFrom { get; init; }
     public DateTime? DateTo { get; init; }
     public bool? FavoritesOnly { get; init; }
@@ -14,7 +14,7 @@ public sealed record FilterRequest
     public int? MaxHeight { get; init; }
     public double? MinAspectRatio { get; init; }
     public double? MaxAspectRatio { get; init; }
-    public IReadOnlyCollection<string> Formats { get; init; } = Array.Empty<string>();
+    public string[] Formats { get; init; } = Array.Empty<string>();
     public string? Photographer { get; init; }
     public string? Location { get; init; }
 }

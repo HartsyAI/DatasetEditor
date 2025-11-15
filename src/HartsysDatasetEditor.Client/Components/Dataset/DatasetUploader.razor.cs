@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
+using Microsoft.Extensions.Options;
 using HartsysDatasetEditor.Client.Services;
 using HartsysDatasetEditor.Client.Services.Api;
 using HartsysDatasetEditor.Client.Services.StateManagement;
@@ -19,6 +20,7 @@ public partial class DatasetUploader
     [Inject] public DatasetState DatasetState { get; set; } = default!;
     [Inject] public NotificationService NotificationService { get; set; } = default!;
     [Inject] public NavigationService NavigationService { get; set; } = default!;
+    [Inject] public IOptions<DatasetApiOptions> DatasetApiOptions { get; set; } = default!;
 
     public bool _isDragging = false;
     public bool _isUploading = false;
@@ -132,16 +134,28 @@ public partial class DatasetUploader
         }
         catch (Exception ex)
         {
-            _errorMessage = ex.Message;
+            string userMessage = GetFriendlyErrorMessage(ex);
+            _errorMessage = userMessage;
             Logs.Error("Failed to process uploaded file", ex);
-            DatasetState.SetError(ex.Message);
-            NotificationService.ShowError($"Upload failed: {ex.Message}");
+            DatasetState.SetError(userMessage);
+            NotificationService.ShowError(userMessage);
         }
         finally
         {
             _isUploading = false;
             StateHasChanged();
         }
+    }
+
+    private string GetFriendlyErrorMessage(Exception ex)
+    {
+        if (ex is HttpRequestException || ex.Message.Contains("TypeError: Failed to fetch", StringComparison.OrdinalIgnoreCase))
+        {
+            string baseAddress = DatasetApiOptions.Value.BaseAddress ?? "the configured Dataset API";
+            return $"Upload failed: cannot reach Dataset API at {baseAddress}. Ensure the API is running (dotnet watch run --project src/HartsysDatasetEditor.Api) and that CORS allows https://localhost:7221.";
+        }
+
+        return $"Upload failed: {ex.Message}";
     }
     
     // TODO: Add file validation (check headers, sample data)
