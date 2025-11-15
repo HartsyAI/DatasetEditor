@@ -18,7 +18,8 @@
                 <MudText Typo="Typo.h6">Drag & Drop TSV File</MudText>
                 <MudText Typo="Typo.body2" Class="mud-text-secondary">or</MudText>
                 
-                <InputFile id="fileInput" 
+                <InputFile @key="_fileInputKey"
+                          id="fileInput" 
                           OnChange="@HandleFileSelected" 
                           accept=".tsv,.tsv000,.csv,.csv000,.txt"
                           style="display: none;" />

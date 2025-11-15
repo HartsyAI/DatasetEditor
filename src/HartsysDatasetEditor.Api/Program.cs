@@ -94,7 +94,9 @@ app.MapPost("/api/datasets/{datasetId:guid}/upload", async (
     await repository.UpdateAsync(dataset, cancellationToken);
     await ingestionService.StartIngestionAsync(datasetId, tempFilePath, cancellationToken);
     return Results.Accepted($"/api/datasets/{datasetId}", new { datasetId, fileName = file.FileName });
-}).Accepts<IFormFile>("multipart/form-data").WithName("UploadDatasetFile");
+}).Accepts<IFormFile>("multipart/form-data")
+    .DisableAntiforgery()
+    .WithName("UploadDatasetFile");
 app.MapGet("/api/datasets/{datasetId:guid}/items", async (Guid datasetId, int? pageSize, string? cursor,
     IDatasetItemRepository repository,
     CancellationToken cancellationToken) =>

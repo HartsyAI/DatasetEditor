@@ -26,6 +26,7 @@ public partial class DatasetUploader
     public bool _isUploading = false;
     public string? _errorMessage = null;
     public string _uploadStatus = string.Empty;
+    public string _fileInputKey = Guid.NewGuid().ToString();
 
     private const string FileInputElementId = "fileInput";
 
@@ -78,7 +79,8 @@ public partial class DatasetUploader
         _errorMessage = null;
         _isUploading = true;
         _uploadStatus = "Validating file...";
-        StateHasChanged();
+
+        MemoryStream? uploadBuffer = null;
 
         try
         {
@@ -97,10 +99,17 @@ public partial class DatasetUploader
 
             Logs.Info($"Processing file: {file.Name} ({file.Size} bytes)");
 
+            uploadBuffer = new MemoryStream((int)Math.Min(file.Size, MaxFileSize));
+            await using (Stream browserStream = file.OpenReadStream(MaxFileSize))
+            {
+                await browserStream.CopyToAsync(uploadBuffer);
+            }
+            uploadBuffer.Position = 0;
+
             DatasetState.SetLoading(true);
 
             _uploadStatus = "Creating dataset...";
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
 
             string datasetName = Path.GetFileNameWithoutExtension(file.Name);
             DatasetDetailDto? dataset = await DatasetApiClient.CreateDatasetAsync(
@@ -114,13 +123,13 @@ public partial class DatasetUploader
             Guid datasetId = dataset.Id;
 
             _uploadStatus = "Uploading file to API...";
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
 
-            await using Stream stream = file.OpenReadStream(MaxFileSize);
-            await DatasetApiClient.UploadDatasetAsync(datasetId, stream, file.Name, file.ContentType);
+            uploadBuffer.Position = 0;
+            await DatasetApiClient.UploadDatasetAsync(datasetId, uploadBuffer, file.Name, file.ContentType);
 
             _uploadStatus = "Loading dataset from API...";
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
 
             await DatasetCacheService.LoadFirstPageAsync(datasetId);
 
@@ -143,7 +152,9 @@ public partial class DatasetUploader
         finally
         {
             _isUploading = false;
-            StateHasChanged();
+            await InvokeAsync(StateHasChanged);
+            ResetFileInput();
+            uploadBuffer?.Dispose();
         }
     }
 
@@ -156,6 +167,11 @@ public partial class DatasetUploader
         }
 
         return $"Upload failed: {ex.Message}";
+    }
+
+    private void ResetFileInput()
+    {
+        _fileInputKey = Guid.NewGuid().ToString();
     }
     
     // TODO: Add file validation (check headers, sample data)

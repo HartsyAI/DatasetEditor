@@ -31,7 +31,8 @@ public sealed class DatasetApiClient
     {
         using MultipartFormDataContent form = new();
         var fileContent = new StreamContent(fileStream);
-        fileContent.Headers.ContentType = new MediaTypeHeaderValue(contentType ?? "application/octet-stream");
+        string mediaType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType;
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue(mediaType);
         form.Add(fileContent, "file", fileName);
 
         HttpResponseMessage response = await _httpClient.PostAsync($"api/datasets/{datasetId}/upload", form, cancellationToken);
