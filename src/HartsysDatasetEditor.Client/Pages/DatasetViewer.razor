@@ -92,11 +92,17 @@
                                              OnClick="@_viewState.ToggleFilterPanel"
                                              Title="Toggle filters" />
                                 <MudText Typo="Typo.h6">@_datasetState.CurrentDataset.Name</MudText>
-                                <MudChip T="string" Value="@(_filteredCount.ToString("N0"))"
+                                <MudChip T="string" Value="@GetItemCountLabel()"
                                          Size="Size.Small"
                                          Color="Color.Info">
-                                    @_filteredCount.ToString("N0") items
+                                    @GetItemCountLabel()
                                 </MudChip>
+                                @if (_isBuffering)
+                                {
+                                    <MudTooltip Text="Fetching more images from the server">
+                                        <MudProgressCircular Size="Size.Small" Color="Color.Primary" Class="ml-2" />
+                                    </MudTooltip>
+                                }
                                 @if (_datasetState.HasSelection)
                                 {
                                     <MudChip T="string" Value="@(_datasetState.SelectedCount.ToString())"
@@ -140,8 +146,7 @@
                     </MudPaper>
                     
                     <!-- Viewer Container -->
-                    <ViewerContainer FilteredItems="@_filteredItems"
-                                     ItemsProvider="@ProvideItemsAsync"
+                    <ViewerContainer ItemsProvider="@_cachedItemsProvider"
                                      OnItemSelected="@HandleItemSelected" />
                 </MudStack>
             </MudItem>

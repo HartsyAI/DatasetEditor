@@ -25,6 +25,7 @@ public sealed class DatasetCacheService : IDisposable
     private readonly ILogger<DatasetCacheService> _logger;
     private readonly SemaphoreSlim _pageLock = new(1, 1);
     private bool _isIndexedDbEnabled = true;
+    private bool _isBuffering;
 
     public Guid? CurrentDatasetId { get; private set; }
     public string? NextCursor { get; private set; }
@@ -32,8 +33,10 @@ public sealed class DatasetCacheService : IDisposable
 
     public bool HasMorePages => !string.IsNullOrWhiteSpace(NextCursor);
     public bool IsIndexedDbEnabled => _isIndexedDbEnabled;
+    public bool IsBuffering => _isBuffering;
 
     public event Action? OnDatasetDetailChanged;
+    public event Action<bool>? OnBufferingStateChanged;
 
     public DatasetCacheService(
         DatasetApiClient apiClient,
@@ -93,11 +96,18 @@ public sealed class DatasetCacheService : IDisposable
         }
     }
 
-    public async Task<bool> LoadNextPageAsync(CancellationToken cancellationToken = default)
+    public async Task<bool> LoadNextPageAsync(CancellationToken cancellationToken = default, bool suppressBufferingNotification = false)
     {
         if (CurrentDatasetId == null || string.IsNullOrWhiteSpace(NextCursor))
         {
             return false;
+        }
+
+        bool bufferingRaised = false;
+        if (!suppressBufferingNotification)
+        {
+            SetBuffering(true);
+            bufferingRaised = true;
         }
 
         await _pageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -118,6 +128,10 @@ public sealed class DatasetCacheService : IDisposable
         finally
         {
             _pageLock.Release();
+            if (bufferingRaised)
+            {
+                SetBuffering(false);
+            }
         }
     }
 
@@ -128,12 +142,30 @@ public sealed class DatasetCacheService : IDisposable
             return;
         }
 
-        while (_datasetState.Items.Count < minimumCount && HasMorePages)
+        bool bufferingRaised = false;
+
+        try
         {
-            bool loaded = await LoadNextPageAsync(cancellationToken).ConfigureAwait(false);
-            if (!loaded)
+            while (_datasetState.Items.Count < minimumCount && HasMorePages)
             {
-                break;
+                if (!bufferingRaised)
+                {
+                    SetBuffering(true);
+                    bufferingRaised = true;
+                }
+
+                bool loaded = await LoadNextPageAsync(cancellationToken, suppressBufferingNotification: true).ConfigureAwait(false);
+                if (!loaded)
+                {
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            if (bufferingRaised)
+            {
+                SetBuffering(false);
             }
         }
     }
@@ -225,6 +257,17 @@ public sealed class DatasetCacheService : IDisposable
         }
 
         return mapped;
+    }
+
+    private void SetBuffering(bool value)
+    {
+        if (_isBuffering == value)
+        {
+            return;
+        }
+
+        _isBuffering = value;
+        OnBufferingStateChanged?.Invoke(value);
     }
 
     public void Dispose()

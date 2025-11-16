@@ -4,7 +4,26 @@
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 
 <div class="image-grid columns-@_gridColumns">
-    @if (FilteredItems == null || FilteredItems.Count == 0)
+    @* CRITICAL: Virtualize component for handling billions of images *@
+    @* Only renders visible items + overscan buffer *@
+    @* Prevents DOM bloat and maintains constant memory usage *@
+    @if (ItemsProvider != null)
+    {
+        <Virtualize ItemsProvider="@ItemsProvider" ItemSize="250" OverscanCount="10" Context="item">
+            <ItemContent>
+                <ImageCard Item="@((ImageItem)item)" 
+                          IsSelected="@IsItemSelected(item)"
+                          OnClick="@(() => HandleItemClick(item))"
+                          OnToggleSelect="@(() => HandleToggleSelection(item))" />
+            </ItemContent>
+            <Placeholder>
+                <div class="image-card-skeleton" style="height: 250px;">
+                    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="100%" />
+                </div>
+            </Placeholder>
+        </Virtualize>
+    }
+    else
     {
         <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="pa-8">
             <MudIcon Icon="@Icons.Material.Filled.ImageNotSupported" Size="Size.Large" Color="Color.Secondary" />
@@ -13,30 +32,6 @@
                 Try adjusting your filters or upload a dataset
             </MudText>
         </MudStack>
-    }
-    else
-    {
-        @* CRITICAL: Virtualize component for handling billions of images *@
-        @* Only renders visible items + overscan buffer *@
-        @* Prevents DOM bloat and maintains constant memory usage *@
-        @if (ItemsProvider is null)
-        {
-            <Virtualize Items="@FilteredItems" ItemSize="250" OverscanCount="10" Context="item">
-                <ImageCard Item="@((ImageItem)item)" 
-                          IsSelected="@IsItemSelected(item)"
-                          OnClick="@(() => HandleItemClick(item))"
-                          OnToggleSelect="@(() => HandleToggleSelection(item))" />
-            </Virtualize>
-        }
-        else
-        {
-            <Virtualize ItemsProvider="@ItemsProvider" ItemSize="250" OverscanCount="10" Context="item">
-                <ImageCard Item="@((ImageItem)item)" 
-                          IsSelected="@IsItemSelected(item)"
-                          OnClick="@(() => HandleItemClick(item))"
-                          OnToggleSelect="@(() => HandleToggleSelection(item))" />
-            </Virtualize>
-        }
     }
 </div>
 

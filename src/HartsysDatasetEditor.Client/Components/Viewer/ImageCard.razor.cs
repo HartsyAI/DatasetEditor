@@ -33,7 +33,7 @@ public partial class ImageCard
     {
         _showMetadataOverlay = ViewState.Settings.ShowMetadataOverlay;
         PrepareImageUrl();
-        Logs.Info($"ImageCard initialized for item: {Item.Id}");
+        // Logs removed - this was creating excessive console output
     }
 
     /// <summary>Updates component when parameters change.</summary>

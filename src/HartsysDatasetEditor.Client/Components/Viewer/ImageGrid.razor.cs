@@ -14,8 +14,7 @@ public partial class ImageGrid : IDisposable
     [Inject] public DatasetState DatasetState { get; set; } = default!;
     [Inject] public ViewState ViewState { get; set; } = default!;
 
-    /// <summary>List of filtered items to display in the grid.</summary>
-    [Parameter] public List<IDatasetItem> FilteredItems { get; set; } = new();
+    // FilteredItems removed - using ItemsProvider delegate exclusively
 
     /// <summary>Optional items provider for virtualized paging.</summary>
     [Parameter] public ItemsProviderDelegate<IDatasetItem>? ItemsProvider { get; set; }

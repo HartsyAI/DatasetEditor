@@ -13,8 +13,7 @@ public partial class ViewerContainer : IDisposable
     [Inject] public DatasetState DatasetState { get; set; } = default!;
     [Inject] public ViewState ViewState { get; set; } = default!;
 
-    /// <summary>List of filtered items to display in the viewer.</summary>
-    [Parameter] public List<IDatasetItem> FilteredItems { get; set; } = new();
+    // FilteredItems removed - using ItemsProvider delegate exclusively
 
     /// <summary>Optional virtualized items provider for incremental loading.</summary>
     [Parameter] public ItemsProviderDelegate<IDatasetItem>? ItemsProvider { get; set; }
@@ -35,11 +34,7 @@ public partial class ViewerContainer : IDisposable
         Logs.Info("ViewerContainer initialized");
     }
 
-    /// <summary>Updates parameters when FilteredItems changes.</summary>
-    protected override void OnParametersSet()
-    {
-        DetermineModality();
-    }
+    // OnParametersSet removed - modality determined from DatasetState only
 
     /// <summary>Determines the modality of the current dataset.</summary>
     public void DetermineModality()
@@ -49,10 +44,10 @@ public partial class ViewerContainer : IDisposable
             _modality = DatasetState.CurrentDataset.Modality;
             Logs.Info($"Modality determined: {_modality}");
         }
-        else if (FilteredItems.Count > 0)
+        else if (DatasetState.Items.Count > 0)
         {
-            // Infer modality from first item
-            IDatasetItem firstItem = FilteredItems[0];
+            // Infer modality from first item in DatasetState
+            IDatasetItem firstItem = DatasetState.Items[0];
             _modality = firstItem.Modality;
             Logs.Info($"Modality inferred from items: {_modality}");
         }
@@ -67,8 +62,17 @@ public partial class ViewerContainer : IDisposable
     /// <summary>Handles dataset state changes and updates modality.</summary>
     public void HandleDatasetStateChanged()
     {
+        // Only determine modality if dataset changes, but don't re-render
+        // When items are appended, Virtualize component handles rendering via ItemsProvider
+        // We only need to re-render if the actual dataset or modality changes
+        Modality previousModality = _modality;
         DetermineModality();
-        StateHasChanged();
+        
+        // Only trigger re-render if modality actually changed (new dataset loaded)
+        if (_modality != previousModality)
+        {
+            StateHasChanged();
+        }
     }
 
     /// <summary>Handles view state changes and updates view mode.</summary>
