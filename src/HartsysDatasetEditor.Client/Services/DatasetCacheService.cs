@@ -6,6 +6,7 @@ using HartsysDatasetEditor.Client.Services.Api;
 using HartsysDatasetEditor.Client.Services.StateManagement;
 using HartsysDatasetEditor.Contracts.Common;
 using HartsysDatasetEditor.Contracts.Datasets;
+using HartsysDatasetEditor.Core.Enums;
 using HartsysDatasetEditor.Core.Interfaces;
 using HartsysDatasetEditor.Core.Models;
 using Microsoft.Extensions.Logging;
@@ -197,6 +198,7 @@ public sealed class DatasetCacheService : IDisposable
         Description = dto.Description ?? string.Empty,
         CreatedAt = dto.CreatedAt,
         UpdatedAt = dto.UpdatedAt,
+        Modality = Modality.Image,
         TotalItems = dto.TotalItems > int.MaxValue ? int.MaxValue : (int)dto.TotalItems
     };
 
