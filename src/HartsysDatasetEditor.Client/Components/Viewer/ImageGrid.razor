@@ -11,7 +11,8 @@
             <ImageCard Item="@((ImageItem)item)" 
                       IsSelected="@IsItemSelected(item)"
                       OnClick="@(() => HandleItemClick(item))"
-                      OnToggleSelect="@(() => HandleToggleSelection(item))" />
+                      OnToggleSelect="@(() => HandleToggleSelection(item))"
+                      OnEdit="@(() => HandleItemClick(item))" />
         }
     </div>
     

@@ -7,7 +7,7 @@ using HartsysDatasetEditor.Contracts.Datasets;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddDatasetServices();
+builder.Services.AddDatasetServices(builder.Configuration);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 string corsPolicyName = "DatasetEditorClient";
@@ -113,4 +113,9 @@ app.MapGet("/api/datasets/{datasetId:guid}/items", async (Guid datasetId, int? p
     return Results.Ok(response);
 }).WithName("ListDatasetItems");
 app.MapFallbackToFile("index.html");
+
+// Initialize database
+DatabaseInitializationService dbInit = app.Services.GetRequiredService<DatabaseInitializationService>();
+dbInit.Initialize();
+
 app.Run();

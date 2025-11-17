@@ -172,6 +172,19 @@ public class DatasetState
         return SelectedItems.Contains(item);
     }
     
+    /// <summary>Updates an item in the dataset.</summary>
+    /// <param name="item">Item to update.</param>
+    public void UpdateItem(IDatasetItem item)
+    {
+        int index = Items.FindIndex(i => i.Id == item.Id);
+        if (index >= 0)
+        {
+            Items[index] = item;
+            NotifyStateChanged();
+            Logs.Info($"Item updated: {item.Id}");
+        }
+    }
+    
     /// <summary>Clears the current dataset and resets all state.</summary>
     public void ClearDataset()
     {

@@ -5,10 +5,11 @@ using HartsysDatasetEditor.Core.Utilities;
 
 namespace HartsysDatasetEditor.Client.Components.Viewer;
 
-/// <summary>Individual image card component with lazy loading, selection, and metadata overlay.</summary>
+/// <summary>Enhanced image card component with 3-tier metadata display</summary>
 public partial class ImageCard
 {
     [Inject] public ViewState ViewState { get; set; } = default!;
+    [Inject] public DatasetState DatasetState { get; set; } = default!;
 
     /// <summary>The image item to display.</summary>
     [Parameter] public ImageItem Item { get; set; } = default!;
@@ -21,19 +22,19 @@ public partial class ImageCard
 
     /// <summary>Event callback when the selection checkbox is toggled.</summary>
     [Parameter] public EventCallback<ImageItem> OnToggleSelect { get; set; }
+    
+    /// <summary>Event callback when edit is clicked.</summary>
+    [Parameter] public EventCallback<ImageItem> OnEdit { get; set; }
 
-    public bool _isHovered = false;
-    public bool _imageLoaded = false;
-    public bool _imageError = false;
-    public bool _showMetadataOverlay = true;
-    public string _imageUrl = string.Empty;
+    private bool _isHovered = false;
+    private bool _imageLoaded = false;
+    private bool _imageError = false;
+    private string _imageUrl = string.Empty;
 
     /// <summary>Initializes component and prepares image URL.</summary>
     protected override void OnInitialized()
     {
-        _showMetadataOverlay = ViewState.Settings.ShowMetadataOverlay;
         PrepareImageUrl();
-        // Logs removed - this was creating excessive console output
     }
 
     /// <summary>Updates component when parameters change.</summary>
@@ -65,6 +66,18 @@ public partial class ImageCard
         // Example: _imageUrl = ImageHelper.AddResizeParams(_imageUrl, width: 400, height: 400);
     }
 
+    /// <summary>Handles mouse enter event.</summary>
+    public void HandleMouseEnter()
+    {
+        _isHovered = true;
+    }
+
+    /// <summary>Handles mouse leave event.</summary>
+    public void HandleMouseLeave()
+    {
+        _isHovered = false;
+    }
+
     /// <summary>Handles click event on the card.</summary>
     public async Task HandleClick()
     {
@@ -77,12 +90,62 @@ public partial class ImageCard
         await OnToggleSelect.InvokeAsync(Item);
     }
 
+    /// <summary>Toggles favorite status.</summary>
+    public void HandleToggleFavorite()
+    {
+        Item.IsFavorite = !Item.IsFavorite;
+        DatasetState.UpdateItem(Item);
+        StateHasChanged();
+    }
+
     /// <summary>Handles image load error.</summary>
     public void HandleImageError()
     {
         _imageError = true;
         _imageLoaded = false;
         Logs.Error($"Failed to load image for item: {Item.Id}");
+    }
+    
+    /// <summary>Handles download button click.</summary>
+    public void HandleDownload()
+    {
+        // TODO: Implement download functionality
+        Logs.Info($"Download requested for: {Item.Id}");
+    }
+
+    /// <summary>Handles edit button click.</summary>
+    public async Task HandleEditClick()
+    {
+        await OnEdit.InvokeAsync(Item);
+    }
+
+    /// <summary>Handles menu button click.</summary>
+    public void HandleMenuClick()
+    {
+        // TODO: Show context menu
+        Logs.Info($"Menu clicked for: {Item.Id}");
+    }
+
+    /// <summary>Gets display title with truncation.</summary>
+    public string GetDisplayTitle()
+    {
+        if (string.IsNullOrEmpty(Item.Title))
+            return "Untitled";
+        
+        return Item.Title.Length > 30 
+            ? Item.Title.Substring(0, 27) + "..." 
+            : Item.Title;
+    }
+
+    /// <summary>Gets truncated description for hover overlay.</summary>
+    public string GetTruncatedDescription()
+    {
+        if (string.IsNullOrEmpty(Item.Description))
+            return string.Empty;
+        
+        return Item.Description.Length > 100 
+            ? Item.Description.Substring(0, 97) + "..." 
+            : Item.Description;
     }
     
     // TODO: Add context menu on right-click (download, favorite, delete, etc.)
