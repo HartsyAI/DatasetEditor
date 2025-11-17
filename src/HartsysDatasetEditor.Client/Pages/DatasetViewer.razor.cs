@@ -1,3 +1,4 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components;
@@ -187,6 +188,32 @@ public partial class DatasetViewer : IDisposable
         }
         
         Logs.Info($"Item selected: {item.Id}");
+    }
+
+    /// <summary>Handles infinite scroll request to load more items from API.</summary>
+    public async Task HandleLoadMoreAsync()
+    {
+        // Only load if we have more pages available and not already loading
+        if (_datasetCache.HasMorePages && !_isLoading)
+        {
+            Logs.Info("[DatasetViewer] ImageGrid requested more items, loading next page");
+
+            try
+            {
+                await _datasetCache.LoadNextPageAsync();
+                // Items are automatically appended to DatasetState.Items
+                // ImageGrid will detect this and render new items smoothly
+            }
+            catch (Exception ex)
+            {
+                Logs.Error($"[DatasetViewer] Error loading more items: {ex.Message}");
+                _notificationService.ShowError($"Failed to load more images: {ex.Message}");
+            }
+        }
+        else if (!_datasetCache.HasMorePages)
+        {
+            Logs.Info("[DatasetViewer] No more pages available to load");
+        }
     }
 
     // ItemsProvider methods removed - using Items parameter for smooth infinite scroll without flicker

@@ -5,7 +5,8 @@
 @* Dynamically render the appropriate viewer based on modality and view mode *@
 @if (_modality == Modality.Image)
 {
-    <ImageGrid OnItemSelected="@OnItemSelected" />
+    <ImageGrid OnItemSelected="@OnItemSelected"
+               OnLoadMore="@OnLoadMore" />
 }
 else if (_modality == Modality.Text)
 {

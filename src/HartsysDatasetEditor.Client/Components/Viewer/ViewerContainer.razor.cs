@@ -16,6 +16,9 @@ public partial class ViewerContainer : IDisposable
     /// <summary>Event callback when an item is selected.</summary>
     [Parameter] public EventCallback<IDatasetItem> OnItemSelected { get; set; }
 
+    /// <summary>Event callback when more items need to be loaded (for infinite scroll).</summary>
+    [Parameter] public EventCallback OnLoadMore { get; set; }
+
     public Modality _modality = Modality.Image;
     public ViewMode _viewMode = ViewMode.Grid;
 

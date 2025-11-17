@@ -146,7 +146,8 @@
                     </MudPaper>
                     
                     <!-- Viewer Container -->
-                    <ViewerContainer OnItemSelected="@HandleItemSelected" />
+                    <ViewerContainer OnItemSelected="@HandleItemSelected"
+                                     OnLoadMore="@HandleLoadMoreAsync" />
                 </MudStack>
             </MudItem>
             
