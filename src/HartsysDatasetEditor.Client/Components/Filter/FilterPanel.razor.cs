@@ -62,11 +62,27 @@ public partial class FilterPanel : IDisposable
         Logs.Info($"Loaded {_availableTags.Count} available tags for filtering");
     }
 
+    private string? _lastDatasetId = null;
+    
     /// <summary>Handles dataset state changes to refresh available filters.</summary>
     public void HandleDatasetStateChanged()
     {
-        LoadAvailableFilters();
-        StateHasChanged();
+        Logs.Info($"[FILTERPANEL] HandleDatasetStateChanged called, Items={DatasetState.Items.Count}, DatasetId={DatasetState.CurrentDataset?.Id}");
+        
+        // Only reload filters if the dataset ID actually changed (not just items appended)
+        string? currentDatasetId = DatasetState.CurrentDataset?.Id;
+        
+        if (currentDatasetId != _lastDatasetId)
+        {
+            Logs.Info($"[FILTERPANEL] New dataset detected (changed from {_lastDatasetId} to {currentDatasetId}), loading available filters");
+            _lastDatasetId = currentDatasetId;
+            LoadAvailableFilters();
+            StateHasChanged();
+        }
+        else
+        {
+            Logs.Info($"[FILTERPANEL] Same dataset, items appended, skipping filter reload and StateHasChanged");
+        }
     }
 
     /// <summary>Handles filter state changes from external sources.</summary>

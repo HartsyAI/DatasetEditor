@@ -13,11 +13,6 @@ public partial class ViewerContainer : IDisposable
     [Inject] public DatasetState DatasetState { get; set; } = default!;
     [Inject] public ViewState ViewState { get; set; } = default!;
 
-    // FilteredItems removed - using ItemsProvider delegate exclusively
-
-    /// <summary>Optional virtualized items provider for incremental loading.</summary>
-    [Parameter] public ItemsProviderDelegate<IDatasetItem>? ItemsProvider { get; set; }
-
     /// <summary>Event callback when an item is selected.</summary>
     [Parameter] public EventCallback<IDatasetItem> OnItemSelected { get; set; }
 
@@ -62,6 +57,8 @@ public partial class ViewerContainer : IDisposable
     /// <summary>Handles dataset state changes and updates modality.</summary>
     public void HandleDatasetStateChanged()
     {
+        Logs.Info($"[VIEWERCONTAINER] HandleDatasetStateChanged called, Items={DatasetState.Items.Count}");
+        
         // Only determine modality if dataset changes, but don't re-render
         // When items are appended, Virtualize component handles rendering via ItemsProvider
         // We only need to re-render if the actual dataset or modality changes
@@ -71,7 +68,12 @@ public partial class ViewerContainer : IDisposable
         // Only trigger re-render if modality actually changed (new dataset loaded)
         if (_modality != previousModality)
         {
+            Logs.Info($"[VIEWERCONTAINER] Modality changed from {previousModality} to {_modality}, triggering StateHasChanged");
             StateHasChanged();
+        }
+        else
+        {
+            Logs.Info($"[VIEWERCONTAINER] Modality unchanged ({_modality}), skipping StateHasChanged");
         }
     }
 

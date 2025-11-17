@@ -5,15 +5,11 @@
 @* Dynamically render the appropriate viewer based on modality and view mode *@
 @if (_modality == Modality.Image)
 {
-    <ImageGrid ItemsProvider="@ItemsProvider"
-               OnItemSelected="@OnItemSelected" />
+    <ImageGrid OnItemSelected="@OnItemSelected" />
 }
 else if (_modality == Modality.Text)
 {
-    <!-- TODO: Implement TextViewer component -->
-    <MudAlert Severity="Severity.Info">
-        Text viewer coming soon!
-    </MudAlert>
+    <TextGrid OnItemSelected="@OnItemSelected" />
 }
 else if (_modality == Modality.Video)
 {

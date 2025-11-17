@@ -55,6 +55,7 @@ public partial class Index : IDisposable
         Logs.Info("Navigating to settings");
     }
 
+
     /// <summary>Unsubscribes from state changes on disposal.</summary>
     public void Dispose()
     {

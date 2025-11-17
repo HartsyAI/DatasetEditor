@@ -36,9 +36,6 @@ public partial class DatasetViewer : IDisposable
     private bool _isIndexedDbEnabled;
     private bool _isBuffering;
     private bool _isStatusRefreshing;
-    private readonly object _itemsSignalLock = new();
-    private TaskCompletionSource<bool>? _itemsUpdatedSignal;
-    private ItemsProviderDelegate<IDatasetItem>? _cachedItemsProvider;
 
     /// <summary>Initializes component and subscribes to state changes.</summary>
     protected override void OnInitialized()
@@ -53,9 +50,6 @@ public partial class DatasetViewer : IDisposable
         _datasetDetail = _datasetCache.CurrentDatasetDetail;
         _isIndexedDbEnabled = _datasetCache.IsIndexedDbEnabled;
 
-        // Cache the ItemsProvider delegate to prevent new instances on every render
-        _cachedItemsProvider = ProvideItemsAsync;
-
         // Check if dataset is already loaded
         if (_datasetState.CurrentDataset != null)
         {
@@ -66,51 +60,7 @@ public partial class DatasetViewer : IDisposable
         Logs.Info("DatasetViewer page initialized");
     }
 
-    private async Task<bool> WaitForItemsAsync(int requiredIndex, CancellationToken cancellationToken)
-    {
-        while (_filteredItems.Count <= requiredIndex && _datasetCache.HasMorePages && !cancellationToken.IsCancellationRequested)
-        {
-            TaskCompletionSource<bool> waiter;
-            lock (_itemsSignalLock)
-            {
-                if (_itemsUpdatedSignal == null || _itemsUpdatedSignal.Task.IsCompleted)
-                {
-                    _itemsUpdatedSignal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-                }
-
-                waiter = _itemsUpdatedSignal;
-            }
-
-            CancellationTokenRegistration registration = cancellationToken.Register(() => waiter.TrySetCanceled(cancellationToken));
-            try
-            {
-                await waiter.Task.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                registration.Dispose();
-                return false;
-            }
-            finally
-            {
-                registration.Dispose();
-            }
-        }
-
-        return _filteredItems.Count > requiredIndex;
-    }
-
-    private void SignalItemsUpdated()
-    {
-        TaskCompletionSource<bool>? pending;
-        lock (_itemsSignalLock)
-        {
-            pending = _itemsUpdatedSignal;
-            _itemsUpdatedSignal = null;
-        }
-
-        pending?.TrySetResult(true);
-    }
+    // WaitForItemsAsync and SignalItemsUpdated removed - we now use RefreshDataAsync instead
 
     /// <summary>Handles dataset state changes and updates UI.</summary>
     public void HandleDatasetStateChanged()
@@ -118,22 +68,43 @@ public partial class DatasetViewer : IDisposable
         _isLoading = _datasetState.IsLoading;
         _errorMessage = _datasetState.ErrorMessage;
         
-        // Signal any waiting ItemsProvider requests that new data is available
-        SignalItemsUpdated();
+        Logs.Info($"[DATASET STATE CHANGE] Items={_datasetState.Items.Count}, Loading={_isLoading}, Error={_errorMessage != null}");
+        
+        // When items are appended, update filtered list WITHOUT triggering parent re-render
+        if (!_isLoading && _datasetState.Items.Count > _lastFilteredSourceCount)
+        {
+            Logs.Info($"[DATASET STATE CHANGE] Items grew from {_lastFilteredSourceCount} to {_datasetState.Items.Count}");
+            
+            // Update filters WITHOUT calling StateHasChanged
+            ApplyFiltersQuiet();
+            
+            // Prefetch more data to keep buffer full
+            if (_datasetCache.HasMorePages)
+            {
+                int bufferTarget = _datasetState.Items.Count + PrefetchWindow;
+                Logs.Info($"[DATASET STATE CHANGE] Triggering background prefetch up to {bufferTarget}");
+                _ = _datasetCache.EnsureBufferedAsync(bufferTarget, CancellationToken.None);
+            }
+        }
         
         // Only re-render if we're in a loading/error state that needs UI updates
-        // When items are appended, Virtualize handles rendering automatically via ItemsProvider
+        // When items are appended, Virtualize with Items parameter handles rendering automatically
         if (_isLoading || !string.IsNullOrEmpty(_errorMessage))
         {
+            Logs.Info("[DATASET STATE CHANGE] Triggering StateHasChanged due to loading/error state");
             StateHasChanged();
+        }
+        else
+        {
+            Logs.Info("[DATASET STATE CHANGE] Skipping StateHasChanged - Virtualize will handle updates");
         }
     }
 
     /// <summary>Handles filter state changes and reapplies filters to dataset.</summary>
     public void HandleFilterStateChanged()
     {
-        ApplyFilters();
-        StateHasChanged();
+        Logs.Info("[FILTER STATE CHANGE] User changed filters, reapplying");
+        ApplyFilters(); // This calls StateHasChanged internally
     }
 
     /// <summary>Handles view state changes and updates view mode.</summary>
@@ -159,41 +130,39 @@ public partial class DatasetViewer : IDisposable
         // If we need the spinner, we can update it less frequently or use CSS animations
     }
 
-    /// <summary>Applies current filter criteria to the dataset items.</summary>
-    public void ApplyFilters()
+    /// <summary>Applies filters WITHOUT triggering StateHasChanged - for smooth item appending.</summary>
+    private void ApplyFiltersQuiet()
     {
-        if (_datasetState.CurrentDataset == null || _datasetState.Items.Count == 0)
-        {
-            _filteredItems = new List<IDatasetItem>();
-            _filteredCount = 0;
-            return;
-        }
-
+        Logs.Info($"[APPLY FILTERS QUIET] Called with {_datasetState.Items.Count} items");
+        
         if (!_filterState.HasActiveFilters)
         {
-            if (!ReferenceEquals(_filteredItems, _datasetState.Items))
+            // No filters: _filteredItems references DatasetState.Items directly
+            // When new items are appended to DatasetState.Items, _filteredItems automatically sees them
+            if (_filteredItems != _datasetState.Items)
             {
+                Logs.Info("[APPLY FILTERS QUIET] Updating _filteredItems reference to DatasetState.Items");
                 _filteredItems = _datasetState.Items;
             }
-
-            _filteredCount = _datasetState.Items.Count;
-            _lastFilteredSourceCount = _filteredCount;
-            _filterState.SetFilteredCount(_filteredCount);
-            Logs.Info($"No filters active: {_filteredCount} items pass-through");
-            return;
+        }
+        else
+        {
+            // Filters active: need to re-filter the new items
+            Logs.Info("[APPLY FILTERS QUIET] Filters active, re-filtering items");
+            _filteredItems = _filterService.ApplyFilters(_datasetState.Items, _filterState.Criteria);
         }
 
-        List<IDatasetItem> filtered = _filterService.ApplyFilters(
-            _datasetState.Items,
-            _filterState.Criteria
-        );
-
-        _filteredItems = filtered;
-        _filteredCount = filtered.Count;
+        _filteredCount = _filteredItems.Count;
         _lastFilteredSourceCount = _datasetState.Items.Count;
-        _filterState.SetFilteredCount(_filteredCount);
-        
-        Logs.Info($"Filters applied: {_filteredCount} items match criteria out of {_datasetState.Items.Count} total");
+        Logs.Info($"[APPLY FILTERS QUIET] Updated count to {_filteredCount}");
+    }
+
+    /// <summary>Applies current filter criteria to the dataset items.</summary>
+    private void ApplyFilters()
+    {
+        ApplyFiltersQuiet();
+        Logs.Info($"[APPLY FILTERS] Completed, triggering StateHasChanged");
+        StateHasChanged();
     }
 
     /// <summary>Sets the current view mode (Grid, List, Gallery).</summary>
@@ -220,80 +189,7 @@ public partial class DatasetViewer : IDisposable
         Logs.Info($"Item selected: {item.Id}");
     }
 
-    /// <summary>Provides paged data to the Virtualize component, requesting new API pages as needed.</summary>
-    private async ValueTask<ItemsProviderResult<IDatasetItem>> ProvideItemsAsync(ItemsProviderRequest request)
-    {
-        try
-        {
-            if (_datasetState.CurrentDataset is null)
-            {
-                return new ItemsProviderResult<IDatasetItem>(Array.Empty<IDatasetItem>(), 0);
-            }
-
-            int required = request.StartIndex + request.Count + PrefetchWindow;
-            await _datasetCache.EnsureBufferedAsync(required, request.CancellationToken).ConfigureAwait(false);
-
-            if (_lastFilteredSourceCount != _datasetState.Items.Count)
-            {
-                ApplyFilters();
-            }
-
-            if (_filteredItems.Count <= request.StartIndex)
-            {
-                bool hasItems = await WaitForItemsAsync(request.StartIndex, request.CancellationToken).ConfigureAwait(false);
-                if (hasItems && _lastFilteredSourceCount != _datasetState.Items.Count)
-                {
-                    ApplyFilters();
-                }
-
-                if (!hasItems || _filteredItems.Count <= request.StartIndex)
-                {
-                    return new ItemsProviderResult<IDatasetItem>(Array.Empty<IDatasetItem>(), _filteredCount);
-                }
-            }
-
-            int available = Math.Min(request.Count, _filteredItems.Count - request.StartIndex);
-            List<IDatasetItem> segment = _filteredItems.GetRange(request.StartIndex, available);
-            int virtualCount = GetVirtualizedTotalCount(request);
-            return new ItemsProviderResult<IDatasetItem>(segment, virtualCount);
-        }
-        catch (OperationCanceledException)
-        {
-            // Virtualize component canceled the request (user scrolled away) - this is expected behavior
-            // Return current state without throwing
-            Logs.Info($"ItemsProvider request canceled at index {request.StartIndex} (user scrolled)");
-            return new ItemsProviderResult<IDatasetItem>(Array.Empty<IDatasetItem>(), _filteredCount);
-        }
-        catch (Exception ex)
-        {
-            // Log unexpected errors but don't crash the component
-            Logs.Error($"ItemsProvider error at index {request.StartIndex}: {ex.Message}");
-            return new ItemsProviderResult<IDatasetItem>(Array.Empty<IDatasetItem>(), _filteredCount);
-        }
-    }
-
-    private int GetVirtualizedTotalCount(ItemsProviderRequest request)
-    {
-        long datasetTotal = _datasetState.CurrentDataset?.TotalItems ?? 0;
-
-        if (!_filterState.HasActiveFilters && datasetTotal > 0)
-        {
-            return (int)Math.Max(datasetTotal, _filteredItems.Count);
-        }
-
-        int baseCount = _filteredItems.Count;
-
-        if (_datasetCache.HasMorePages)
-        {
-            baseCount = Math.Max(baseCount, request.StartIndex + request.Count + 1);
-        }
-        else if (datasetTotal > 0)
-        {
-            baseCount = Math.Max(baseCount, (int)Math.Min(datasetTotal, int.MaxValue));
-        }
-
-        return baseCount;
-    }
+    // ItemsProvider methods removed - using Items parameter for smooth infinite scroll without flicker
 
     private string GetItemCountLabel()
     {
