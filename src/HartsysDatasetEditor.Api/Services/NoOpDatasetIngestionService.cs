@@ -26,6 +26,18 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
         _logger = logger;
     }
 
+    public Task ImportFromHuggingFaceAsync(Guid datasetId, ImportHuggingFaceDatasetRequest request, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("[HF IMPORT] Dataset {DatasetId} requested repo {Repo} (streaming={Streaming})", datasetId, request.Repository, request.IsStreaming);
+
+        // TODO: Implement Hugging Face downloader and ingestion pipeline.
+        // 1. Validate dataset exists and update SourceType/SourceUri/IsStreaming fields.
+        // 2. If IsStreaming == true, skip ingestion and mark dataset as read-only streaming reference.
+        // 3. If IsStreaming == false, queue download job, persist dataset files, and call StartIngestionAsync.
+
+        return Task.CompletedTask;
+    }
+
     public async Task StartIngestionAsync(Guid datasetId, string? uploadLocation, CancellationToken cancellationToken = default)
     {
         DatasetEntity? dataset = await _datasetRepository.GetAsync(datasetId, cancellationToken);

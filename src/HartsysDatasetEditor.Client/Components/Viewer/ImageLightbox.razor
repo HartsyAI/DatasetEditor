@@ -1,6 +1,7 @@
 @* Full-screen lightbox overlay for high-resolution image preview with detailed metadata. *@
 <MudDialog MaxWidth="MaxWidth.ExtraLarge" FullWidth="true">
-    <DialogContent Class="lightbox-content">
+    <DialogContent>
+        <div class="lightbox-content">
         <MudGrid Spacing="2">
             <MudItem xs="12" md="7">
                 <div class="lightbox-image-wrapper">
@@ -34,14 +35,14 @@
 
                             @if (!string.IsNullOrEmpty(Item?.GetFormattedDimensions()))
                             {
-                                <MudChip Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
                                     @Item?.GetFormattedDimensions()
                                 </MudChip>
                             }
 
                             @if (!string.IsNullOrEmpty(Item?.GetAspectRatioString()))
                             {
-                                <MudChip Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small">
+                                <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small">
                                     @Item?.GetAspectRatioString()
                                 </MudChip>
                             }
@@ -51,10 +52,10 @@
                         {
                             <div class="tag-section">
                                 <MudText Typo="Typo.subtitle2">Tags</MudText>
-                                <MudChipSet>
+                                <MudChipSet T="string">
                                     @foreach (string tag in _tagList)
                                     {
-                                        <MudChip Color="Color.Info" Variant="Variant.Text" Size="Size.Small">@tag</MudChip>
+                                        <MudChip T="string" Color="Color.Info" Variant="Variant.Text" Size="Size.Small">@tag</MudChip>
                                     }
                                 </MudChipSet>
                             </div>
@@ -97,6 +98,7 @@
                 </MudPaper>
             </MudItem>
         </MudGrid>
+        </div>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="@CloseAsync">Close</MudButton>
@@ -165,7 +167,7 @@
         word-break: break-word;
     }
 
-    @media (max-width: 900px) {
+    @@media (max-width: 900px) {
         .metadata-grid {
             grid-template-columns: 1fr;
         }
@@ -181,7 +183,7 @@
     private string _imageUrl => ImageUrl ?? Item?.ImageUrl ?? string.Empty;
 
     private string DisplayTitle => string.IsNullOrWhiteSpace(Item?.Title)
-        ? (Item?.ExternalId ?? "Image")
+        ? (Item?.Id ?? "Image")
         : Item!.Title;
 
     private string PrimaryInfoLine => Item == null
@@ -203,7 +205,6 @@
 
     protected override void OnParametersSet()
     {
-        PrepareImageUrl();
         BuildMetadataCollections();
     }
 

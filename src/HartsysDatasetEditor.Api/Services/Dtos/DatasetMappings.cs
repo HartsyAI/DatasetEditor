@@ -14,6 +14,9 @@ internal static class DatasetMappings
         TotalItems = entity.TotalItems,
         CreatedAt = entity.CreatedAt,
         UpdatedAt = entity.UpdatedAt,
+        SourceType = entity.SourceType,
+        SourceUri = entity.SourceUri,
+        IsStreaming = entity.IsStreaming,
     };
 
     public static DatasetDetailDto ToDetailDto(this DatasetEntity entity) => new()
@@ -26,5 +29,8 @@ internal static class DatasetMappings
         CreatedAt = entity.CreatedAt,
         UpdatedAt = entity.UpdatedAt,
         SourceFileName = entity.SourceFileName,
+        SourceType = entity.SourceType,
+        SourceUri = entity.SourceUri,
+        IsStreaming = entity.IsStreaming,
     };
 }

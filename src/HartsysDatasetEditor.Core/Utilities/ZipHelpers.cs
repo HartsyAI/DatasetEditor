@@ -3,9 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace HartsysDatasetEditor.Core.Utilities;
 
-/// <summary>
-/// Utility class for handling ZIP file operations including extraction, validation, and multi-part detection.
-/// </summary>
+/// <summary>Utility class for handling ZIP file operations including extraction, validation, and multi-part detection.</summary>
 public static class ZipHelpers
 {
     /// <summary>Supported dataset file extensions.</summary>
@@ -16,9 +14,7 @@ public static class ZipHelpers
         ".json", ".jsonl" // Future support
     };
 
-    /// <summary>
-    /// Extracts all dataset files from a ZIP archive into memory streams.
-    /// </summary>
+    /// <summary>Extracts all dataset files from a ZIP archive into memory streams.</summary>
     /// <param name="zipStream">Stream containing the ZIP archive.</param>
     /// <returns>Dictionary of filename to content stream.</returns>
     public static async Task<Dictionary<string, MemoryStream>> ExtractDatasetFilesAsync(Stream zipStream)
@@ -76,9 +72,7 @@ public static class ZipHelpers
         }
     }
     
-    /// <summary>
-    /// Checks if a file is a valid ZIP archive.
-    /// </summary>
+    /// <summary>Checks if a stream is a valid ZIP archive.</summary>
     public static bool IsZipFile(Stream stream)
     {
         if (stream == null || !stream.CanRead || !stream.CanSeek)
@@ -111,17 +105,13 @@ public static class ZipHelpers
         }
     }
     
-    /// <summary>
-    /// Checks if a file is a valid ZIP archive by extension.
-    /// </summary>
+    /// <summary>IsZipFile by extension.</summary>
     public static bool IsZipFile(string filename)
     {
         return Path.GetExtension(filename).Equals(".zip", StringComparison.OrdinalIgnoreCase);
     }
     
-    /// <summary>
-    /// Detects multi-part files (e.g., photos.csv000, photos.csv001, photos.csv002).
-    /// </summary>
+    /// <summary>Detects multi-part files (e.g., photos.csv000, photos.csv001, photos.csv002).</summary>
     /// <param name="filenames">List of filenames to analyze.</param>
     /// <returns>Dictionary of base filename to list of parts in order.</returns>
     public static Dictionary<string, List<string>> DetectMultiPartFiles(IEnumerable<string> filenames)
@@ -163,9 +153,7 @@ public static class ZipHelpers
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
     }
     
-    /// <summary>
-    /// Merges multiple part files into a single stream.
-    /// </summary>
+    /// <summary>Merges multiple part files into a single stream.</summary>
     /// <param name="partStreams">Dictionary of filename to stream, in order.</param>
     /// <param name="skipHeadersAfterFirst">If true, skips header row in subsequent parts (for CSV/TSV).</param>
     /// <returns>Merged stream.</returns>
@@ -227,9 +215,7 @@ public static class ZipHelpers
         return merged;
     }
     
-    /// <summary>
-    /// Estimates the decompressed size of a ZIP archive.
-    /// </summary>
+    /// <summary>Estimates the decompressed size of a ZIP archive.</summary>
     public static long EstimateDecompressedSize(Stream zipStream)
     {
         long originalPosition = zipStream.Position;

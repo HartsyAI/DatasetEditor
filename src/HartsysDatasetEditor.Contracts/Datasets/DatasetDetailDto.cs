@@ -11,4 +11,7 @@ public sealed record DatasetDetailDto
     public DateTime CreatedAt { get; init; }
     public DateTime UpdatedAt { get; init; }
     public string? SourceFileName { get; init; }
+    public DatasetSourceType SourceType { get; init; } = DatasetSourceType.LocalUpload;
+    public string? SourceUri { get; init; }
+    public bool IsStreaming { get; init; }
 }
