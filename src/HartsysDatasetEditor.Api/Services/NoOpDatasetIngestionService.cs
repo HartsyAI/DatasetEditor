@@ -262,4 +262,86 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
             _logger.LogDebug(ex, "Failed to delete temp file {Path}", path);
         }
     }
+
+    private async Task<Dictionary<string, Dictionary<string, string>>> LoadAuxiliaryMetadataAsync(
+        IEnumerable<string> files,
+        CancellationToken cancellationToken)
+    {
+        Dictionary<string, Dictionary<string, string>> aggregate = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (string file in files)
+        {
+            try
+            {
+                string[] lines = await File.ReadAllLinesAsync(file, cancellationToken);
+                if (lines.Length <= 1)
+                {
+                    continue;
+                }
+
+                char separator = file.EndsWith(".tsv", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".tsv000", StringComparison.OrdinalIgnoreCase)
+                    ? '\t'
+                    : ',';
+
+                string[] headers = lines[0].Split(separator).Select(h => h.Trim()).ToArray();
+                int idIndex = Array.FindIndex(headers, h => h.Equals("photo_id", StringComparison.OrdinalIgnoreCase) ||
+                                                        h.Equals("id", StringComparison.OrdinalIgnoreCase) ||
+                                                        h.Equals("image_id", StringComparison.OrdinalIgnoreCase));
+                if (idIndex < 0)
+                {
+                    idIndex = 0;
+                }
+
+                for (int i = 1; i < lines.Length; i++)
+                {
+                    string line = lines[i];
+                    if (string.IsNullOrWhiteSpace(line))
+                    {
+                        continue;
+                    }
+
+                    string[] values = line.Split(separator);
+                    if (values.Length <= idIndex)
+                    {
+                        continue;
+                    }
+
+                    string photoId = values[idIndex].Trim();
+                    if (string.IsNullOrWhiteSpace(photoId))
+                    {
+                        continue;
+                    }
+
+                    if (!aggregate.TryGetValue(photoId, out Dictionary<string, string>? target))
+                    {
+                        target = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        aggregate[photoId] = target;
+                    }
+
+                    for (int h = 0; h < headers.Length && h < values.Length; h++)
+                    {
+                        if (h == idIndex)
+                        {
+                            continue;
+                        }
+
+                        string key = headers[h];
+                        string value = values[h].Trim();
+                        if (!string.IsNullOrWhiteSpace(key) && !target.ContainsKey(key) && !string.IsNullOrWhiteSpace(value))
+                        {
+                            target[key] = value;
+                        }
+                    }
+                }
+
+                _logger.LogInformation("Loaded auxiliary metadata from {FileName} into {EntryCount} photo records", Path.GetFileName(file), aggregate.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse auxiliary metadata file {File}", file);
+            }
+        }
+
+        return aggregate;
+    }
 }

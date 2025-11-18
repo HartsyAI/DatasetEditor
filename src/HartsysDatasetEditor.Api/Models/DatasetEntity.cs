@@ -12,4 +12,7 @@ internal sealed class DatasetEntity
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public string? SourceFileName { get; set; }
+    public DatasetSourceType SourceType { get; set; } = DatasetSourceType.LocalUpload;
+    public string? SourceUri { get; set; }
+    public bool IsStreaming { get; set; }
 }

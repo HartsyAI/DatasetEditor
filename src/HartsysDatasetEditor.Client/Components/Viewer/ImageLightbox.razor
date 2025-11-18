@@ -1,20 +1,102 @@
-@* Full-screen lightbox overlay for high-resolution image preview. *@
-<MudDialog>
-    <DialogContent>
-        <div class="lightbox-container">
-            <MudImage Src="@_imageUrl" Alt="Image preview" Elevation="0" ObjectFit="ObjectFit.Contain" Style="max-height: 70vh; width: 100%;" />
-            
-            @if (Item != null && (!string.IsNullOrEmpty(Item.Title) || Item.Width > 0))
-            {
-                <div class="lightbox-info">
-                    <MudText Typo="Typo.h6">@Item.Title</MudText>
-                    @if (Item.Width > 0 && Item.Height > 0)
+@* Full-screen lightbox overlay for high-resolution image preview with detailed metadata. *@
+<MudDialog MaxWidth="MaxWidth.ExtraLarge" FullWidth="true">
+    <DialogContent Class="lightbox-content">
+        <MudGrid Spacing="2">
+            <MudItem xs="12" md="7">
+                <div class="lightbox-image-wrapper">
+                    <MudImage Src="@_imageUrl"
+                              Alt="Image preview"
+                              Elevation="0"
+                              ObjectFit="ObjectFit.Contain"
+                              Style="max-height: 75vh; width: 100%;" />
+
+                    @if (!string.IsNullOrWhiteSpace(Item?.Description))
                     {
-                        <MudText Typo="Typo.body2">@Item.GetFormattedDimensions() • @Item.GetAspectRatioString()</MudText>
+                        <MudText Class="lightbox-description" Typo="Typo.body2">@Item.Description</MudText>
                     }
                 </div>
-            }
-        </div>
+            </MudItem>
+
+            <MudItem xs="12" md="5">
+                <MudPaper Class="lightbox-panel" Elevation="1">
+                    <MudStack Spacing="1">
+                        <MudText Typo="Typo.h5">@DisplayTitle</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">@PrimaryInfoLine</MudText>
+
+                        <MudDivider Class="my-2" />
+
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.FlexStart" Spacing="2">
+                            @if (!string.IsNullOrEmpty(AverageColorHex))
+                            {
+                                <div class="color-chip" style="background-color: @AverageColorHex"></div>
+                                <MudText Typo="Typo.body2">@AverageColorHex</MudText>
+                            }
+
+                            @if (!string.IsNullOrEmpty(Item?.GetFormattedDimensions()))
+                            {
+                                <MudChip Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small">
+                                    @Item?.GetFormattedDimensions()
+                                </MudChip>
+                            }
+
+                            @if (!string.IsNullOrEmpty(Item?.GetAspectRatioString()))
+                            {
+                                <MudChip Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small">
+                                    @Item?.GetAspectRatioString()
+                                </MudChip>
+                            }
+                        </MudStack>
+
+                        @if (_tagList.Count > 0)
+                        {
+                            <div class="tag-section">
+                                <MudText Typo="Typo.subtitle2">Tags</MudText>
+                                <MudChipSet>
+                                    @foreach (string tag in _tagList)
+                                    {
+                                        <MudChip Color="Color.Info" Variant="Variant.Text" Size="Size.Small">@tag</MudChip>
+                                    }
+                                </MudChipSet>
+                            </div>
+                        }
+
+                        <MudDivider Class="my-2" />
+
+                        <div class="metadata-section">
+                            <MudText Typo="Typo.subtitle2">Details</MudText>
+                            <div class="metadata-grid">
+                                @foreach ((string key, string value) in _highlightedMetadata)
+                                {
+                                    <div class="metadata-row">
+                                        <span class="metadata-key">@key</span>
+                                        <span class="metadata-value">@value</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+
+                        @if (_additionalMetadata.Count > 0)
+                        {
+                            <div class="metadata-section">
+                                <MudExpansionPanels Elevation="0">
+                                    <MudExpansionPanel Text="Additional metadata">
+                                        <div class="metadata-grid">
+                                            @foreach ((string key, string value) in _additionalMetadata)
+                                            {
+                                                <div class="metadata-row">
+                                                    <span class="metadata-key">@key</span>
+                                                    <span class="metadata-value">@value</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    </MudExpansionPanel>
+                                </MudExpansionPanels>
+                            </div>
+                        }
+                    </MudStack>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="@CloseAsync">Close</MudButton>
@@ -23,35 +105,223 @@
 </MudDialog>
 
 <style>
-    .lightbox-container {
+    .lightbox-content {
+        padding-bottom: 0;
+    }
+
+    .lightbox-image-wrapper {
         display: flex;
         flex-direction: column;
-        align-items: center;
-        gap: 16px;
+        gap: 12px;
     }
-    
-    .lightbox-info {
-        width: 100%;
-        padding: 16px;
+
+    .lightbox-description {
+        padding: 12px;
+        border-radius: 6px;
         background: var(--mud-palette-surface);
-        border-radius: 4px;
+    }
+
+    .lightbox-panel {
+        padding: 16px;
+        height: 100%;
+        overflow-y: auto;
+    }
+
+    .color-chip {
+        width: 32px;
+        height: 32px;
+        border-radius: 24px;
+        border: 1px solid var(--mud-palette-divider);
+    }
+
+    .tag-section {
+        margin-top: 8px;
+    }
+
+    .metadata-section {
+        width: 100%;
+    }
+
+    .metadata-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px 12px;
+    }
+
+    .metadata-row {
+        display: contents;
+    }
+
+    .metadata-key {
+        font-size: 0.85rem;
+        color: var(--mud-palette-text-secondary);
+        text-transform: capitalize;
+    }
+
+    .metadata-value {
+        font-size: 0.85rem;
+        font-weight: 500;
+        color: var(--mud-palette-text-primary);
+        word-break: break-word;
+    }
+
+    @media (max-width: 900px) {
+        .metadata-grid {
+            grid-template-columns: 1fr;
+        }
     }
 </style>
 
 @code {
     [CascadingParameter] public MudDialogInstance Dialog { get; set; } = default!;
 
-    /// <summary>
-    /// Image to display. TODO: Consider passing ImageItem to surface metadata.
-    /// </summary>
     [Parameter] public string? ImageUrl { get; set; }
-
-    /// <summary>
-    /// TODO: Inject DatasetState to derive currently highlighted image when invoked from ImageGrid.
-    /// </summary>
     [Parameter] public ImageItem? Item { get; set; }
 
     private string _imageUrl => ImageUrl ?? Item?.ImageUrl ?? string.Empty;
+
+    private string DisplayTitle => string.IsNullOrWhiteSpace(Item?.Title)
+        ? (Item?.ExternalId ?? "Image")
+        : Item!.Title;
+
+    private string PrimaryInfoLine => Item == null
+        ? string.Empty
+        : string.Join(" • ", new[]
+        {
+            GetPhotographerLabel(),
+            GetLocationLabel(),
+            Item.CreatedAt != default ? Item.CreatedAt.ToString("MMM dd, yyyy") : null
+        }.Where(s => !string.IsNullOrWhiteSpace(s)));
+
+    private string? AverageColorHex => GetMetadataValue("color_hex")
+        ?? GetMetadataValue("average_color")
+        ?? Item?.AverageColor;
+
+    private readonly List<(string Key, string Value)> _highlightedMetadata = new();
+    private readonly List<(string Key, string Value)> _additionalMetadata = new();
+    private readonly List<string> _tagList = new();
+
+    protected override void OnParametersSet()
+    {
+        PrepareImageUrl();
+        BuildMetadataCollections();
+    }
+
+    private void BuildMetadataCollections()
+    {
+        _highlightedMetadata.Clear();
+        _additionalMetadata.Clear();
+        _tagList.Clear();
+
+        if (Item?.Metadata is null)
+        {
+            return;
+        }
+
+        string[] highlightedKeys =
+        {
+            "photographer_username",
+            "photographer_name",
+            "photo_url",
+            "photo_location_name",
+            "photo_location_latitude",
+            "photo_location_longitude",
+            "color_hex",
+            "dominant_color",
+            "likes",
+            "downloads",
+            "views"
+        };
+
+        foreach (string key in highlightedKeys)
+        {
+            string? value = GetMetadataValue(key);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                _highlightedMetadata.Add((FormatKey(key), value));
+            }
+        }
+
+        foreach ((string key, string value) in Item.Metadata)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                continue;
+            }
+
+            bool alreadyAdded = _highlightedMetadata.Any(k => string.Equals(k.Key, FormatKey(key), StringComparison.OrdinalIgnoreCase));
+            if (!alreadyAdded)
+            {
+                _additionalMetadata.Add((FormatKey(key), value));
+            }
+        }
+
+        BuildTagList();
+    }
+
+    private void BuildTagList()
+    {
+        HashSet<string> tags = new(StringComparer.OrdinalIgnoreCase);
+
+        if (Item?.Tags != null)
+        {
+            foreach (string tag in Item.Tags.Where(tag => !string.IsNullOrWhiteSpace(tag)))
+            {
+                tags.Add(tag.Trim());
+            }
+        }
+
+        string[] metadataTagKeys = { "keywords", "tags", "labels", "topics", "categories" };
+        foreach (string key in metadataTagKeys)
+        {
+            string? raw = GetMetadataValue(key);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+
+            foreach (string tag in raw.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                tags.Add(tag.Trim());
+            }
+        }
+
+        _tagList.AddRange(tags.OrderBy(t => t));
+    }
+
+    private string? GetMetadataValue(string key)
+    {
+        if (Item?.Metadata != null && Item.Metadata.TryGetValue(key, out string? value) && !string.IsNullOrWhiteSpace(value))
+        {
+            return value.Trim();
+        }
+
+        return null;
+    }
+
+    private static string FormatKey(string key) => key.Replace('_', ' ');
+
+    private string? GetPhotographerLabel()
+    {
+        string? photographer = Item?.Photographer;
+        photographer ??= GetMetadataValue("photographer_name") ?? GetMetadataValue("photographer_username");
+        return photographer is null ? null : $"By {photographer}";
+    }
+
+    private string? GetLocationLabel()
+    {
+        string? location = Item?.Location ?? GetMetadataValue("photo_location_name") ?? GetMetadataValue("location");
+        if (string.IsNullOrWhiteSpace(location))
+        {
+            return null;
+        }
+
+        string? lat = GetMetadataValue("photo_location_latitude");
+        string? lon = GetMetadataValue("photo_location_longitude");
+        return !string.IsNullOrWhiteSpace(lat) && !string.IsNullOrWhiteSpace(lon)
+            ? $"{location} ({lat}, {lon})"
+            : location;
+    }
 
     private Task CloseAsync()
     {
@@ -61,7 +331,6 @@
 
     private Task DownloadAsync()
     {
-        // TODO: Integrate with JsInterop/ImageLazyLoadInterop for native download support.
         Logs.Info("ImageLightbox download requested");
         return Task.CompletedTask;
     }
