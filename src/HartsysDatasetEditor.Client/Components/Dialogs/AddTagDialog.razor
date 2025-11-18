@@ -1,0 +1,80 @@
+@using HartsysDatasetEditor.Core.Models
+@using HartsysDatasetEditor.Core.Interfaces
+@inject DatasetState DatasetState
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="@_newTag"
+                     Label="Tag Name"
+                     Variant="Variant.Outlined"
+                     Immediate="true"
+                     AutoFocus="true"
+                     @onkeyup="HandleKeyUp" />
+        
+        @if (_suggestedTags.Any())
+        {
+            <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Suggested Tags</MudText>
+            <MudChipSet T="string">
+                @foreach (string tag in _suggestedTags)
+                {
+                    <MudChip T="string" OnClick="@(() => SelectSuggestedTag(tag))">@tag</MudChip>
+                }
+            </MudChipSet>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit" Disabled="@string.IsNullOrWhiteSpace(_newTag)">
+            Add
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] MudDialogInstance MudDialog { get; set; } = default!;
+
+    private string _newTag = string.Empty;
+    private List<string> _suggestedTags = new();
+
+    protected override void OnInitialized()
+    {
+        // Get all tags from current dataset for suggestions
+        HashSet<string> allTags = new();
+        
+        foreach (IDatasetItem item in DatasetState.Items)
+        {
+            if (item is ImageItem imageItem)
+            {
+                foreach (string tag in imageItem.Tags)
+                {
+                    allTags.Add(tag);
+                }
+            }
+        }
+        
+        _suggestedTags = allTags.OrderBy(t => t).Take(10).ToList();
+    }
+
+    private void HandleKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && !string.IsNullOrWhiteSpace(_newTag))
+        {
+            Submit();
+        }
+    }
+
+    private void SelectSuggestedTag(string tag)
+    {
+        _newTag = tag;
+    }
+
+    private void Submit()
+    {
+        MudDialog.Close(DialogResult.Ok(_newTag.Trim()));
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+}

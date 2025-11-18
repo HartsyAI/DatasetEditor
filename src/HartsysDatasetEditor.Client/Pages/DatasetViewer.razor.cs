@@ -4,10 +4,12 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web.Virtualization;
 using MudBlazor;
+using HartsysDatasetEditor.Client.Components.Viewer;
 using HartsysDatasetEditor.Client.Services;
 using HartsysDatasetEditor.Client.Services.StateManagement;
 using HartsysDatasetEditor.Contracts.Datasets;
 using HartsysDatasetEditor.Core.Interfaces;
+using HartsysDatasetEditor.Core.Models;
 using HartsysDatasetEditor.Core.Services;
 using HartsysDatasetEditor.Core.Enums;
 using HartsysDatasetEditor.Core.Utilities;
@@ -25,6 +27,7 @@ public partial class DatasetViewer : IDisposable
     [Inject] public DatasetCacheService _datasetCache { get; set; } = default!;
     [Inject] public NotificationService _notificationService { get; set; } = default!;
     [Inject] public NavigationService _navigationService { get; set; } = default!;
+    [Inject] public IDialogService _dialogService { get; set; } = default!;
 
     public bool _isLoading = false;
     public string? _errorMessage = null;
@@ -177,14 +180,27 @@ public partial class DatasetViewer : IDisposable
 
     /// <summary>Handles item selection from the viewer.</summary>
     /// <param name="item">Selected dataset item.</param>
-    public void HandleItemSelected(IDatasetItem item)
+    public async Task HandleItemSelected(IDatasetItem item)
     {
         _datasetState.SelectItem(item);
         
-        // Show detail panel if hidden
-        if (!_viewState.ShowDetailPanel)
+        // Open lightbox dialog to show full image
+        if (item is ImageItem imageItem)
         {
-            _viewState.ToggleDetailPanel();
+            var parameters = new DialogParameters
+            {
+                { "Item", imageItem }
+            };
+            
+            var options = new DialogOptions
+            {
+                MaxWidth = MaxWidth.ExtraLarge,
+                FullWidth = true,
+                CloseButton = true,
+                CloseOnEscapeKey = true
+            };
+            
+            await _dialogService.ShowAsync<ImageLightbox>(imageItem.Title ?? "Image", parameters, options);
         }
         
         Logs.Info($"Item selected: {item.Id}");

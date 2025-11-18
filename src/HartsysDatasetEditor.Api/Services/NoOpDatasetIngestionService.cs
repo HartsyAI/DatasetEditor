@@ -1,6 +1,8 @@
 using System.Text;
+using System.IO.Compression;
 using HartsysDatasetEditor.Api.Models;
 using HartsysDatasetEditor.Contracts.Datasets;
+using HartsysDatasetEditor.Core.Utilities;
 
 namespace HartsysDatasetEditor.Api.Services;
 
@@ -46,7 +48,40 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
             dataset.Status = Contracts.Datasets.IngestionStatusDto.Processing;
             await _datasetRepository.UpdateAsync(dataset, cancellationToken);
 
-            List<DatasetItemDto> parsedItems = await ParseUnsplashTsvAsync(uploadLocation, cancellationToken);
+            string fileToProcess = uploadLocation;
+            string? tempExtractedPath = null;
+            
+            // Check if uploaded file is a ZIP
+            if (Path.GetExtension(uploadLocation).Equals(".zip", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogInformation("Extracting ZIP file for dataset {DatasetId}", datasetId);
+                
+                // Create temp directory for extraction
+                tempExtractedPath = Path.Combine(Path.GetTempPath(), $"dataset-{datasetId}-extracted-{Guid.NewGuid()}");
+                Directory.CreateDirectory(tempExtractedPath);
+                
+                // Extract ZIP to temp directory
+                ZipFile.ExtractToDirectory(uploadLocation, tempExtractedPath);
+                
+                // Find the primary dataset file (photos.tsv000 or photos.csv000)
+                string[] extractedFiles = Directory.GetFiles(tempExtractedPath, "*.*", SearchOption.TopDirectoryOnly);
+                string? primaryFile = extractedFiles.FirstOrDefault(f => 
+                    Path.GetFileName(f).StartsWith("photos", StringComparison.OrdinalIgnoreCase) &&
+                    (f.EndsWith(".tsv000", StringComparison.OrdinalIgnoreCase) || 
+                     f.EndsWith(".csv000", StringComparison.OrdinalIgnoreCase) ||
+                     f.EndsWith(".tsv", StringComparison.OrdinalIgnoreCase) ||
+                     f.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)));
+                
+                if (primaryFile == null)
+                {
+                    throw new InvalidOperationException("No primary dataset file (photos.tsv/csv) found in ZIP archive");
+                }
+                
+                fileToProcess = primaryFile;
+                _logger.LogInformation("Found primary file in ZIP: {FileName}", Path.GetFileName(primaryFile));
+            }
+
+            List<DatasetItemDto> parsedItems = await ParseUnsplashTsvAsync(fileToProcess, cancellationToken);
             if (parsedItems.Count > 0)
             {
                 await _datasetItemRepository.AddRangeAsync(datasetId, parsedItems, cancellationToken);
@@ -56,6 +91,19 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
             dataset.Status = Contracts.Datasets.IngestionStatusDto.Completed;
             await _datasetRepository.UpdateAsync(dataset, cancellationToken);
             _logger.LogInformation("Ingestion completed for dataset {DatasetId} with {ItemCount} items", datasetId, parsedItems.Count);
+            
+            // Cleanup extracted files
+            if (tempExtractedPath != null && Directory.Exists(tempExtractedPath))
+            {
+                try
+                {
+                    Directory.Delete(tempExtractedPath, recursive: true);
+                }
+                catch (Exception cleanupEx)
+                {
+                    _logger.LogWarning(cleanupEx, "Failed to cleanup temp extraction directory: {Path}", tempExtractedPath);
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -106,6 +154,8 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
             }
 
             string imageUrl = GetValue(values, "photo_image_url");
+            imageUrl = imageUrl.Replace("_", "/"); // Fix malformed image URLs
+
             Dictionary<string, string> metadata = new(StringComparer.OrdinalIgnoreCase)
             {
                 ["photographer_username"] = GetValue(values, "photographer_username"),
@@ -121,6 +171,9 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
                 title = "Untitled photo";
             }
 
+            string width = GetValue(values, "photo_width");
+            string height = GetValue(values, "photo_height");
+
             DatasetItemDto dto = new()
             {
                 Id = Guid.NewGuid(),
@@ -129,6 +182,8 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
                 Description = GetValue(values, "photo_description"),
                 ImageUrl = imageUrl,
                 ThumbnailUrl = string.IsNullOrWhiteSpace(imageUrl) ? null : $"{imageUrl}?w=400&q=80",
+                Width = int.TryParse(width, out int widthValue) ? widthValue : 0,
+                Height = int.TryParse(height, out int heightValue) ? heightValue : 0,
                 Metadata = metadata
             };
 

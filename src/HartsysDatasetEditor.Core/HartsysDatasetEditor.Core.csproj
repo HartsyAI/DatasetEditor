@@ -6,9 +6,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- No external dependencies for MVP - keep lightweight -->
-    <!-- TODO: Add FluentValidation when validation becomes complex -->
-    <!-- TODO: Add AutoMapper if mapping becomes repetitive -->
+    <PackageReference Include="CsvHelper" Version="30.0.1" />
   </ItemGroup>
 
 </Project>

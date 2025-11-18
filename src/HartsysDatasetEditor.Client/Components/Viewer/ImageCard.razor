@@ -1,26 +1,28 @@
 @using HartsysDatasetEditor.Core.Models
 @using HartsysDatasetEditor.Core.Utilities
 
-<div class="image-card @(_isHovered ? "hovered" : "")" 
+<div class="modern-image-card @(IsSelected ? "selected" : "")" 
      @onmouseenter="HandleMouseEnter"
      @onmouseleave="HandleMouseLeave"
      @onclick="HandleClick">
     
-    @* Selection checkbox (always visible in top-right) *@
-    <div class="selection-checkbox" @onclick:stopPropagation="true">
-        <MudCheckBox T="bool" 
-                     Checked="@IsSelected" 
-                     CheckedChanged="@HandleToggleSelect"
-                     Color="Color.Primary"
+    @* Favorite star (top-right corner) *@
+    @if (_isHovered || Item.IsFavorite)
+    {
+        <div class="favorite-star" @onclick:stopPropagation="true" @onclick="HandleToggleFavorite">
+            <MudIcon Icon="@(Item.IsFavorite ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarBorder)" 
+                     Color="@(Item.IsFavorite ? Color.Warning : Color.Surface)"
                      Size="Size.Small" />
-    </div>
+        </div>
+    }
     
-    @* Favorite star (top-left) *@
-    <div class="favorite-icon" @onclick:stopPropagation="true" @onclick="HandleToggleFavorite">
-        <MudIcon Icon="@(Item.IsFavorite ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarBorder)" 
-                 Color="@(Item.IsFavorite ? Color.Warning : Color.Default)"
-                 Size="Size.Small" />
-    </div>
+    @* Selection indicator (bottom-left when selected) *@
+    @if (IsSelected)
+    {
+        <div class="selection-indicator">
+            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Primary" Size="Size.Medium" />
+        </div>
+    }
     
     @* Image *@
     <div class="image-container">
@@ -30,210 +32,199 @@
                  alt="@Item.Title"
                  loading="lazy"
                  @onerror="HandleImageError"
-                 class="image" />
+                 class="card-image" />
         }
         else if (_imageError)
         {
-            <div class="error-placeholder">
-                <MudIcon Icon="@Icons.Material.Filled.BrokenImage" Size="Size.Large" />
-                <MudText Typo="Typo.caption">Failed to load</MudText>
+            <div class="image-placeholder">
+                <MudIcon Icon="@Icons.Material.Filled.BrokenImage" Color="Color.Error" Size="Size.Large" />
+                <MudText Typo="Typo.caption" Color="Color.Error">Failed to load</MudText>
             </div>
         }
         else
         {
-            <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="100%" />
+            <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="100%" Animation="Animation.Wave" />
         }
     </div>
     
-    @* Tier 1: Basic overlay (always visible) *@
-    <div class="basic-overlay">
-        <div class="title-row">
-            <MudText Typo="Typo.body2" Class="title-text">@GetDisplayTitle()</MudText>
-        </div>
+    @* Bottom gradient overlay with title *@
+    <div class="bottom-info">
+        <MudText Typo="Typo.body2" Class="card-title">@GetDisplayTitle()</MudText>
         @if (!string.IsNullOrEmpty(Item.Photographer))
         {
-            <MudText Typo="Typo.caption" Class="photographer-text">@Item.Photographer</MudText>
+            <MudText Typo="Typo.caption" Class="card-subtitle">@Item.Photographer</MudText>
         }
-        <div class="stats-badge">
-            <MudChip Size="Size.Small" Color="Color.Default">@Item.GetAspectRatioString()</MudChip>
-        </div>
     </div>
     
-    @* Tier 2: Hover overlay (visible on hover) *@
+    @* Hover overlay with detailed info *@
     @if (_isHovered && ViewState.Settings.ShowMetadataOverlay)
     {
-        <div class="hover-overlay">
-            <MudText Typo="Typo.body2" Class="full-title">@Item.Title</MudText>
-            
-            @if (!string.IsNullOrEmpty(Item.Description))
-            {
-                <MudText Typo="Typo.caption" Class="description">
-                    @GetTruncatedDescription()
-                </MudText>
-            }
-            
-            <div class="metadata-row">
-                <MudIcon Icon="@Icons.Material.Outlined.AspectRatio" Size="Size.Small" />
-                <MudText Typo="Typo.caption">@Item.GetFormattedDimensions()</MudText>
+        <div class="hover-details">
+            <div class="details-content">
+                <div class="details-section">
+                    <MudIcon Icon="@Icons.Material.Outlined.PhotoSizeSelectActual" Size="Size.Small" Class="detail-icon" />
+                    <span>@Item.GetFormattedDimensions()</span>
+                </div>
+                
+                @if (Item.FileSizeBytes > 0)
+                {
+                    <div class="details-section">
+                        <MudIcon Icon="@Icons.Material.Outlined.Storage" Size="Size.Small" Class="detail-icon" />
+                        <span>@Item.GetFormattedFileSize()</span>
+                    </div>
+                }
+                
+                @if (!string.IsNullOrEmpty(Item.GetEngagementSummary()))
+                {
+                    <div class="details-section">
+                        <MudIcon Icon="@Icons.Material.Outlined.Favorite" Size="Size.Small" Class="detail-icon" />
+                        <span>@Item.GetEngagementSummary()</span>
+                    </div>
+                }
             </div>
             
-            @if (Item.FileSizeBytes > 0)
-            {
-                <div class="metadata-row">
-                    <MudIcon Icon="@Icons.Material.Outlined.Storage" Size="Size.Small" />
-                    <MudText Typo="Typo.caption">@Item.GetFormattedFileSize()</MudText>
-                </div>
-            }
-            
-            @if (Item.Tags.Any())
-            {
-                <div class="tags-row">
-                    @foreach (string tag in Item.Tags.Take(3))
-                    {
-                        <MudChip Size="Size.Small" Color="Color.Default">@tag</MudChip>
-                    }
-                    @if (Item.Tags.Count > 3)
-                    {
-                        <MudChip Size="Size.Small" Color="Color.Default">+@(Item.Tags.Count - 3)</MudChip>
-                    }
-                </div>
-            }
-            
-            @if (Item.DominantColors.Any())
-            {
-                <div class="color-chips">
-                    @foreach (string color in Item.DominantColors.Take(5))
-                    {
-                        <div class="color-chip" style="background-color: @color;"></div>
-                    }
-                </div>
-            }
-            
-            @if (!string.IsNullOrEmpty(Item.GetEngagementSummary()))
-            {
-                <MudText Typo="Typo.caption" Class="engagement-stats">
-                    @Item.GetEngagementSummary()
-                </MudText>
-            }
-            
-            @* Quick action buttons *@
-            <div class="quick-actions">
-                <MudIconButton Icon="@Icons.Material.Outlined.Download" 
+            @* Quick actions *@
+            <div class="hover-actions" @onclick:stopPropagation="true">
+                <MudIconButton Icon="@Icons.Material.Outlined.Fullscreen" 
                               Size="Size.Small" 
-                              Color="Color.Default"
-                              OnClick="HandleDownload" />
+                              Color="Color.Surface"
+                              Title="View fullscreen"
+                              OnClick="@(() => HandleClick())" />
                 <MudIconButton Icon="@Icons.Material.Outlined.Edit" 
                               Size="Size.Small" 
-                              Color="Color.Default"
+                              Color="Color.Surface"
+                              Title="Edit"
                               OnClick="HandleEditClick" />
-                <MudIconButton Icon="@Icons.Material.Outlined.MoreVert" 
+                <MudIconButton Icon="@Icons.Material.Outlined.Download" 
                               Size="Size.Small" 
-                              Color="Color.Default"
-                              OnClick="HandleMenuClick" />
+                              Color="Color.Surface"
+                              Title="Download"
+                              OnClick="HandleDownload" />
             </div>
         </div>
     }
 </div>
 
 <style>
-    .image-card {
+    .modern-image-card {
         position: relative;
-        border-radius: 8px;
+        border-radius: 12px;
         overflow: hidden;
-        background: var(--mud-palette-background);
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        background: var(--mud-palette-surface);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         cursor: pointer;
         height: 100%;
     }
     
-    .image-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    .modern-image-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.16);
     }
     
-    .selection-checkbox {
-        position: absolute;
-        top: 8px;
-        right: 8px;
-        z-index: 3;
-        background: rgba(255,255,255,0.9);
-        border-radius: 4px;
-        padding: 2px;
+    .modern-image-card.selected {
+        box-shadow: 0 0 0 3px var(--mud-palette-primary);
     }
     
-    .favorite-icon {
+    .favorite-star {
         position: absolute;
-        top: 8px;
-        left: 8px;
-        z-index: 3;
-        background: rgba(255,255,255,0.9);
+        top: 12px;
+        right: 12px;
+        z-index: 10;
+        background: rgba(0,0,0,0.5);
+        backdrop-filter: blur(8px);
         border-radius: 50%;
-        padding: 4px;
+        padding: 6px;
         cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .favorite-star:hover {
+        background: rgba(0,0,0,0.7);
+        transform: scale(1.1);
+    }
+    
+    .selection-indicator {
+        position: absolute;
+        bottom: 12px;
+        left: 12px;
+        z-index: 10;
+        animation: scaleIn 0.2s ease;
+    }
+    
+    @@keyframes scaleIn {
+        from { transform: scale(0); }
+        to { transform: scale(1); }
     }
     
     .image-container {
         width: 100%;
         aspect-ratio: 1 / 1;
         overflow: hidden;
+        background: var(--mud-palette-background-grey);
     }
     
-    .image {
+    .card-image {
         width: 100%;
         height: 100%;
         object-fit: cover;
+        transition: transform 0.3s ease;
     }
     
-    .error-placeholder {
+    .modern-image-card:hover .card-image {
+        transform: scale(1.05);
+    }
+    
+    .image-placeholder {
         width: 100%;
         height: 100%;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
+        gap: 8px;
         background: var(--mud-palette-background-grey);
     }
     
-    .basic-overlay {
+    .bottom-info {
         position: absolute;
         bottom: 0;
         left: 0;
         right: 0;
-        padding: 12px;
-        background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+        padding: 16px;
+        background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.6) 50%, transparent 100%);
         color: white;
-        z-index: 1;
+        z-index: 5;
     }
     
-    .title-text {
-        font-weight: 500;
+    .card-title {
+        font-weight: 600;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        color: white;
+        margin-bottom: 2px;
     }
     
-    .photographer-text {
+    .card-subtitle {
         opacity: 0.9;
+        color: rgba(255,255,255,0.9);
     }
     
-    .stats-badge {
-        margin-top: 4px;
-    }
-    
-    .hover-overlay {
+    .hover-details {
         position: absolute;
         top: 0;
         left: 0;
         right: 0;
         bottom: 0;
         padding: 16px;
-        background: rgba(0,0,0,0.85);
+        background: rgba(0,0,0,0.88);
+        backdrop-filter: blur(4px);
         color: white;
-        z-index: 2;
+        z-index: 8;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        justify-content: space-between;
         animation: fadeIn 0.2s ease;
     }
     
@@ -242,52 +233,31 @@
         to { opacity: 1; }
     }
     
-    .full-title {
-        font-weight: 600;
-        margin-bottom: 4px;
+    .details-content {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding-top: 40px;
     }
     
-    .description {
-        opacity: 0.9;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-    }
-    
-    .metadata-row {
+    .details-section {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 8px;
         font-size: 0.875rem;
+        color: rgba(255,255,255,0.95);
     }
     
-    .tags-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-    }
-    
-    .color-chips {
-        display: flex;
-        gap: 4px;
-    }
-    
-    .color-chip {
-        width: 24px;
-        height: 24px;
-        border-radius: 4px;
-        border: 1px solid rgba(255,255,255,0.3);
-    }
-    
-    .engagement-stats {
-        margin-top: 4px;
+    .detail-icon {
         opacity: 0.8;
     }
     
-    .quick-actions {
+    .hover-actions {
         display: flex;
-        gap: 4px;
-        margin-top: auto;
+        gap: 8px;
+        justify-content: center;
+        padding: 8px;
+        background: rgba(0,0,0,0.3);
+        border-radius: 8px;
     }
 </style>

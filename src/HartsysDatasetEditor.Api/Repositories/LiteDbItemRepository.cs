@@ -11,9 +11,9 @@ public class LiteDbItemRepository : IDatasetItemRepository
     private readonly LiteDatabase _database;
     private readonly string _collectionName = "items";
     
-    public LiteDbItemRepository(string databasePath)
+    public LiteDbItemRepository(LiteDatabase database)
     {
-        _database = new LiteDatabase(databasePath);
+        _database = database ?? throw new ArgumentNullException(nameof(database));
         
         // Create indexes for common queries
         ILiteCollection<ImageItem> collection = _database.GetCollection<ImageItem>(_collectionName);
@@ -23,7 +23,7 @@ public class LiteDbItemRepository : IDatasetItemRepository
         collection.EnsureIndex(x => x.IsFavorite);
         collection.EnsureIndex(x => x.CreatedAt);
         
-        Logs.Info($"LiteDB item repository initialized with indexes");
+        Logs.Info("LiteDB item repository initialized with indexes");
     }
     
     public void InsertItems(Guid datasetId, IEnumerable<IDatasetItem> items)

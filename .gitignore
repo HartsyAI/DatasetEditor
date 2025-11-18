@@ -63,3 +63,4 @@ dkms.conf
 /src/HartsysDatasetEditor.Core/bin
 /src/HartsysDatasetEditor.Core/obj
 /.vs
+/src/HartsysDatasetEditor.Api/data

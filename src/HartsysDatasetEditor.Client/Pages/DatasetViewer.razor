@@ -37,20 +37,20 @@
     else
     {
         <!-- Dataset Loaded - Show Viewer -->
-        <MudGrid Spacing="0" Style="height: calc(100vh - 64px);">
+        <MudGrid Spacing="0" Style="margin-top: 0; min-height: calc(100vh - 64px);">
             <!-- Left Panel - Filters -->
             @if (_viewState.ShowFilterPanel)
             {
-                <MudItem Xs="12" Md="3" Lg="2" Style="height: 100%; overflow-y: auto; border-right: 1px solid var(--mud-palette-divider);">
+                <MudItem Xs="12" Md="3" Lg="2" Style="height: calc(100vh - 64px); overflow-y: auto; border-right: 1px solid var(--mud-palette-divider); position: sticky; top: 64px;">
                     <FilterPanel />
                 </MudItem>
             }
             
-            <!-- Main Content - Viewer -->
+            <!-- Main Content - Viewer (use full remaining width) -->
             <MudItem Xs="12" 
                      Md="@(_viewState.ShowFilterPanel ? 9 : 12)" 
-                     Lg="@(_viewState.ShowFilterPanel && _viewState.ShowDetailPanel ? 8 : _viewState.ShowFilterPanel ? 10 : _viewState.ShowDetailPanel ? 10 : 12)"
-                     Style="height: 100%; overflow-y: auto;">
+                     Lg="@(_viewState.ShowFilterPanel ? 10 : 12)"
+                     Style="min-height: calc(100vh - 64px); overflow-y: auto;">
                 <MudStack Spacing="2" Class="pa-4">
                     @if (_datasetDetail is not null)
                     {
@@ -150,20 +150,6 @@
                                      OnLoadMore="@HandleLoadMoreAsync" />
                 </MudStack>
             </MudItem>
-            
-            <!-- Right Panel - Details (TODO: Create ImageDetailPanel component) -->
-            @if (_viewState.ShowDetailPanel && _datasetState.SelectedItem != null)
-            {
-                <MudItem Xs="12" Md="3" Lg="2" Style="height: 100%; overflow-y: auto; border-left: 1px solid var(--mud-palette-divider);">
-                    <MudPaper Class="pa-4">
-                        <MudText Typo="Typo.h6" Class="mb-3">Details</MudText>
-                        <MudText Typo="Typo.body2">
-                            Selected: @_datasetState.SelectedItem.Id
-                        </MudText>
-                        <!-- TODO: Replace with ImageDetailPanel component -->
-                    </MudPaper>
-                </MudItem>
-            }
         </MudGrid>
     }
 </MudContainer>

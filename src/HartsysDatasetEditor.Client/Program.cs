@@ -5,8 +5,10 @@ using Blazored.LocalStorage;
 using HartsysDatasetEditor.Client;
 using HartsysDatasetEditor.Client.Services;
 using HartsysDatasetEditor.Client.Services.Api;
+using HartsysDatasetEditor.Client.Services.JsInterop;
 using HartsysDatasetEditor.Client.Services.StateManagement;
 using HartsysDatasetEditor.Core.Services;
+using HartsysDatasetEditor.Core.Services.Layouts;
 using HartsysDatasetEditor.Core.Services.Parsers;
 using HartsysDatasetEditor.Core.Services.Providers;
 using HartsysDatasetEditor.Core.Utilities;
@@ -41,6 +43,7 @@ builder.Services.AddBlazoredLocalStorage();
 // Register Core services
 builder.Services.AddSingleton<ParserRegistry>();
 builder.Services.AddSingleton<ModalityProviderRegistry>();
+builder.Services.AddSingleton<LayoutRegistry>();
 builder.Services.AddScoped<FormatDetector>();
 builder.Services.AddScoped<DatasetCacheService>();
 builder.Services.AddScoped<DatasetIndexedDbCache>();
@@ -61,6 +64,8 @@ TaskScheduler.UnobservedTaskException += (sender, args) =>
 // Register Client services
 builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<NavigationService>();
+builder.Services.AddScoped<ItemEditService>();
+builder.Services.AddScoped<IndexedDbInterop>();
 
 // Register State Management
 builder.Services.AddScoped<AppState>();

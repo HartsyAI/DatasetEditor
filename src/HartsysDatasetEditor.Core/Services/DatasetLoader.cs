@@ -11,6 +11,8 @@ public class DatasetLoader(ParserRegistry parserRegistry, FormatDetector formatD
 {
     private readonly ParserRegistry _parserRegistry = parserRegistry ?? throw new ArgumentNullException(nameof(parserRegistry));
     private readonly FormatDetector _formatDetector = formatDetector ?? throw new ArgumentNullException(nameof(formatDetector));
+    private readonly MultiFileDetectorService _fileDetector = new();
+    private readonly EnrichmentMergerService _enrichmentMerger = new();
     
     /// <summary>
     /// Loads a dataset from file content, automatically detecting format.
@@ -120,6 +122,58 @@ public class DatasetLoader(ParserRegistry parserRegistry, FormatDetector formatD
         
         // Parse items
         IAsyncEnumerable<IDatasetItem> items = parser.ParseAsync(fileContent, dataset.Id);
+        
+        return (dataset, items);
+    }
+    
+    /// <summary>Loads a dataset from multiple files (primary + enrichments)</summary>
+    public async Task<(Dataset dataset, List<IDatasetItem> items)> LoadMultiFileDatasetAsync(
+        Dictionary<string, string> files,
+        string datasetName)
+    {
+        Logs.Info($"Loading multi-file dataset: {datasetName} ({files.Count} files)");
+        
+        // Step 1: Analyze files
+        DatasetFileCollection collection = _fileDetector.AnalyzeFiles(files);
+        
+        if (string.IsNullOrEmpty(collection.PrimaryFileName))
+        {
+            throw new InvalidOperationException("Could not detect primary dataset file");
+        }
+        
+        // Step 2: Load primary dataset
+        (Dataset dataset, IAsyncEnumerable<IDatasetItem> itemsStream) = await LoadDatasetAsync(
+            collection.PrimaryFileContent,
+            collection.PrimaryFileName,
+            datasetName);
+        
+        // Materialize items from stream
+        List<IDatasetItem> items = new();
+        await foreach (IDatasetItem item in itemsStream)
+        {
+            items.Add(item);
+        }
+        
+        // Step 3: Merge enrichments
+        if (collection.EnrichmentFiles.Any())
+        {
+            Logs.Info($"Merging {collection.EnrichmentFiles.Count} enrichment files...");
+            items = await _enrichmentMerger.MergeEnrichmentsAsync(items, collection.EnrichmentFiles);
+        }
+        
+        // Step 4: Update dataset metadata with enrichment info
+        dataset.Metadata["primary_file"] = collection.PrimaryFileName;
+        dataset.Metadata["enrichment_count"] = collection.EnrichmentFiles.Count.ToString();
+        
+        foreach (EnrichmentFile enrichment in collection.EnrichmentFiles)
+        {
+            dataset.Metadata[$"enrichment_{enrichment.Info.EnrichmentType}"] = 
+                $"{enrichment.FileName} ({enrichment.Info.RecordCount} records)";
+        }
+        
+        dataset.TotalItems = items.Count;
+        
+        Logs.Info($"Multi-file dataset loaded: {items.Count} items with {collection.EnrichmentFiles.Count} enrichments");
         
         return (dataset, items);
     }

@@ -7,6 +7,8 @@ using HartsysDatasetEditor.Client.Services;
 using HartsysDatasetEditor.Client.Services.Api;
 using HartsysDatasetEditor.Client.Services.StateManagement;
 using HartsysDatasetEditor.Contracts.Datasets;
+using HartsysDatasetEditor.Core.Models;
+using HartsysDatasetEditor.Core.Services;
 using HartsysDatasetEditor.Core.Utilities;
 
 namespace HartsysDatasetEditor.Client.Components.Dataset;
@@ -26,7 +28,12 @@ public partial class DatasetUploader
     public bool _isUploading = false;
     public string? _errorMessage = null;
     public string _uploadStatus = string.Empty;
+    public int _uploadProgress = 0;
+    public string _estimatedTimeRemaining = string.Empty;
     public string _fileInputKey = Guid.NewGuid().ToString();
+    public List<IBrowserFile> _selectedFiles = new();
+    public DatasetFileCollection? _detectedCollection = null;
+    private DateTime _uploadStartTime;
 
     private const string FileInputElementId = "fileInput";
 
@@ -36,8 +43,8 @@ public partial class DatasetUploader
         await JsRuntime.InvokeVoidAsync("interop.clickElementById", FileInputElementId);
     }
 
-    /// <summary>Maximum file size in bytes (100MB).</summary>
-    public const long MaxFileSize = 100 * 1024 * 1024;
+    /// <summary>Maximum file size in bytes (5GB). For datasets larger than 5GB, use server-side file path upload.</summary>
+    public const long MaxFileSize = 5L * 1024 * 1024 * 1024;
 
     /// <summary>Handles drag enter event for visual feedback.</summary>
     public void HandleDragEnter()
@@ -52,7 +59,7 @@ public partial class DatasetUploader
     }
 
     /// <summary>Handles file drop event.</summary>
-    public async Task HandleDrop(DragEventArgs e)
+    public void HandleDrop(DragEventArgs e)
     {
         _isDragging = false;
         // Note: Accessing files from DragEventArgs requires JavaScript interop
@@ -61,16 +68,118 @@ public partial class DatasetUploader
         Logs.Info("File drop detected (JS interop needed for full implementation)");
     }
 
-    /// <summary>Handles file selection via browse button.</summary>
-    public async Task HandleFileSelected(InputFileChangeEventArgs e)
+    /// <summary>Handles multiple file selection via browse button.</summary>
+    public async Task HandleFilesSelected(InputFileChangeEventArgs e)
     {
-        IBrowserFile? file = e.File;
-        if (file == null)
+        _selectedFiles = e.GetMultipleFiles(10).ToList();
+        
+        if (!_selectedFiles.Any())
         {
             return;
         }
-
-        await ProcessFileAsync(file);
+        
+        // Read file contents for detection
+        await DetectFileTypesAsync();
+        
+        StateHasChanged();
+    }
+    
+    /// <summary>Detects file types and enrichment relationships.</summary>
+    public async Task DetectFileTypesAsync()
+    {
+        _uploadStatus = "Analyzing files...";
+        _uploadProgress = 0;
+        await InvokeAsync(StateHasChanged);
+        
+        // Check if any file is a ZIP
+        bool hasZipFile = _selectedFiles.Any(f => Path.GetExtension(f.Name).Equals(".zip", StringComparison.OrdinalIgnoreCase));
+        
+        if (hasZipFile)
+        {
+            // ZIP files need extraction, not text analysis
+            // Show a message and let user click Upload to extract
+            _uploadStatus = "ZIP file detected - click Upload to extract and process";
+            Logs.Info($"ZIP file detected: {_selectedFiles.First(f => f.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)).Name}");
+            
+            // Create a placeholder collection for ZIP
+            _detectedCollection = new DatasetFileCollection
+            {
+                PrimaryFileName = _selectedFiles.First(f => f.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)).Name,
+                TotalSizeBytes = _selectedFiles.Sum(f => f.Size)
+            };
+            
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        
+        Dictionary<string, string> fileContents = new();
+        int fileIndex = 0;
+        
+        foreach (IBrowserFile file in _selectedFiles)
+        {
+            fileIndex++;
+            _uploadStatus = $"Reading file {fileIndex}/{_selectedFiles.Count}: {file.Name}...";
+            _uploadProgress = (fileIndex * 50) / _selectedFiles.Count; // 0-50% for reading
+            await InvokeAsync(StateHasChanged);
+            
+            if (file.Size > MaxFileSize)
+            {
+                Logs.Error($"File {file.Name} is too large (max {MaxFileSize / 1024 / 1024 / 1024}GB)");
+                continue;
+            }
+            
+            // For large files, read in chunks to show progress
+            using Stream stream = file.OpenReadStream(MaxFileSize);
+            using StreamReader reader = new(stream);
+            string content = await reader.ReadToEndAsync();
+            
+            fileContents[file.Name] = content;
+        }
+        
+        _uploadStatus = "Analyzing file structure...";
+        _uploadProgress = 60;
+        await InvokeAsync(StateHasChanged);
+        
+        // Detect file types
+        MultiFileDetectorService detector = new();
+        _detectedCollection = detector.AnalyzeFiles(fileContents);
+        
+        _uploadStatus = "Analysis complete";
+        _uploadProgress = 100;
+        await InvokeAsync(StateHasChanged);
+    }
+    
+    /// <summary>Gets file type label for display.</summary>
+    public string GetFileTypeLabel(string fileName)
+    {
+        if (_detectedCollection == null)
+            return "Unknown";
+        
+        if (fileName == _detectedCollection.PrimaryFileName)
+            return "Primary Dataset";
+        
+        EnrichmentFile? enrichment = _detectedCollection.EnrichmentFiles
+            .FirstOrDefault(e => e.FileName == fileName);
+        
+        return enrichment != null 
+            ? $"Enrichment ({enrichment.Info.EnrichmentType})" 
+            : "Unknown";
+    }
+    
+    /// <summary>Formats file size for display.</summary>
+    public string FormatFileSize(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB" };
+        double len = bytes;
+        int order = 0;
+        
+        while (len >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            len = len / 1024;
+        }
+        
+        return $"{len:0.##} {sizes[order]}";
     }
 
     /// <summary>Processes the uploaded file and loads the dataset.</summary>
@@ -87,7 +196,7 @@ public partial class DatasetUploader
             // Validate file size
             if (file.Size > MaxFileSize)
             {
-                throw new Exception($"File size exceeds maximum limit of {MaxFileSize / 1024 / 1024}MB");
+                throw new Exception($"File size exceeds maximum limit of {MaxFileSize / 1024 / 1024 / 1024}GB. For larger datasets, use server-side file upload.");
             }
 
             // Validate file extension
@@ -174,9 +283,278 @@ public partial class DatasetUploader
         _fileInputKey = Guid.NewGuid().ToString();
     }
     
+    /// <summary>Handles upload of detected file collection (primary + enrichments).</summary>
+    public async Task UploadDetectedCollectionAsync()
+    {
+        if (_detectedCollection == null || _selectedFiles.Count == 0)
+        {
+            _errorMessage = "No files selected for upload.";
+            return;
+        }
+        
+        _errorMessage = null;
+        _isUploading = true;
+        _uploadProgress = 0;
+        _uploadStartTime = DateTime.UtcNow;
+        _uploadStatus = "Preparing upload...";
+        await InvokeAsync(StateHasChanged);
+        
+        List<(string fileName, Stream content)> filesToUpload = new();
+        
+        try
+        {
+            // Step 1: Extract/prepare files
+            UpdateProgress(5, "Preparing files...");
+            
+            for (int i = 0; i < _selectedFiles.Count; i++)
+            {
+                IBrowserFile file = _selectedFiles[i];
+                string extension = Path.GetExtension(file.Name).ToLowerInvariant();
+                
+                if (extension == ".zip")
+                {
+                    // DON'T extract ZIP in browser (causes out of memory)
+                    // Upload ZIP directly to server and let it handle extraction
+                    UpdateProgress(10, $"Preparing ZIP file for upload: {file.Name} ({FormatFileSize(file.Size)})...");
+                    
+                    using Stream browserStream = file.OpenReadStream(MaxFileSize);
+                    MemoryStream zipBuffer = new((int)Math.Min(file.Size, int.MaxValue));
+                    
+                    // Read ZIP in chunks to show progress
+                    byte[] buffer = new byte[81920]; // 80 KB chunks
+                    long totalBytes = file.Size;
+                    long bytesRead = 0;
+                    int readCount;
+                    
+                    while ((readCount = await browserStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                    {
+                        await zipBuffer.WriteAsync(buffer, 0, readCount);
+                        bytesRead += readCount;
+                        
+                        // Update progress (10-20% for reading ZIP)
+                        int progress = 10 + (int)((bytesRead * 10) / totalBytes);
+                        UpdateProgress(progress, $"Reading ZIP: {FormatFileSize(bytesRead)}/{FormatFileSize(totalBytes)}...");
+                    }
+                    
+                    zipBuffer.Position = 0;
+                    
+                    // Add ZIP as-is to upload (server will extract it)
+                    filesToUpload.Add((file.Name, zipBuffer));
+                    
+                    Logs.Info($"ZIP file ready for upload: {file.Name} ({FormatFileSize(file.Size)})");
+                }
+                else
+                {
+                    UpdateProgress(10 + (i * 10 / _selectedFiles.Count), $"Reading: {file.Name}...");
+                    
+                    // Regular file - read into memory
+                    MemoryStream ms = new();
+                    using (Stream browserStream = file.OpenReadStream(MaxFileSize))
+                    {
+                        await browserStream.CopyToAsync(ms);
+                    }
+                    ms.Position = 0;
+                    filesToUpload.Add((file.Name, ms));
+                }
+            }
+            
+            // Step 2: Handle multi-part files
+            UpdateProgress(20, "Detecting multi-part files...");
+            List<string> fileNames = filesToUpload.Select(f => f.fileName).ToList();
+            Dictionary<string, List<string>> multiPartGroups = ZipHelpers.DetectMultiPartFiles(fileNames);
+            
+            if (multiPartGroups.Any())
+            {
+                Logs.Info($"Found {multiPartGroups.Count} multi-part file groups");
+                UpdateProgress(25, "Merging multi-part files...");
+                
+                List<(string fileName, Stream content)> merged = new();
+                
+                foreach (var group in multiPartGroups)
+                {
+                    // Find all parts - use FirstOrDefault to avoid exceptions
+                    List<(string, Stream)> parts = new();
+                    foreach (string partName in group.Value)
+                    {
+                        var part = filesToUpload.FirstOrDefault(f => f.fileName == partName);
+                        if (part.content != null)
+                        {
+                            parts.Add(part);
+                        }
+                        else
+                        {
+                            Logs.Warning($"Multi-part file not found in upload list: {partName}");
+                        }
+                    }
+                    
+                    if (parts.Count == 0)
+                    {
+                        Logs.Warning($"No parts found for multi-part group: {group.Key}");
+                        continue;
+                    }
+                    
+                    Logs.Info($"Merging {parts.Count} parts for {group.Key}");
+                    MemoryStream mergedStream = await ZipHelpers.MergePartFilesAsync(parts, skipHeadersAfterFirst: true);
+                    merged.Add((group.Key, mergedStream));
+                    
+                    // Remove individual parts
+                    foreach (var part in parts)
+                    {
+                        filesToUpload.Remove(part);
+                        part.Item2.Dispose();
+                    }
+                }
+                
+                filesToUpload.AddRange(merged);
+                Logs.Info($"Merged into {merged.Count} complete files");
+                
+                // Update primary file name if it was merged
+                if (merged.Any(m => _detectedCollection.PrimaryFileName.StartsWith(Path.GetFileNameWithoutExtension(m.fileName))))
+                {
+                    string oldPrimaryName = _detectedCollection.PrimaryFileName;
+                    string newPrimaryName = merged.First(m => oldPrimaryName.StartsWith(Path.GetFileNameWithoutExtension(m.fileName))).fileName;
+                    _detectedCollection.PrimaryFileName = newPrimaryName;
+                    Logs.Info($"Updated primary file name from '{oldPrimaryName}' to '{newPrimaryName}' after merge");
+                }
+            }
+            
+            // Step 3: Create dataset
+            UpdateProgress(30, "Creating dataset...");
+            string datasetName = Path.GetFileNameWithoutExtension(_detectedCollection.PrimaryFileName);
+            
+            DatasetDetailDto? dataset = await DatasetApiClient.CreateDatasetAsync(
+                new CreateDatasetRequest(datasetName, $"Uploaded via UI on {DateTime.UtcNow:O}"));
+            
+            if (dataset == null)
+            {
+                throw new Exception("Failed to create dataset on server.");
+            }
+            
+            Guid datasetId = dataset.Id;
+            Logs.Info($"Dataset created with ID: {datasetId}");
+            
+            // Step 4: Upload primary file
+            UpdateProgress(40, $"Uploading primary file...");
+            
+            // Try to find the primary file with multiple matching strategies
+            var primaryFile = filesToUpload.FirstOrDefault(f => 
+                f.fileName == _detectedCollection.PrimaryFileName ||
+                f.fileName.StartsWith(Path.GetFileNameWithoutExtension(_detectedCollection.PrimaryFileName)) ||
+                Path.GetFileNameWithoutExtension(f.fileName) == Path.GetFileNameWithoutExtension(_detectedCollection.PrimaryFileName));
+                
+            if (primaryFile.content == null)
+            {
+                // Log available files for debugging
+                Logs.Error($"Primary file '{_detectedCollection.PrimaryFileName}' not found. Available files: {string.Join(", ", filesToUpload.Select(f => f.fileName))}");
+                throw new Exception($"Primary file not found: {_detectedCollection.PrimaryFileName}. Available files: {string.Join(", ", filesToUpload.Select(f => f.fileName))}");
+            }
+            
+            primaryFile.content.Position = 0;
+            await DatasetApiClient.UploadDatasetAsync(datasetId, primaryFile.content, primaryFile.fileName, "text/csv");
+            
+            Logs.Info($"Primary file uploaded: {primaryFile.fileName}");
+            
+            // Step 5: Upload enrichment files
+            if (_detectedCollection.EnrichmentFiles.Any())
+            {
+                int enrichmentCount = _detectedCollection.EnrichmentFiles.Count;
+                for (int i = 0; i < enrichmentCount; i++)
+                {
+                    var enrichment = _detectedCollection.EnrichmentFiles[i];
+                    UpdateProgress(50 + (i * 20 / enrichmentCount), $"Uploading enrichment: {enrichment.FileName}...");
+                    
+                    var enrichmentFile = filesToUpload.FirstOrDefault(f => f.fileName == enrichment.FileName);
+                    if (enrichmentFile.content != null)
+                    {
+                        enrichmentFile.content.Position = 0;
+                        // TODO: Add enrichment upload endpoint
+                        Logs.Info($"Enrichment file ready: {enrichment.FileName} ({enrichment.Info.EnrichmentType})");
+                    }
+                }
+            }
+            
+            // Step 6: Load dataset into viewer
+            UpdateProgress(70, "Loading dataset...");
+            
+            DatasetState.SetLoading(true);
+            await DatasetCacheService.LoadFirstPageAsync(datasetId);
+            DatasetState.SetLoading(false);
+            
+            UpdateProgress(100, "Complete!");
+            
+            NotificationService.ShowSuccess($"Dataset '{dataset.Name}' uploaded successfully!");
+            await Task.Delay(500);
+            NavigationService.NavigateToDataset(datasetId.ToString());
+        }
+        catch (Exception ex)
+        {
+            string userMessage = GetFriendlyErrorMessage(ex);
+            _errorMessage = userMessage;
+            Logs.Error("Failed to upload dataset collection", ex);
+            DatasetState.SetError(userMessage);
+            NotificationService.ShowError(userMessage);
+        }
+        finally
+        {
+            // Cleanup
+            foreach (var file in filesToUpload)
+            {
+                file.content?.Dispose();
+            }
+            
+            _isUploading = false;
+            _uploadProgress = 0;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+    
+    /// <summary>Updates progress and estimates time remaining.</summary>
+    private void UpdateProgress(int progress, string status)
+    {
+        _uploadProgress = progress;
+        _uploadStatus = status;
+        
+        if (progress > 0 && progress < 100)
+        {
+            TimeSpan elapsed = DateTime.UtcNow - _uploadStartTime;
+            double estimatedTotal = elapsed.TotalSeconds / (progress / 100.0);
+            double remaining = estimatedTotal - elapsed.TotalSeconds;
+            
+            if (remaining > 60)
+            {
+                _estimatedTimeRemaining = $"~{Math.Ceiling(remaining / 60)} min remaining";
+            }
+            else if (remaining > 0)
+            {
+                _estimatedTimeRemaining = $"~{Math.Ceiling(remaining)} sec remaining";
+            }
+            else
+            {
+                _estimatedTimeRemaining = "";
+            }
+        }
+        else
+        {
+            _estimatedTimeRemaining = "";
+        }
+        
+        InvokeAsync(StateHasChanged);
+    }
+    
+    /// <summary>Clears selected files and resets the uploader.</summary>
+    public void ClearSelection()
+    {
+        _selectedFiles.Clear();
+        _detectedCollection = null;
+        _errorMessage = null;
+        ResetFileInput();
+        StateHasChanged();
+    }
+    
     // TODO: Add file validation (check headers, sample data)
     // TODO: Add resumable upload for very large files
-    // TODO: Add format detection and parser selection
+    // TODO: Add ZIP extraction using System.IO.Compression
+    // TODO: Add multi-part CSV000 file handling
     // TODO: Add preview of first few rows before full parse
     // TODO: Add drag-drop file access via JavaScript interop
 }

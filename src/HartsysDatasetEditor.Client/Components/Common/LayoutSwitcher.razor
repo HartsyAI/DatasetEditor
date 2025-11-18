@@ -1,0 +1,76 @@
+@using HartsysDatasetEditor.Core.Interfaces
+@using HartsysDatasetEditor.Core.Services.Layouts
+@using HartsysDatasetEditor.Core.Utilities
+@inject ViewState ViewState
+@inject LayoutRegistry LayoutRegistry
+
+<MudMenu Icon="@GetCurrentLayoutIcon()" 
+         Color="Color.Inherit"
+         Dense="true"
+         AnchorOrigin="Origin.BottomLeft">
+    
+    <MudText Typo="Typo.subtitle2" Class="px-4 py-2">View Layout</MudText>
+    
+    @foreach (ILayoutProvider layoutProvider in LayoutRegistry.GetAllLayouts())
+    {
+        <MudMenuItem OnClick="@(() => SwitchLayout(layoutProvider.LayoutId))"
+                    Icon="@layoutProvider.IconName">
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                <div>
+                    <MudText Typo="Typo.body2">@layoutProvider.LayoutName</MudText>
+                    <MudText Typo="Typo.caption">@layoutProvider.Description</MudText>
+                </div>
+                @if (_currentLayoutId == layoutProvider.LayoutId)
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.Check" Color="Color.Success" Size="Size.Small" />
+                }
+            </MudStack>
+        </MudMenuItem>
+    }
+    
+    @if (_currentLayout != null && _currentLayout.SupportsColumnAdjustment)
+    {
+        <MudDivider />
+        <div class="px-4 py-2">
+            <MudText Typo="Typo.caption" Class="mb-2">Columns: @ViewState.GridColumns</MudText>
+            <MudSlider Value="@_sliderColumns"
+                      ValueChanged="@((int val) => HandleColumnChange(val))"
+                      Min="@_currentLayout.MinColumns"
+                      Max="@_currentLayout.MaxColumns"
+                      Step="1"
+                      Color="Color.Primary" />
+        </div>
+    }
+</MudMenu>
+
+@code {
+    private string _currentLayoutId = "grid";
+    private ILayoutProvider? _currentLayout;
+    private int _sliderColumns = 4;
+
+    protected override void OnInitialized()
+    {
+        _currentLayoutId = ViewState.Settings.CurrentLayout ?? "grid";
+        _currentLayout = LayoutRegistry.GetLayout(_currentLayoutId);
+        _sliderColumns = ViewState.GridColumns;
+    }
+
+    private string GetCurrentLayoutIcon()
+    {
+        return _currentLayout?.IconName ?? "mdi-view-grid";
+    }
+
+    private void SwitchLayout(string layoutId)
+    {
+        _currentLayoutId = layoutId;
+        _currentLayout = LayoutRegistry.GetLayout(layoutId);
+        
+        ViewState.SetLayout(layoutId);
+    }
+
+    private void HandleColumnChange(int columns)
+    {
+        _sliderColumns = columns;
+        ViewState.SetGridColumns(columns);
+    }
+}

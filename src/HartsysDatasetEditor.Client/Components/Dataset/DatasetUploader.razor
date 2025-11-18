@@ -15,24 +15,25 @@
             
             <MudStack AlignItems="AlignItems.Center" Spacing="2">
                 <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Size="Size.Large" Color="Color.Primary" />
-                <MudText Typo="Typo.h6">Drag & Drop TSV File</MudText>
+                <MudText Typo="Typo.h6">Drag & Drop Files or ZIP</MudText>
                 <MudText Typo="Typo.body2" Class="mud-text-secondary">or</MudText>
                 
                 <InputFile @key="_fileInputKey"
                           id="fileInput" 
-                          OnChange="@HandleFileSelected" 
-                          accept=".tsv,.tsv000,.csv,.csv000,.txt"
+                          OnChange="@HandleFilesSelected" 
+                          accept=".tsv,.tsv000,.csv,.csv000,.txt,.zip"
+                          multiple
                           style="display: none;" />
                 
                 <MudButton Variant="Variant.Filled" 
                           Color="Color.Primary" 
                           StartIcon="@Icons.Material.Filled.Folder"
                           OnClick="@OpenFilePickerAsync">
-                    Browse Files
+                    Select Files or ZIP
                 </MudButton>
                 
                 <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                    Supported formats: TSV, TSV000 (Unsplash), CSV, CSV000
+                    Supported: TSV, CSV, ZIP with primary + enrichment files
                 </MudText>
             </MudStack>
         </div>
@@ -40,12 +41,33 @@
         @* Upload Progress *@
         @if (_isUploading)
         {
-            <MudStack Spacing="2">
-                <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
-                <MudText Typo="Typo.body2" Align="Align.Center">
-                    @_uploadStatus
-                </MudText>
-            </MudStack>
+            <MudPaper Class="pa-4" Elevation="3">
+                <MudStack Spacing="3">
+                    <MudText Typo="Typo.h6" Align="Align.Center">Uploading Dataset</MudText>
+                    
+                    <MudProgressLinear Color="Color.Primary" 
+                                      Value="@_uploadProgress" 
+                                      Size="Size.Large"
+                                      Striped="true"
+                                      Class="my-2" />
+                    
+                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                        <MudText Typo="Typo.body2">
+                            @_uploadStatus
+                        </MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">
+                            @_uploadProgress%
+                        </MudText>
+                    </MudStack>
+                    
+                    @if (!string.IsNullOrEmpty(_estimatedTimeRemaining))
+                    {
+                        <MudText Typo="Typo.caption" Align="Align.Center" Color="Color.Secondary">
+                            @_estimatedTimeRemaining
+                        </MudText>
+                    }
+                </MudStack>
+            </MudPaper>
         }
         
         @* Error Display *@
@@ -54,6 +76,100 @@
             <MudAlert Severity="Severity.Error" Dense="true">
                 @_errorMessage
             </MudAlert>
+        }
+        
+        @* Analysis Progress (for ZIP detection, file reading) *@
+        @if (!_isUploading && !string.IsNullOrEmpty(_uploadStatus) && _uploadProgress > 0)
+        {
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudStack Spacing="2">
+                    <MudText Typo="Typo.body1">
+                        <MudIcon Icon="@Icons.Material.Filled.Analytics" Size="Size.Small" Class="mr-2" />
+                        @_uploadStatus
+                    </MudText>
+                    <MudProgressLinear Color="Color.Info" 
+                                      Value="@_uploadProgress" 
+                                      Size="Size.Medium"
+                                      Striped="true" />
+                </MudStack>
+            </MudPaper>
+        }
+        
+        @* ZIP Detection Alert *@
+        @if (!_isUploading && _selectedFiles.Any(f => f.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)))
+        {
+            <MudAlert Severity="Severity.Info" Class="my-2">
+                <strong>ZIP Archive Detected</strong>
+                <div>Click the <strong>Upload Dataset</strong> button below to extract and process the ZIP file.</div>
+                <div class="mt-2">
+                    <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" />
+                    This may take a few minutes for large files.
+                </div>
+            </MudAlert>
+        }
+        
+        @* Selected Files Display *@
+        @if (_selectedFiles.Any())
+        {
+            <MudPaper Class="pa-4" Elevation="1">
+                <MudText Typo="Typo.h6" Class="mb-3">Selected Files</MudText>
+                <MudList T="string">
+                    @foreach (IBrowserFile file in _selectedFiles)
+                    {
+                        <MudListItem T="string">
+                            <div class="d-flex align-center justify-space-between">
+                                <div>
+                                    <MudText Typo="Typo.body1">@file.Name</MudText>
+                                    <MudText Typo="Typo.caption">@FormatFileSize(file.Size)</MudText>
+                                </div>
+                                <MudChip T="string" Size="Size.Small" Color="Color.Info">
+                                    @GetFileTypeLabel(file.Name)
+                                </MudChip>
+                            </div>
+                        </MudListItem>
+                    }
+                </MudList>
+                
+                @if (_detectedCollection != null)
+                {
+                    <MudDivider Class="my-4" />
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">Auto-Detection Results</MudText>
+                    <MudAlert Severity="Severity.Success" Class="mb-2">
+                        <strong>Primary File:</strong> @_detectedCollection.PrimaryFileName
+                    </MudAlert>
+                    
+                    @if (_detectedCollection.EnrichmentFiles.Any())
+                    {
+                        <MudAlert Severity="Severity.Info">
+                            <strong>Enrichment Files:</strong>
+                            <ul class="my-2">
+                                @foreach (var enrichment in _detectedCollection.EnrichmentFiles)
+                                {
+                                    <li>@enrichment.FileName (@enrichment.Info.EnrichmentType - @enrichment.Info.RecordCount records)</li>
+                                }
+                            </ul>
+                        </MudAlert>
+                    }
+                    
+                    @* Upload Actions *@
+                    <MudStack Row="true" Spacing="2" Class="mt-4">
+                        <MudButton Variant="Variant.Filled"
+                                  Color="Color.Primary"
+                                  StartIcon="@Icons.Material.Filled.CloudUpload"
+                                  OnClick="@UploadDetectedCollectionAsync"
+                                  Disabled="@_isUploading"
+                                  FullWidth="true">
+                            @(_isUploading ? "Uploading..." : "Upload Dataset")
+                        </MudButton>
+                        <MudButton Variant="Variant.Outlined"
+                                  Color="Color.Default"
+                                  OnClick="@ClearSelection"
+                                  Disabled="@_isUploading">
+                            Clear
+                        </MudButton>
+                    </MudStack>
+                }
+            </MudPaper>
         }
     </MudStack>
 </MudPaper>

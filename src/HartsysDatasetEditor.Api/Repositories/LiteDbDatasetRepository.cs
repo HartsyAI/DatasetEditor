@@ -11,17 +11,10 @@ public class LiteDbDatasetRepository : IDatasetRepository
     private readonly LiteDatabase _database;
     private readonly string _collectionName = "datasets";
     
-    public LiteDbDatasetRepository(string databasePath)
+    public LiteDbDatasetRepository(LiteDatabase database)
     {
-        // Ensure directory exists
-        string? directory = Path.GetDirectoryName(databasePath);
-        if (!string.IsNullOrEmpty(directory))
-        {
-            Directory.CreateDirectory(directory);
-        }
-        
-        _database = new LiteDatabase(databasePath);
-        Logs.Info($"LiteDB dataset repository initialized: {databasePath}");
+        _database = database ?? throw new ArgumentNullException(nameof(database));
+        Logs.Info("LiteDB dataset repository initialized");
     }
     
     public Guid CreateDataset(Dataset dataset)

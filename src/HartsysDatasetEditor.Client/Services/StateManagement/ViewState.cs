@@ -99,6 +99,15 @@ public class ViewState
         Logs.Info($"Language changed to: {language}");
     }
     
+    /// <summary>Changes the current layout.</summary>
+    /// <param name="layoutId">Layout identifier (e.g., "grid", "list", "masonry").</param>
+    public void SetLayout(string layoutId)
+    {
+        Settings.CurrentLayout = layoutId;
+        NotifyStateChanged();
+        Logs.Info($"Layout changed to: {layoutId}");
+    }
+    
     /// <summary>Toggles the visibility of the filter panel.</summary>
     public void ToggleFilterPanel()
     {

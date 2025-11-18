@@ -250,6 +250,8 @@ public sealed class DatasetCacheService : IDisposable
                 SourcePath = item.ImageUrl ?? item.ThumbnailUrl ?? string.Empty,
                 ImageUrl = item.ImageUrl ?? string.Empty,
                 ThumbnailUrl = item.ThumbnailUrl ?? item.ImageUrl ?? string.Empty,
+                Width = item.Width,
+                Height = item.Height,
                 Metadata = new Dictionary<string, string>(item.Metadata)
             };
 

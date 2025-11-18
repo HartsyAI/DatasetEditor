@@ -1,0 +1,115 @@
+@page "/my-datasets"
+@using HartsysDatasetEditor.Contracts.Datasets
+@inject HttpClient HttpClient
+@inject NavigationManager Navigation
+@inject ISnackbar Snackbar
+
+<PageTitle>My Datasets - Hartsy Dataset Editor</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+    <MudText Typo="Typo.h4" Class="mb-4">My Datasets</MudText>
+    
+    <MudPaper Class="pa-4 mb-4" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+            <MudTextField @bind-Value="@_searchQuery"
+                         Label="Search datasets"
+                         Variant="Variant.Outlined"
+                         Adornment="Adornment.Start"
+                         AdornmentIcon="@Icons.Material.Filled.Search"
+                         Immediate="true"
+                         OnKeyUp="HandleSearchKeyUp" />
+            
+            <MudButton Variant="Variant.Filled"
+                      Color="Color.Primary"
+                      StartIcon="@Icons.Material.Filled.Add"
+                      Href="/upload">
+                Upload New Dataset
+            </MudButton>
+        </MudStack>
+    </MudPaper>
+    
+    @if (_isLoading)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+    }
+    
+    @if (_filteredDatasets.Any())
+    {
+        <MudGrid>
+            @foreach (DatasetSummaryDto dataset in _filteredDatasets)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Elevation="2" Class="dataset-card">
+                        <MudCardHeader>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">@dataset.Name</MudText>
+                                <MudText Typo="Typo.caption">
+                                    @dataset.TotalItems items • @dataset.Modality
+                                </MudText>
+                            </CardHeaderContent>
+                            <CardHeaderActions>
+                                <MudIconButton Icon="@Icons.Material.Filled.MoreVert"
+                                              OnClick="@(() => ShowDatasetMenu(dataset))" />
+                            </CardHeaderActions>
+                        </MudCardHeader>
+                        
+                        <MudCardContent>
+                            @if (!string.IsNullOrEmpty(dataset.Description))
+                            {
+                                <MudText Typo="Typo.body2" Class="mb-2">
+                                    @GetTruncatedDescription(dataset.Description)
+                                </MudText>
+                            }
+                            
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default">@dataset.Format</MudChip>
+                        </MudCardContent>
+                        
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text"
+                                      Color="Color.Primary"
+                                      StartIcon="@Icons.Material.Filled.Visibility"
+                                      OnClick="@(() => ViewDataset(dataset))">
+                                View
+                            </MudButton>
+                            <MudSpacer />
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                Updated @FormatTimeAgo(dataset.UpdatedAt)
+                            </MudText>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
+    else if (!_isLoading)
+    {
+        <MudPaper Class="pa-8" Elevation="0">
+            <MudStack AlignItems="AlignItems.Center" Spacing="3">
+                <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Large" Color="Color.Secondary" />
+                <MudText Typo="Typo.h6">No datasets yet</MudText>
+                <MudText Typo="Typo.body2" Align="Align.Center">
+                    Upload your first dataset to get started
+                </MudText>
+                <MudButton Variant="Variant.Filled"
+                          Color="Color.Primary"
+                          StartIcon="@Icons.Material.Filled.CloudUpload"
+                          Href="/upload">
+                    Upload Dataset
+                </MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+</MudContainer>
+
+<style>
+    .dataset-card {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        transition: transform 0.2s ease;
+    }
+    
+    .dataset-card:hover {
+        transform: translateY(-4px);
+    }
+</style>

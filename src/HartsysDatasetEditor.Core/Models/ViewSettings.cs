@@ -8,6 +8,9 @@ public class ViewSettings
     /// <summary>Preferred view mode (Grid, List, Gallery, etc.)</summary>
     public ViewMode ViewMode { get; set; } = ViewMode.Grid;
     
+    /// <summary>Current layout ID (grid, list, masonry, slideshow)</summary>
+    public string CurrentLayout { get; set; } = "grid";
+    
     /// <summary>Theme mode preference (Light, Dark, Auto)</summary>
     public ThemeMode Theme { get; set; } = ThemeMode.Dark;
     

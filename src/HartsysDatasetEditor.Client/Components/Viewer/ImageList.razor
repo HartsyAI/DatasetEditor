@@ -1,0 +1,99 @@
+@using HartsysDatasetEditor.Core.Models
+@using HartsysDatasetEditor.Core.Interfaces
+@inject DatasetState DatasetState
+
+<div class="image-list-container">
+    @foreach (IDatasetItem item in DatasetState.Items)
+    {
+        ImageItem imageItem = (ImageItem)item;
+        
+        <MudCard Class="list-item mb-3" Elevation="1">
+            <div class="list-item-content">
+                @* Thumbnail *@
+                <div class="thumbnail-container">
+                    <img src="@imageItem.ThumbnailUrl" alt="@imageItem.Title" />
+                </div>
+                
+                @* Metadata *@
+                <div class="metadata-container">
+                    <MudText Typo="Typo.h6">@imageItem.Title</MudText>
+                    <MudText Typo="Typo.body2" Class="description">
+                        @imageItem.Description
+                    </MudText>
+                    
+                    <MudStack Row="true" Spacing="2" Class="mt-2">
+                        <MudChip T="string" Size="Size.Small">@imageItem.GetFormattedDimensions()</MudChip>
+                        <MudChip T="string" Size="Size.Small">@imageItem.GetFormattedFileSize()</MudChip>
+                        <MudChip T="string" Size="Size.Small">@imageItem.Format</MudChip>
+                    </MudStack>
+                    
+                    @if (imageItem.Tags.Any())
+                    {
+                        <MudChipSet T="string" Class="mt-2">
+                            @foreach (string tag in imageItem.Tags.Take(5))
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default">@tag</MudChip>
+                            }
+                            @if (imageItem.Tags.Count > 5)
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default">+@(imageItem.Tags.Count - 5) more</MudChip>
+                            }
+                        </MudChipSet>
+                    }
+                </div>
+                
+                @* Actions *@
+                <div class="actions-container">
+                    <MudIconButton Icon="@(imageItem.IsFavorite ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarBorder)"
+                                  Color="@(imageItem.IsFavorite ? Color.Warning : Color.Default)" />
+                    <MudIconButton Icon="@Icons.Material.Outlined.Download" />
+                    <MudIconButton Icon="@Icons.Material.Outlined.MoreVert" />
+                </div>
+            </div>
+        </MudCard>
+    }
+</div>
+
+<style>
+    .image-list-container {
+        padding: 16px;
+    }
+    
+    .list-item-content {
+        display: flex;
+        gap: 16px;
+        padding: 16px;
+        align-items: center;
+    }
+    
+    .thumbnail-container {
+        width: 120px;
+        height: 120px;
+        flex-shrink: 0;
+    }
+    
+    .thumbnail-container img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 4px;
+    }
+    
+    .metadata-container {
+        flex: 1;
+        min-width: 0;
+    }
+    
+    .description {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    
+    .actions-container {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+</style>
