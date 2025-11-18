@@ -56,10 +56,22 @@ public sealed class DatasetIndexedDbCache
         try
         {
             // Get page number from cursor
-            int page = 0;
-            if (!string.IsNullOrEmpty(cursor) && _cursorToPageMap.TryGetValue(cursor, out int mappedPage))
+            // If cursor is null, it's page 0 (first page)
+            // If cursor is provided but not in map, return null (cache miss) instead of defaulting to page 0
+            int page;
+            if (string.IsNullOrEmpty(cursor))
+            {
+                page = 0; // First page
+            }
+            else if (_cursorToPageMap.TryGetValue(cursor, out int mappedPage))
             {
                 page = mappedPage;
+            }
+            else
+            {
+                // Cursor not in cache map - this is a cache miss, not page 0
+                Logs.Info($"[CACHE MISS] Cursor '{cursor}' not found in cache map");
+                return null;
             }
 
             _logger.LogDebug("🔍 Looking up cached page {Page} for dataset {DatasetId}", page, datasetId);

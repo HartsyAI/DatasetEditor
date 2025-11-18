@@ -14,10 +14,12 @@ internal sealed class InMemoryDatasetItemRepository : IDatasetItemRepository
 
     public Task AddRangeAsync(Guid datasetId, IEnumerable<DatasetItemDto> items, CancellationToken cancellationToken = default)
     {
+        var itemsList = items.ToList(); // Materialize to count
         var list = _items.GetOrAdd(datasetId, _ => new List<DatasetItemDto>());
         lock (list)
         {
-            list.AddRange(items);
+            list.AddRange(itemsList);
+            Console.WriteLine($"[InMemoryRepo] Added {itemsList.Count} items to dataset {datasetId}. Total in repo: {list.Count}");
         }
         return Task.CompletedTask;
     }

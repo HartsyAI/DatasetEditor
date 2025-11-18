@@ -5,6 +5,7 @@ using HartsysDatasetEditor.Api.Services;
 using HartsysDatasetEditor.Api.Services.Dtos;
 using HartsysDatasetEditor.Contracts.Common;
 using HartsysDatasetEditor.Contracts.Datasets;
+using Microsoft.AspNetCore.Http.Features;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -12,6 +13,14 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
     serverOptions.Limits.MaxRequestBodySize = 5L * 1024 * 1024 * 1024; // 5GB
+});
+
+// Configure form options to allow large multipart uploads (5GB)
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 5L * 1024 * 1024 * 1024; // 5GB
+    options.ValueLengthLimit = int.MaxValue;
+    options.MultipartHeadersLengthLimit = int.MaxValue;
 });
 
 builder.Services.AddDatasetServices(builder.Configuration);

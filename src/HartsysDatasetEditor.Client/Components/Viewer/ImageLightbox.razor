@@ -1,21 +1,42 @@
 @* Full-screen lightbox overlay for high-resolution image preview. *@
-@* TODO: Replace placeholder MudDialog with custom overlay once UX provides mocks. *@
-<MudDialog MaxWidth="MaxWidth.Large" DisableBackdropClick="true">
+<MudDialog>
     <DialogContent>
-        <div class="pa-0">
-            <MudImage Src="@_imageUrl" Alt="Selected image" Class="w-100" Elevation="0" />
-            @* TODO: Consider using MudCarousel for multi-image navigation. *@
+        <div class="lightbox-container">
+            <MudImage Src="@_imageUrl" Alt="Image preview" Elevation="0" ObjectFit="ObjectFit.Contain" Style="max-height: 70vh; width: 100%;" />
+            
+            @if (Item != null && (!string.IsNullOrEmpty(Item.Title) || Item.Width > 0))
+            {
+                <div class="lightbox-info">
+                    <MudText Typo="Typo.h6">@Item.Title</MudText>
+                    @if (Item.Width > 0 && Item.Height > 0)
+                    {
+                        <MudText Typo="Typo.body2">@Item.GetFormattedDimensions() • @Item.GetAspectRatioString()</MudText>
+                    }
+                </div>
+            }
         </div>
     </DialogContent>
     <DialogActions>
-        <MudButton Variant="Variant.Text" Color="Color.Secondary" OnClick="@CloseAsync">
-            Close
-        </MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@DownloadAsync">
-            Download
-        </MudButton>
+        <MudButton OnClick="@CloseAsync">Close</MudButton>
+        <MudButton Color="Color.Primary" OnClick="@DownloadAsync">Download</MudButton>
     </DialogActions>
 </MudDialog>
+
+<style>
+    .lightbox-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+    }
+    
+    .lightbox-info {
+        width: 100%;
+        padding: 16px;
+        background: var(--mud-palette-surface);
+        border-radius: 4px;
+    }
+</style>
 
 @code {
     [CascadingParameter] public MudDialogInstance Dialog { get; set; } = default!;

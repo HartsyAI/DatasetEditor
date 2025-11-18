@@ -206,10 +206,19 @@ public sealed class DatasetCacheService : IDisposable
             IReadOnlyList<DatasetItemDto>? cachedItems = await _indexedDbCache.TryLoadPageAsync(datasetId, cursor, cancellationToken).ConfigureAwait(false);
             if (cachedItems != null)
             {
+                // Cache hit - but we need to calculate the next cursor
+                // Cursor format is the starting index as a string (e.g., "100", "200")
+                int currentIndex = string.IsNullOrEmpty(cursor) ? 0 : int.Parse(cursor);
+                int nextIndex = currentIndex + cachedItems.Count;
+                
+                // We don't know the total count from cache alone, so assume there might be more
+                // The API will return null cursor when there's no more data
+                string? nextCursor = nextIndex.ToString();
+                
                 return new PageResponse<DatasetItemDto>
                 {
                     Items = cachedItems,
-                    NextCursor = null
+                    NextCursor = nextCursor
                 };
             }
         }

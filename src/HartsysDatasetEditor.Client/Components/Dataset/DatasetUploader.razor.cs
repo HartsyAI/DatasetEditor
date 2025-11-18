@@ -128,12 +128,31 @@ public partial class DatasetUploader
                 continue;
             }
             
-            // For large files, read in chunks to show progress
-            using Stream stream = file.OpenReadStream(MaxFileSize);
-            using StreamReader reader = new(stream);
-            string content = await reader.ReadToEndAsync();
-            
-            fileContents[file.Name] = content;
+            try
+            {
+                // For large files, read in chunks to show progress
+                using Stream stream = file.OpenReadStream(MaxFileSize);
+                using StreamReader reader = new(stream);
+                string content = await reader.ReadToEndAsync();
+                
+                fileContents[file.Name] = content;
+            }
+            catch (JSException ex) when (ex.Message.Contains("_blazorFilesById"))
+            {
+                // Blazor file input reference was lost (component navigated away or disposed)
+                Logs.Error($"File input reference lost while reading {file.Name}. Please try uploading again.");
+                _uploadStatus = "Upload cancelled - file reference lost. Please select files again.";
+                _uploadProgress = 0;
+                _selectedFiles.Clear();
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+            catch (Exception ex)
+            {
+                Logs.Error($"Failed to read file {file.Name}: {ex.Message}");
+                _uploadStatus = $"Failed to read {file.Name}";
+                continue;
+            }
         }
         
         _uploadStatus = "Analyzing file structure...";

@@ -50,6 +50,7 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
 
             string fileToProcess = uploadLocation;
             string? tempExtractedPath = null;
+            Dictionary<string, Dictionary<string, string>>? auxiliaryMetadata = null;
             
             // Check if uploaded file is a ZIP
             if (Path.GetExtension(uploadLocation).Equals(".zip", StringComparison.OrdinalIgnoreCase))
@@ -79,9 +80,22 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
                 
                 fileToProcess = primaryFile;
                 _logger.LogInformation("Found primary file in ZIP: {FileName}", Path.GetFileName(primaryFile));
+
+                string[] auxiliaryFiles = extractedFiles
+                    .Where(f => !f.Equals(primaryFile, StringComparison.OrdinalIgnoreCase) &&
+                                (f.EndsWith(".tsv", StringComparison.OrdinalIgnoreCase) ||
+                                 f.EndsWith(".tsv000", StringComparison.OrdinalIgnoreCase) ||
+                                 f.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) ||
+                                 f.EndsWith(".csv000", StringComparison.OrdinalIgnoreCase)))
+                    .ToArray();
+
+                if (auxiliaryFiles.Length > 0)
+                {
+                    auxiliaryMetadata = await LoadAuxiliaryMetadataAsync(auxiliaryFiles, cancellationToken);
+                }
             }
 
-            List<DatasetItemDto> parsedItems = await ParseUnsplashTsvAsync(fileToProcess, cancellationToken);
+            List<DatasetItemDto> parsedItems = await ParseUnsplashTsvAsync(fileToProcess, auxiliaryMetadata, cancellationToken);
             if (parsedItems.Count > 0)
             {
                 await _datasetItemRepository.AddRangeAsync(datasetId, parsedItems, cancellationToken);
@@ -117,9 +131,14 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
         }
     }
 
-    private async Task<List<DatasetItemDto>> ParseUnsplashTsvAsync(string filePath, CancellationToken cancellationToken)
+    private async Task<List<DatasetItemDto>> ParseUnsplashTsvAsync(
+        string filePath,
+        Dictionary<string, Dictionary<string, string>>? auxiliaryMetadata,
+        CancellationToken cancellationToken)
     {
         string[] lines = await File.ReadAllLinesAsync(filePath, cancellationToken);
+        _logger.LogInformation("ParseUnsplashTsvAsync: Read {LineCount} total lines from {FilePath}", lines.Length, Path.GetFileName(filePath));
+        
         if (lines.Length <= 1)
         {
             return new List<DatasetItemDto>();
@@ -154,7 +173,29 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
             }
 
             string imageUrl = GetValue(values, "photo_image_url");
-            imageUrl = imageUrl.Replace("_", "/"); // Fix malformed image URLs
+            
+            // Fix malformed URLs: Unsplash CSV uses double underscores for protocol separator
+            // Example: "https:__images.unsplash.com_photo-123_file.jpg"
+            // Should become: "https://images.unsplash.com/photo-123/file.jpg"
+            if (!string.IsNullOrWhiteSpace(imageUrl) && imageUrl.Contains("__"))
+            {
+                // Replace double underscores with slashes (for protocol and path separators)
+                imageUrl = imageUrl.Replace("__", "/");
+                
+                // Also replace single underscores after the domain (path separators)
+                // But preserve underscores in filenames and photo IDs
+                if (imageUrl.StartsWith("http"))
+                {
+                    int domainEnd = imageUrl.IndexOf(".com") + 4;
+                    if (domainEnd > 4 && domainEnd < imageUrl.Length)
+                    {
+                        string domain = imageUrl.Substring(0, domainEnd);
+                        string path = imageUrl.Substring(domainEnd);
+                        path = path.Replace("_", "/");
+                        imageUrl = domain + path;
+                    }
+                }
+            }
 
             Dictionary<string, string> metadata = new(StringComparer.OrdinalIgnoreCase)
             {
@@ -164,6 +205,19 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
                 ["photo_location_latitude"] = GetValue(values, "photo_location_latitude"),
                 ["photo_location_longitude"] = GetValue(values, "photo_location_longitude")
             };
+
+            string externalId = GetValue(values, "photo_id");
+            if (!string.IsNullOrWhiteSpace(externalId) && auxiliaryMetadata != null &&
+                auxiliaryMetadata.TryGetValue(externalId, out Dictionary<string, string>? extraMetadata))
+            {
+                foreach ((string key, string value) in extraMetadata)
+                {
+                    if (!metadata.ContainsKey(key))
+                    {
+                        metadata[key] = value;
+                    }
+                }
+            }
 
             string title = GetValue(values, "photo_description");
             if (string.IsNullOrWhiteSpace(title))
@@ -177,7 +231,7 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
             DatasetItemDto dto = new()
             {
                 Id = Guid.NewGuid(),
-                ExternalId = GetValue(values, "photo_id"),
+                ExternalId = externalId,
                 Title = title,
                 Description = GetValue(values, "photo_description"),
                 ImageUrl = imageUrl,
@@ -190,6 +244,7 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
             items.Add(dto);
         }
 
+        _logger.LogInformation("ParseUnsplashTsvAsync: Successfully parsed {ItemCount} items out of {TotalLines} lines", items.Count, lines.Length - 1);
         return items;
     }
 
