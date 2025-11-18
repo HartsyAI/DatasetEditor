@@ -10,12 +10,9 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddDatasetServices(this IServiceCollection services, IConfiguration configuration)
     {
-        // Keep existing API repositories for current API endpoints
-        services.AddSingleton<IDatasetRepository, InMemoryDatasetRepository>();
-        services.AddSingleton<IDatasetItemRepository, InMemoryDatasetItemRepository>();
         services.AddSingleton<IDatasetIngestionService, NoOpDatasetIngestionService>();
 
-        // Add new LiteDB repositories for enhanced features
+        // Configure LiteDB for persistence
         string dbPath = configuration["Database:LiteDbPath"] 
             ?? Path.Combine(AppContext.BaseDirectory, "data", "hartsy.db");
 
@@ -32,6 +29,10 @@ public static class ServiceCollectionExtensions
             Logs.Info($"LiteDB initialized at: {dbPath}");
             return db;
         });
+
+        // Register API persistence repositories
+        services.AddSingleton<IDatasetRepository, LiteDbDatasetEntityRepository>();
+        services.AddSingleton<IDatasetItemRepository, LiteDbDatasetItemRepository>();
 
         // Register Core repositories as singletons (sharing the same database instance)
         services.AddSingleton<CoreInterfaces.IDatasetRepository, LiteDbDatasetRepository>();

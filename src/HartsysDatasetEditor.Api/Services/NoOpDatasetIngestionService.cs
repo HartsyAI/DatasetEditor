@@ -77,7 +77,7 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
                 ZipFile.ExtractToDirectory(uploadLocation, tempExtractedPath);
                 
                 // Find the primary dataset file (photos.tsv000 or photos.csv000)
-                string[] extractedFiles = Directory.GetFiles(tempExtractedPath, "*.*", SearchOption.TopDirectoryOnly);
+                string[] extractedFiles = Directory.GetFiles(tempExtractedPath, "*.*", SearchOption.AllDirectories);
                 string? primaryFile = extractedFiles.FirstOrDefault(f => 
                     Path.GetFileName(f).StartsWith("photos", StringComparison.OrdinalIgnoreCase) &&
                     (f.EndsWith(".tsv000", StringComparison.OrdinalIgnoreCase) || 
@@ -103,7 +103,13 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
 
                 if (auxiliaryFiles.Length > 0)
                 {
+                    _logger.LogInformation("Found {Count} auxiliary metadata files: {Files}", auxiliaryFiles.Length,
+                        string.Join(", ", auxiliaryFiles.Select(f => Path.GetRelativePath(tempExtractedPath, f))));
                     auxiliaryMetadata = await LoadAuxiliaryMetadataAsync(auxiliaryFiles, cancellationToken);
+                }
+                else
+                {
+                    _logger.LogInformation("Found primary file in ZIP: {FileName}", Path.GetFileName(primaryFile));
                 }
             }
 
@@ -296,6 +302,7 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
                     : ',';
 
                 string[] headers = lines[0].Split(separator).Select(h => h.Trim()).ToArray();
+                _logger.LogInformation("Parsing metadata file {FileName} with columns: {Columns}", Path.GetFileName(file), string.Join(", ", headers));
                 int idIndex = Array.FindIndex(headers, h => h.Equals("photo_id", StringComparison.OrdinalIgnoreCase) ||
                                                         h.Equals("id", StringComparison.OrdinalIgnoreCase) ||
                                                         h.Equals("image_id", StringComparison.OrdinalIgnoreCase));
@@ -304,6 +311,7 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
                     idIndex = 0;
                 }
 
+                int fileEntryCount = 0;
                 for (int i = 1; i < lines.Length; i++)
                 {
                     string line = lines[i];
@@ -330,6 +338,7 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
                         aggregate[photoId] = target;
                     }
 
+                    fileEntryCount++;
                     for (int h = 0; h < headers.Length && h < values.Length; h++)
                     {
                         if (h == idIndex)
@@ -346,7 +355,10 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
                     }
                 }
 
-                _logger.LogInformation("Loaded auxiliary metadata from {FileName} into {EntryCount} photo records", Path.GetFileName(file), aggregate.Count);
+                _logger.LogInformation("Loaded {EntryCount} rows from {FileName} (running distinct photo IDs: {Distinct})",
+                    fileEntryCount,
+                    Path.GetFileName(file),
+                    aggregate.Count);
             }
             catch (Exception ex)
             {
