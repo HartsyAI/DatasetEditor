@@ -60,8 +60,4 @@ app.MapItemEditEndpoints();
 
 app.MapFallbackToFile("index.html");
 
-// Initialize database
-DatabaseInitializationService dbInit = app.Services.GetRequiredService<DatabaseInitializationService>();
-dbInit.Initialize();
-
 app.Run();

@@ -2,7 +2,7 @@ using HartsysDatasetEditor.Api.Models;
 
 namespace HartsysDatasetEditor.Api.Services;
 
-internal interface IDatasetRepository
+public interface IDatasetRepository
 {
     Task<DatasetEntity> CreateAsync(DatasetEntity dataset, CancellationToken cancellationToken = default);
     Task<DatasetEntity?> GetAsync(Guid id, CancellationToken cancellationToken = default);

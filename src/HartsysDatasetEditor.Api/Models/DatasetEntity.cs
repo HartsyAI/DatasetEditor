@@ -2,7 +2,7 @@ using HartsysDatasetEditor.Contracts.Datasets;
 
 namespace HartsysDatasetEditor.Api.Models;
 
-internal sealed class DatasetEntity
+public sealed class DatasetEntity
 {
     public Guid Id { get; set; }
     public string Name { get; set; } = string.Empty;

@@ -61,4 +61,26 @@ internal sealed class LiteDbDatasetItemRepository : IDatasetItemRepository
 
         return Task.FromResult<(IReadOnlyList<DatasetItemDto>, string?)>(((IReadOnlyList<DatasetItemDto>)page, nextCursor));
     }
+
+    public Task<DatasetItemDto?> GetItemAsync(Guid itemId, CancellationToken cancellationToken = default)
+    {
+        DatasetItemDto? item = _collection.FindById(itemId);
+        return Task.FromResult(item);
+    }
+
+    public Task UpdateItemAsync(DatasetItemDto item, CancellationToken cancellationToken = default)
+    {
+        _collection.Update(item);
+        return Task.CompletedTask;
+    }
+
+    public Task UpdateItemsAsync(IEnumerable<DatasetItemDto> items, CancellationToken cancellationToken = default)
+    {
+        List<DatasetItemDto> itemList = items.ToList();
+        foreach (DatasetItemDto item in itemList)
+        {
+            _collection.Update(item);
+        }
+        return Task.CompletedTask;
+    }
 }

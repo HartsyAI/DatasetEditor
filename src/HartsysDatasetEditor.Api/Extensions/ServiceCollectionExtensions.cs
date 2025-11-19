@@ -2,7 +2,6 @@ using HartsysDatasetEditor.Api.Repositories;
 using HartsysDatasetEditor.Api.Services;
 using HartsysDatasetEditor.Core.Utilities;
 using LiteDB;
-using CoreInterfaces = HartsysDatasetEditor.Core.Interfaces;
 
 namespace HartsysDatasetEditor.Api.Extensions;
 
@@ -13,7 +12,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDatasetIngestionService, NoOpDatasetIngestionService>();
 
         // Configure LiteDB for persistence
-        string dbPath = configuration["Database:LiteDbPath"] 
+        string dbPath = configuration["Database:LiteDbPath"]
             ?? Path.Combine(AppContext.BaseDirectory, "data", "hartsy.db");
 
         string? dbDirectory = Path.GetDirectoryName(dbPath);
@@ -23,9 +22,9 @@ public static class ServiceCollectionExtensions
         }
 
         // Register shared LiteDatabase instance (critical: only one instance per file)
-        services.AddSingleton<LiteDatabase>(sp => 
+        services.AddSingleton<LiteDatabase>(sp =>
         {
-            var db = new LiteDatabase(dbPath);
+            LiteDatabase db = new LiteDatabase(dbPath);
             Logs.Info($"LiteDB initialized at: {dbPath}");
             return db;
         });
@@ -33,13 +32,6 @@ public static class ServiceCollectionExtensions
         // Register API persistence repositories
         services.AddSingleton<IDatasetRepository, LiteDbDatasetEntityRepository>();
         services.AddSingleton<IDatasetItemRepository, LiteDbDatasetItemRepository>();
-
-        // Register Core repositories as singletons (sharing the same database instance)
-        services.AddSingleton<CoreInterfaces.IDatasetRepository, LiteDbDatasetRepository>();
-        services.AddSingleton<CoreInterfaces.IDatasetItemRepository, LiteDbItemRepository>();
-
-        // Add database initialization service
-        services.AddSingleton<DatabaseInitializationService>();
 
         // Create storage directories
         string blobPath = configuration["Storage:BlobPath"] ?? "./blobs";

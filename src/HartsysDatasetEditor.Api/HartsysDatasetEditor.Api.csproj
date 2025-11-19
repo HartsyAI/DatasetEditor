@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\HartsysDatasetEditor.Contracts\HartsysDatasetEditor.Contracts.csproj" />
+    <ProjectReference Include="..\HartsysDatasetEditor.Core\HartsysDatasetEditor.Core.csproj" />
     <ProjectReference Include="..\HartsysDatasetEditor.Client\HartsysDatasetEditor.Client.csproj" />
   </ItemGroup>
 
