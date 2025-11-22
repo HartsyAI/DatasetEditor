@@ -250,18 +250,28 @@ public sealed class DatasetCacheService : IDisposable
 
         foreach (DatasetItemDto item in items)
         {
-            var imageItem = new ImageItem
+            string primaryImage = item.ImageUrl ?? item.ThumbnailUrl ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(primaryImage))
+            {
+                continue;
+            }
+
+            ImageItem imageItem = new()
             {
                 Id = item.Id.ToString(),
                 DatasetId = datasetIdString,
                 Title = string.IsNullOrWhiteSpace(item.Title) ? item.ExternalId : item.Title,
                 Description = item.Description ?? string.Empty,
-                SourcePath = item.ImageUrl ?? item.ThumbnailUrl ?? string.Empty,
-                ImageUrl = item.ImageUrl ?? string.Empty,
-                ThumbnailUrl = item.ThumbnailUrl ?? item.ImageUrl ?? string.Empty,
+                SourcePath = primaryImage,
+                ImageUrl = item.ImageUrl ?? primaryImage,
+                ThumbnailUrl = item.ThumbnailUrl ?? item.ImageUrl ?? primaryImage,
                 Width = item.Width,
                 Height = item.Height,
-                Metadata = new Dictionary<string, string>(item.Metadata)
+                Tags = new List<string>(item.Tags),
+                IsFavorite = item.IsFavorite,
+                Metadata = new Dictionary<string, string>(item.Metadata),
+                CreatedAt = item.CreatedAt,
+                UpdatedAt = item.UpdatedAt
             };
 
             mapped.Add(imageItem);

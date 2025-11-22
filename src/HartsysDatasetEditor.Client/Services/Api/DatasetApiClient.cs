@@ -55,4 +55,15 @@ public sealed class DatasetApiClient
 
         return _httpClient.GetFromJsonAsync<PageResponse<DatasetItemDto>>(pathBuilder.ToString(), SerializerOptions, cancellationToken);
     }
+
+    public async Task<bool> ImportFromHuggingFaceAsync(Guid datasetId, ImportHuggingFaceDatasetRequest request, CancellationToken cancellationToken = default)
+    {
+        HttpResponseMessage response = await _httpClient.PostAsJsonAsync(
+            $"api/datasets/{datasetId}/import-huggingface",
+            request,
+            SerializerOptions,
+            cancellationToken);
+
+        return response.IsSuccessStatusCode;
+    }
 }

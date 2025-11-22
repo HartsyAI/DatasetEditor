@@ -40,6 +40,12 @@ internal static class DatasetEndpoints
         group.MapGet("/{datasetId:guid}/items", GetDatasetItems)
             .WithName("ListDatasetItems")
             .Produces<PageResponse<DatasetItemDto>>();
+
+        group.MapPost("/{datasetId:guid}/import-huggingface", ImportFromHuggingFace)
+            .WithName("ImportFromHuggingFace")
+            .Produces(StatusCodes.Status202Accepted)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status400BadRequest);
     }
 
     /// <summary>Gets all datasets with pagination</summary>
@@ -163,21 +169,75 @@ internal static class DatasetEndpoints
         CancellationToken cancellationToken)
     {
         int size = pageSize.GetValueOrDefault(100);
-        
+
         (IReadOnlyList<DatasetItemDto>? items, string? nextCursor) = await repository.GetPageAsync(
             datasetId,
             null,
             cursor,
             size,
             cancellationToken);
-        
+
         PageResponse<DatasetItemDto> response = new()
         {
             Items = items,
             NextCursor = nextCursor,
             TotalCount = null // Unknown in current implementation
         };
-        
+
         return Results.Ok(response);
+    }
+
+    /// <summary>Imports a dataset from HuggingFace Hub</summary>
+    public static async Task<IResult> ImportFromHuggingFace(
+        Guid datasetId,
+        ImportHuggingFaceDatasetRequest request,
+        IDatasetRepository repository,
+        IDatasetIngestionService ingestionService,
+        CancellationToken cancellationToken)
+    {
+        DatasetEntity? dataset = await repository.GetAsync(datasetId, cancellationToken);
+
+        if (dataset is null)
+        {
+            return Results.NotFound(new { error = "Dataset not found" });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Repository))
+        {
+            return Results.BadRequest(new { error = "Repository name is required" });
+        }
+
+        // Update dataset name/description if provided
+        if (!string.IsNullOrWhiteSpace(request.Name))
+        {
+            dataset.Name = request.Name;
+        }
+        if (!string.IsNullOrWhiteSpace(request.Description))
+        {
+            dataset.Description = request.Description;
+        }
+
+        await repository.UpdateAsync(dataset, cancellationToken);
+
+        // Start import in background (don't await)
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await ingestionService.ImportFromHuggingFaceAsync(datasetId, request, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"HuggingFace import failed: {ex.Message}");
+            }
+        }, CancellationToken.None);
+
+        return Results.Accepted($"/api/datasets/{datasetId}", new
+        {
+            datasetId,
+            repository = request.Repository,
+            isStreaming = request.IsStreaming,
+            message = "Import started. Check dataset status for progress."
+        });
     }
 }

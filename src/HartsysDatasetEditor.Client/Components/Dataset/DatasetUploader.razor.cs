@@ -35,6 +35,17 @@ public partial class DatasetUploader
     public DatasetFileCollection? _detectedCollection = null;
     private DateTime _uploadStartTime;
 
+    // Tab management
+    public int _activeTabIndex = 0;
+
+    // HuggingFace import fields
+    public string _hfRepository = string.Empty;
+    public string? _hfDatasetName = null;
+    public string? _hfDescription = null;
+    public string? _hfRevision = null;
+    public string? _hfAccessToken = null;
+    public bool _hfIsStreaming = false;
+
     private const string FileInputElementId = "fileInput";
 
     private async Task OpenFilePickerAsync()
@@ -569,7 +580,176 @@ public partial class DatasetUploader
         ResetFileInput();
         StateHasChanged();
     }
-    
+
+    /// <summary>Imports a dataset from HuggingFace Hub.</summary>
+    public async Task ImportFromHuggingFaceAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_hfRepository))
+        {
+            _errorMessage = "Please enter a HuggingFace repository name.";
+            return;
+        }
+
+        _errorMessage = null;
+        _isUploading = true;
+        _uploadStatus = "Creating dataset...";
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            // Step 1: Create dataset
+            string datasetName = !string.IsNullOrWhiteSpace(_hfDatasetName)
+                ? _hfDatasetName
+                : _hfRepository.Split('/').Last();
+
+            string description = !string.IsNullOrWhiteSpace(_hfDescription)
+                ? _hfDescription
+                : $"Imported from HuggingFace: {_hfRepository}";
+
+            DatasetDetailDto? dataset = await DatasetApiClient.CreateDatasetAsync(
+                new CreateDatasetRequest(datasetName, description));
+
+            if (dataset == null)
+            {
+                throw new Exception("Failed to create dataset on server.");
+            }
+
+            Guid datasetId = dataset.Id;
+            Logs.Info($"Dataset created with ID: {datasetId} for HuggingFace import");
+
+            // Step 2: Trigger HuggingFace import
+            _uploadStatus = _hfIsStreaming
+                ? "Creating streaming reference..."
+                : "Downloading from HuggingFace...";
+            await InvokeAsync(StateHasChanged);
+
+            bool success = await DatasetApiClient.ImportFromHuggingFaceAsync(
+                datasetId,
+                new ImportHuggingFaceDatasetRequest(
+                    Repository: _hfRepository,
+                    Revision: _hfRevision,
+                    Name: datasetName,
+                    Description: description,
+                    IsStreaming: _hfIsStreaming,
+                    AccessToken: _hfAccessToken
+                ));
+
+            if (!success)
+            {
+                throw new Exception("HuggingFace import request failed.");
+            }
+
+            _uploadStatus = _hfIsStreaming
+                ? "Streaming reference created!"
+                : "Import started. Processing in background...";
+
+            await InvokeAsync(StateHasChanged);
+
+            // Step 3: Handle completion differently for streaming vs download mode
+            if (_hfIsStreaming)
+            {
+                // Streaming mode: Dataset is ready but has no items
+                Logs.Info($"Streaming reference created for dataset {datasetId}");
+                NotificationService.ShowWarning(
+                    $"Streaming reference to '{_hfRepository}' created. " +
+                    "Note: Streaming mode is experimental and cannot display items yet. " +
+                    "For viewing datasets, please use download mode (uncheck 'Streaming Mode').");
+
+                // Clear form
+                _hfRepository = string.Empty;
+                _hfDatasetName = null;
+                _hfDescription = null;
+                _hfRevision = null;
+                _hfAccessToken = null;
+
+                // Don't navigate to viewer since there's nothing to show
+                // Stay on upload page so user can try again with download mode
+            }
+            else
+            {
+                // Download mode: Wait for processing and then try to load
+                _uploadStatus = "Waiting for processing to complete...";
+                await InvokeAsync(StateHasChanged);
+
+                Logs.Info($"Download mode import started for dataset {datasetId}. Waiting for background processing...");
+
+                // Poll for completion (wait a bit longer for processing)
+                await Task.Delay(5000);
+
+                // Check dataset status
+                DatasetDetailDto? updatedDataset = await DatasetApiClient.GetDatasetAsync(datasetId);
+                if (updatedDataset != null)
+                {
+                    Logs.Info($"Dataset {datasetId} status: {updatedDataset.Status}, TotalItems: {updatedDataset.TotalItems}");
+
+                    if (updatedDataset.Status == IngestionStatusDto.Completed && updatedDataset.TotalItems > 0)
+                    {
+                        // Success! Load the dataset
+                        DatasetState.SetLoading(true);
+                        await DatasetCacheService.LoadFirstPageAsync(datasetId);
+                        DatasetState.SetLoading(false);
+
+                        NotificationService.ShowSuccess($"Dataset '{datasetName}' imported successfully with {updatedDataset.TotalItems} items!");
+
+                        // Clear form
+                        _hfRepository = string.Empty;
+                        _hfDatasetName = null;
+                        _hfDescription = null;
+                        _hfRevision = null;
+                        _hfAccessToken = null;
+
+                        await Task.Delay(1000);
+                        NavigationService.NavigateToDataset(datasetId.ToString());
+                    }
+                    else if (updatedDataset.Status == IngestionStatusDto.Failed)
+                    {
+                        throw new Exception($"Dataset import failed. Status: {updatedDataset.Status}");
+                    }
+                    else
+                    {
+                        // Still processing
+                        NotificationService.ShowInfo(
+                            $"Dataset '{datasetName}' import started. Processing in background... " +
+                            $"Current status: {updatedDataset.Status}. Check the dashboard in a moment.");
+
+                        // Clear form
+                        _hfRepository = string.Empty;
+                        _hfDatasetName = null;
+                        _hfDescription = null;
+                        _hfRevision = null;
+                        _hfAccessToken = null;
+                    }
+                }
+                else
+                {
+                    Logs.Warning($"Could not fetch updated dataset status for {datasetId}");
+                    NotificationService.ShowInfo($"Dataset '{datasetName}' import started. Check the dashboard in a moment.");
+
+                    // Clear form anyway
+                    _hfRepository = string.Empty;
+                    _hfDatasetName = null;
+                    _hfDescription = null;
+                    _hfRevision = null;
+                    _hfAccessToken = null;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            string userMessage = GetFriendlyErrorMessage(ex);
+            _errorMessage = userMessage;
+            Logs.Error("Failed to import from HuggingFace", ex);
+            DatasetState.SetError(userMessage);
+            NotificationService.ShowError(userMessage);
+        }
+        finally
+        {
+            _isUploading = false;
+            _uploadStatus = string.Empty;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
     // TODO: Add file validation (check headers, sample data)
     // TODO: Add resumable upload for very large files
     // TODO: Add ZIP extraction using System.IO.Compression

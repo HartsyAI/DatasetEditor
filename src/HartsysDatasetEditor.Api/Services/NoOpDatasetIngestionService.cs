@@ -3,6 +3,9 @@ using System.IO.Compression;
 using HartsysDatasetEditor.Api.Models;
 using HartsysDatasetEditor.Contracts.Datasets;
 using HartsysDatasetEditor.Core.Utilities;
+using Parquet;
+using Parquet.Data;
+using Parquet.Schema;
 
 namespace HartsysDatasetEditor.Api.Services;
 
@@ -10,55 +13,154 @@ namespace HartsysDatasetEditor.Api.Services;
 /// Placeholder ingestion service. Updates dataset status without processing.
 /// TODO: Replace with real ingestion pipeline (see docs/architecture.md section 3.3).
 /// </summary>
-internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
+internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepository, IDatasetItemRepository datasetItemRepository,
+    IHuggingFaceClient huggingFaceClient) : IDatasetIngestionService
 {
-    private readonly IDatasetRepository _datasetRepository;
-    private readonly IDatasetItemRepository _datasetItemRepository;
-    private readonly ILogger<NoOpDatasetIngestionService> _logger;
-
-    public NoOpDatasetIngestionService(
-        IDatasetRepository datasetRepository,
-        IDatasetItemRepository datasetItemRepository,
-        ILogger<NoOpDatasetIngestionService> logger)
+    public async Task ImportFromHuggingFaceAsync(Guid datasetId, ImportHuggingFaceDatasetRequest request, CancellationToken cancellationToken = default)
     {
-        _datasetRepository = datasetRepository;
-        _datasetItemRepository = datasetItemRepository;
-        _logger = logger;
-    }
+        Logs.Info("========== [HF IMPORT START] ==========");
+        Logs.Info($"[HF IMPORT] Dataset ID: {datasetId}");
+        Logs.Info($"[HF IMPORT] Repository: {request.Repository}");
+        Logs.Info($"[HF IMPORT] Streaming: {request.IsStreaming}");
+        Logs.Info($"[HF IMPORT] Revision: {request.Revision ?? "main"}");
 
-    public Task ImportFromHuggingFaceAsync(Guid datasetId, ImportHuggingFaceDatasetRequest request, CancellationToken cancellationToken = default)
-    {
-        _logger.LogInformation("[HF IMPORT] Dataset {DatasetId} requested repo {Repo} (streaming={Streaming})", datasetId, request.Repository, request.IsStreaming);
+        DatasetEntity? dataset = await datasetRepository.GetAsync(datasetId, cancellationToken);
+        if (dataset is null)
+        {
+            Logs.Error($"[HF IMPORT] FATAL: Dataset {datasetId} not found in repository");
+            return;
+        }
 
-        // TODO: Implement Hugging Face downloader and ingestion pipeline.
-        // 1. Validate dataset exists and update SourceType/SourceUri/IsStreaming fields.
-        // 2. If IsStreaming == true, skip ingestion and mark dataset as read-only streaming reference.
-        // 3. If IsStreaming == false, queue download job, persist dataset files, and call StartIngestionAsync.
+        Logs.Info($"[HF IMPORT] Dataset found. Current status: {dataset.Status}");
 
-        return Task.CompletedTask;
+        try
+        {
+            dataset.Status = IngestionStatusDto.Processing;
+            await datasetRepository.UpdateAsync(dataset, cancellationToken);
+            Logs.Info("[HF IMPORT] Status updated to Processing");
+
+            // Step 1: Validate dataset exists and fetch metadata
+            Logs.Info("[HF IMPORT] Step 1: Fetching metadata from HuggingFace Hub...");
+            HuggingFaceDatasetInfo? info = await huggingFaceClient.GetDatasetInfoAsync(request.Repository, request.Revision, request.AccessToken, cancellationToken);
+
+            if (info == null)
+            {
+                Logs.Error($"[HF IMPORT] FAIL: Dataset {request.Repository} not found or inaccessible on HuggingFace Hub");
+                dataset.Status = IngestionStatusDto.Failed;
+                await datasetRepository.UpdateAsync(dataset, cancellationToken);
+                return;
+            }
+
+            Logs.Info($"[HF IMPORT] SUCCESS: Found dataset {request.Repository}");
+            Logs.Info($"[HF IMPORT] File count: {info.Files.Count}");
+            Logs.Info($"[HF IMPORT] Files: {string.Join(", ", info.Files.Select(f => $"{f.Path} ({f.Type}, {f.Size} bytes)"))}");
+
+            // Step 2: Update dataset metadata
+            Logs.Info("[HF IMPORT] Step 2: Updating dataset metadata...");
+            string sourceUri = $"https://huggingface.co/datasets/{request.Repository}";
+            if (!string.IsNullOrWhiteSpace(request.Revision))
+            {
+                sourceUri += $"/tree/{request.Revision}";
+            }
+
+            dataset.SourceType = request.IsStreaming
+                ? DatasetSourceType.HuggingFaceStreaming
+                : DatasetSourceType.HuggingFaceDownload;
+            dataset.SourceUri = sourceUri;
+            dataset.IsStreaming = request.IsStreaming;
+
+            Logs.Info($"[HF IMPORT] SourceType: {dataset.SourceType}");
+            Logs.Info($"[HF IMPORT] SourceUri: {dataset.SourceUri}");
+
+            // Step 3: Handle streaming vs download mode
+            if (request.IsStreaming)
+            {
+                Logs.Info("[HF IMPORT] Step 3: Configuring STREAMING mode");
+                Logs.Warning("[HF IMPORT] WARNING: Streaming mode is experimental - dataset will show 0 items");
+
+                dataset.Status = IngestionStatusDto.Completed;
+                dataset.TotalItems = 0; // Items will be fetched on-demand (not yet implemented)
+                await datasetRepository.UpdateAsync(dataset, cancellationToken);
+
+                Logs.Info($"[HF IMPORT] Dataset {datasetId} configured as streaming reference");
+                Logs.Info($"[HF IMPORT] Final status: {dataset.Status}, TotalItems: {dataset.TotalItems}");
+                Logs.Info("========== [HF IMPORT COMPLETE - STREAMING] ==========");
+            }
+            else
+            {
+                Logs.Info("[HF IMPORT] Step 3: Starting DOWNLOAD mode");
+
+                // Download mode: Find and download dataset files
+                List<HuggingFaceDatasetFile> dataFiles = info.Files
+                    .Where(f => f.Type == "csv" || f.Type == "json" || f.Type == "parquet")
+                    .ToList();
+
+                Logs.Info($"[HF IMPORT] Found {dataFiles.Count} supported data files (csv/json/parquet)");
+
+                if (dataFiles.Count == 0)
+                {
+                    Logs.Error($"[HF IMPORT] FAIL: No supported data files found in {request.Repository}");
+                    Logs.Error($"[HF IMPORT] Available files: {string.Join(", ", info.Files.Select(f => f.Path))}");
+                    dataset.Status = IngestionStatusDto.Failed;
+                    await datasetRepository.UpdateAsync(dataset, cancellationToken);
+                    return;
+                }
+
+                // For now, download the first supported file
+                HuggingFaceDatasetFile fileToDownload = dataFiles[0];
+                Logs.Info($"[HF IMPORT] Downloading file: {fileToDownload.Path} ({fileToDownload.Type}, {fileToDownload.Size} bytes)");
+
+                string tempDownloadPath = Path.Combine(
+                    Path.GetTempPath(),
+                    $"hf-dataset-{datasetId}-{Path.GetFileName(fileToDownload.Path)}");
+
+                Logs.Info($"[HF IMPORT] Download destination: {tempDownloadPath}");
+
+                await huggingFaceClient.DownloadFileAsync(request.Repository, fileToDownload.Path, tempDownloadPath, request.Revision, request.AccessToken, cancellationToken);
+
+                Logs.Info($"[HF IMPORT] Download complete. File size: {new FileInfo(tempDownloadPath).Length} bytes");
+
+                await datasetRepository.UpdateAsync(dataset, cancellationToken);
+
+                // Process the downloaded file
+                Logs.Info("[HF IMPORT] Starting ingestion pipeline...");
+                await StartIngestionAsync(datasetId, tempDownloadPath, cancellationToken);
+                Logs.Info("========== [HF IMPORT COMPLETE - DOWNLOAD] ==========");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logs.Error($"[HF IMPORT] EXCEPTION: Failed to import dataset {request.Repository} for dataset {datasetId}", ex);
+            Logs.Error($"[HF IMPORT] Exception type: {ex.GetType().Name}");
+            Logs.Error($"[HF IMPORT] Exception message: {ex.Message}");
+            dataset.Status = IngestionStatusDto.Failed;
+            await datasetRepository.UpdateAsync(dataset, cancellationToken);
+            Logs.Info($"[HF IMPORT] Dataset {datasetId} status set to Failed");
+            Logs.Info("========== [HF IMPORT FAILED] ==========");
+        }
     }
 
     public async Task StartIngestionAsync(Guid datasetId, string? uploadLocation, CancellationToken cancellationToken = default)
     {
-        DatasetEntity? dataset = await _datasetRepository.GetAsync(datasetId, cancellationToken);
+        DatasetEntity? dataset = await datasetRepository.GetAsync(datasetId, cancellationToken);
         if (dataset is null)
         {
-            _logger.LogWarning("Dataset {DatasetId} not found during ingestion", datasetId);
+            Logs.Warning($"Dataset {datasetId} not found during ingestion");
             return;
         }
 
         if (string.IsNullOrWhiteSpace(uploadLocation) || !File.Exists(uploadLocation))
         {
-            _logger.LogWarning("Upload location missing for dataset {DatasetId}", datasetId);
-            dataset.Status = Contracts.Datasets.IngestionStatusDto.Failed;
-            await _datasetRepository.UpdateAsync(dataset, cancellationToken);
+            Logs.Warning($"Upload location missing for dataset {datasetId}");
+            dataset.Status = IngestionStatusDto.Failed;
+            await datasetRepository.UpdateAsync(dataset, cancellationToken);
             return;
         }
 
         try
         {
-            dataset.Status = Contracts.Datasets.IngestionStatusDto.Processing;
-            await _datasetRepository.UpdateAsync(dataset, cancellationToken);
+            dataset.Status = IngestionStatusDto.Processing;
+            await datasetRepository.UpdateAsync(dataset, cancellationToken);
 
             string fileToProcess = uploadLocation;
             string? tempExtractedPath = null;
@@ -67,7 +169,7 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
             // Check if uploaded file is a ZIP
             if (Path.GetExtension(uploadLocation).Equals(".zip", StringComparison.OrdinalIgnoreCase))
             {
-                _logger.LogInformation("Extracting ZIP file for dataset {DatasetId}", datasetId);
+                Logs.Info($"Extracting ZIP file for dataset {datasetId}");
                 
                 // Create temp directory for extraction
                 tempExtractedPath = Path.Combine(Path.GetTempPath(), $"dataset-{datasetId}-extracted-{Guid.NewGuid()}");
@@ -91,7 +193,7 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
                 }
                 
                 fileToProcess = primaryFile;
-                _logger.LogInformation("Found primary file in ZIP: {FileName}", Path.GetFileName(primaryFile));
+                Logs.Info($"Found primary file in ZIP: {Path.GetFileName(primaryFile)}");
 
                 string[] auxiliaryFiles = extractedFiles
                     .Where(f => !f.Equals(primaryFile, StringComparison.OrdinalIgnoreCase) &&
@@ -103,26 +205,34 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
 
                 if (auxiliaryFiles.Length > 0)
                 {
-                    _logger.LogInformation("Found {Count} auxiliary metadata files: {Files}", auxiliaryFiles.Length,
-                        string.Join(", ", auxiliaryFiles.Select(f => Path.GetRelativePath(tempExtractedPath, f))));
+                    Logs.Info($"Found {auxiliaryFiles.Length} auxiliary metadata files: {string.Join(", ", auxiliaryFiles.Select(f => Path.GetRelativePath(tempExtractedPath, f)))}");
                     auxiliaryMetadata = await LoadAuxiliaryMetadataAsync(auxiliaryFiles, cancellationToken);
                 }
                 else
                 {
-                    _logger.LogInformation("Found primary file in ZIP: {FileName}", Path.GetFileName(primaryFile));
+                    Logs.Info($"Found primary file in ZIP: {Path.GetFileName(primaryFile)}");
                 }
             }
 
-            List<DatasetItemDto> parsedItems = await ParseUnsplashTsvAsync(fileToProcess, auxiliaryMetadata, cancellationToken);
+            List<DatasetItemDto> parsedItems;
+            string extension = Path.GetExtension(fileToProcess);
+            if (extension.Equals(".parquet", StringComparison.OrdinalIgnoreCase))
+            {
+                parsedItems = await ParseParquetAsync(datasetId, fileToProcess, cancellationToken);
+            }
+            else
+            {
+                parsedItems = await ParseUnsplashTsvAsync(fileToProcess, auxiliaryMetadata, cancellationToken);
+            }
             if (parsedItems.Count > 0)
             {
-                await _datasetItemRepository.AddRangeAsync(datasetId, parsedItems, cancellationToken);
+                await datasetItemRepository.AddRangeAsync(datasetId, parsedItems, cancellationToken);
             }
 
             dataset.TotalItems = parsedItems.Count;
-            dataset.Status = Contracts.Datasets.IngestionStatusDto.Completed;
-            await _datasetRepository.UpdateAsync(dataset, cancellationToken);
-            _logger.LogInformation("Ingestion completed for dataset {DatasetId} with {ItemCount} items", datasetId, parsedItems.Count);
+            dataset.Status = IngestionStatusDto.Completed;
+            await datasetRepository.UpdateAsync(dataset, cancellationToken);
+            Logs.Info($"Ingestion completed for dataset {datasetId} with {parsedItems.Count} items");
             
             // Cleanup extracted files
             if (tempExtractedPath != null && Directory.Exists(tempExtractedPath))
@@ -133,15 +243,15 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
                 }
                 catch (Exception cleanupEx)
                 {
-                    _logger.LogWarning(cleanupEx, "Failed to cleanup temp extraction directory: {Path}", tempExtractedPath);
+                    Logs.Warning($"Failed to cleanup temp extraction directory: {tempExtractedPath}. Exception: {cleanupEx.GetType().Name}: {cleanupEx.Message}");
                 }
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to ingest dataset {DatasetId}", datasetId);
-            dataset.Status = Contracts.Datasets.IngestionStatusDto.Failed;
-            await _datasetRepository.UpdateAsync(dataset, cancellationToken);
+            Logs.Error($"Failed to ingest dataset {datasetId}", ex);
+            dataset.Status = IngestionStatusDto.Failed;
+            await datasetRepository.UpdateAsync(dataset, cancellationToken);
         }
         finally
         {
@@ -155,7 +265,7 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
         CancellationToken cancellationToken)
     {
         string[] lines = await File.ReadAllLinesAsync(filePath, cancellationToken);
-        _logger.LogInformation("ParseUnsplashTsvAsync: Read {LineCount} total lines from {FilePath}", lines.Length, Path.GetFileName(filePath));
+        Logs.Info($"ParseUnsplashTsvAsync: Read {lines.Length} total lines from {Path.GetFileName(filePath)}");
         
         if (lines.Length <= 1)
         {
@@ -186,7 +296,7 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
             string[] values = line.Split('\t');
             if (values.Length != headers.Length)
             {
-                _logger.LogDebug("Skipping row {RowIndex} due to column mismatch", i + 1);
+                Logs.Debug($"Skipping row {i + 1} due to column mismatch");
                 continue;
             }
 
@@ -262,8 +372,152 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
             items.Add(dto);
         }
 
-        _logger.LogInformation("ParseUnsplashTsvAsync: Successfully parsed {ItemCount} items out of {TotalLines} lines", items.Count, lines.Length - 1);
+        Logs.Info($"ParseUnsplashTsvAsync: Successfully parsed {items.Count} items out of {lines.Length - 1} lines");
         return items;
+    }
+
+    private async Task<List<DatasetItemDto>> ParseParquetAsync(
+        Guid datasetId,
+        string filePath,
+        CancellationToken cancellationToken)
+    {
+        Logs.Info($"ParseParquetAsync: Reading Parquet file {Path.GetFileName(filePath)} for dataset {datasetId}");
+
+        List<DatasetItemDto> items = new();
+
+        await using FileStream fileStream = File.OpenRead(filePath);
+        using ParquetReader parquetReader = await ParquetReader.CreateAsync(fileStream);
+        DataField[] dataFields = parquetReader.Schema.GetDataFields();
+
+        for (int rowGroup = 0; rowGroup < parquetReader.RowGroupCount; rowGroup++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            using ParquetRowGroupReader groupReader = parquetReader.OpenRowGroupReader(rowGroup);
+            DataColumn[] columns = new DataColumn[dataFields.Length];
+            for (int c = 0; c < dataFields.Length; c++)
+            {
+                columns[c] = await groupReader.ReadColumnAsync(dataFields[c]);
+            }
+
+            int rowCount = columns.Length > 0 ? columns[0].Data.Length : 0;
+            for (int rowIndex = 0; rowIndex < rowCount; rowIndex++)
+            {
+                Dictionary<string, object?> values = new(StringComparer.OrdinalIgnoreCase);
+                for (int c = 0; c < columns.Length; c++)
+                {
+                    string columnName = columns[c].Field.Name;
+                    Array dataArray = columns[c].Data;
+                    object? value = dataArray.GetValue(rowIndex);
+                    values[columnName] = value;
+                }
+
+                DatasetItemDto item = CreateDatasetItemFromParquetRow(values);
+                items.Add(item);
+            }
+        }
+
+        Logs.Info($"ParseParquetAsync: Parsed {items.Count} items from {Path.GetFileName(filePath)}");
+        return items;
+    }
+
+    private DatasetItemDto CreateDatasetItemFromParquetRow(Dictionary<string, object?> values)
+    {
+        string externalId = GetFirstNonEmptyString(values, "id", "image_id", "uid", "uuid") ?? string.Empty;
+        string? title = GetFirstNonEmptyString(values, "title", "caption", "text", "description", "label");
+        string? description = GetFirstNonEmptyString(values, "description", "caption", "text");
+        string? imageUrl = GetFirstNonEmptyString(values, "image_url", "img_url", "url");
+
+        int width = GetIntValue(values, "width", "image_width", "w");
+        int height = GetIntValue(values, "height", "image_height", "h");
+
+        List<string> tags = new();
+        string? tagsValue = GetFirstNonEmptyString(values, "tags", "labels");
+        if (!string.IsNullOrWhiteSpace(tagsValue))
+        {
+            string[] parts = tagsValue.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (string part in parts)
+            {
+                string trimmed = part.Trim();
+                if (!string.IsNullOrEmpty(trimmed))
+                {
+                    tags.Add(trimmed);
+                }
+            }
+        }
+
+        Dictionary<string, string> metadata = new(StringComparer.OrdinalIgnoreCase);
+        foreach ((string key, object? value) in values)
+        {
+            if (value == null)
+            {
+                continue;
+            }
+
+            string stringValue = value.ToString() ?? string.Empty;
+            metadata[key] = stringValue;
+        }
+
+        DateTime now = DateTime.UtcNow;
+
+        return new DatasetItemDto
+        {
+            Id = Guid.NewGuid(),
+            ExternalId = externalId,
+            Title = string.IsNullOrWhiteSpace(title) ? externalId : title,
+            Description = description,
+            ImageUrl = string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl,
+            ThumbnailUrl = string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl,
+            Width = width,
+            Height = height,
+            Tags = tags,
+            IsFavorite = false,
+            Metadata = metadata,
+            CreatedAt = now,
+            UpdatedAt = now
+        };
+    }
+
+    private static string? GetFirstNonEmptyString(
+        IReadOnlyDictionary<string, object?> values,
+        params string[] keys)
+    {
+        foreach (string key in keys)
+        {
+            if (values.TryGetValue(key, out object? value) && value != null)
+            {
+                string stringValue = value.ToString() ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(stringValue))
+                {
+                    return stringValue;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static int GetIntValue(
+        IReadOnlyDictionary<string, object?> values,
+        params string[] keys)
+    {
+        foreach (string key in keys)
+        {
+            if (values.TryGetValue(key, out object? value) && value != null)
+            {
+                if (value is int intValue)
+                {
+                    return intValue;
+                }
+
+                if (int.TryParse(value.ToString(), out int parsed))
+                {
+                    return parsed;
+                }
+            }
+        }
+
+        return 0;
     }
 
     private void TryDeleteTempFile(string path)
@@ -277,7 +531,7 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Failed to delete temp file {Path}", path);
+            Logs.Debug($"Failed to delete temp file {path}: {ex.GetType().Name}: {ex.Message}");
         }
     }
 
@@ -302,7 +556,7 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
                     : ',';
 
                 string[] headers = lines[0].Split(separator).Select(h => h.Trim()).ToArray();
-                _logger.LogInformation("Parsing metadata file {FileName} with columns: {Columns}", Path.GetFileName(file), string.Join(", ", headers));
+                Logs.Info($"Parsing metadata file {Path.GetFileName(file)} with columns: {string.Join(", ", headers)}");
                 int idIndex = Array.FindIndex(headers, h => h.Equals("photo_id", StringComparison.OrdinalIgnoreCase) ||
                                                         h.Equals("id", StringComparison.OrdinalIgnoreCase) ||
                                                         h.Equals("image_id", StringComparison.OrdinalIgnoreCase));
@@ -355,14 +609,11 @@ internal sealed class NoOpDatasetIngestionService : IDatasetIngestionService
                     }
                 }
 
-                _logger.LogInformation("Loaded {EntryCount} rows from {FileName} (running distinct photo IDs: {Distinct})",
-                    fileEntryCount,
-                    Path.GetFileName(file),
-                    aggregate.Count);
+                Logs.Info($"Loaded {fileEntryCount} rows from {Path.GetFileName(file)} (running distinct photo IDs: {aggregate.Count})");
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Failed to parse auxiliary metadata file {File}", file);
+                Logs.Warning($"Failed to parse auxiliary metadata file {file}: {ex.GetType().Name}: {ex.Message}");
             }
         }
 

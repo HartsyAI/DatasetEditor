@@ -14,7 +14,7 @@ public sealed record DatasetItemDto
     public int Height { get; init; }
     public List<string> Tags { get; init; } = new();
     public bool IsFavorite { get; init; }
-    public IReadOnlyDictionary<string, string> Metadata { get; init; } = new Dictionary<string, string>();
+    public Dictionary<string, string> Metadata { get; init; } = new();
     public DateTime CreatedAt { get; init; }
     public DateTime UpdatedAt { get; init; }
 }

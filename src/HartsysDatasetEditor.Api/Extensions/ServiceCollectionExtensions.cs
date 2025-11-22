@@ -11,6 +11,9 @@ public static class ServiceCollectionExtensions
     {
         services.AddSingleton<IDatasetIngestionService, NoOpDatasetIngestionService>();
 
+        // Register HuggingFace client with HttpClient
+        services.AddHttpClient<IHuggingFaceClient, HuggingFaceClient>();
+
         // Configure LiteDB for persistence
         string dbPath = configuration["Database:LiteDbPath"]
             ?? Path.Combine(AppContext.BaseDirectory, "data", "hartsy.db");
