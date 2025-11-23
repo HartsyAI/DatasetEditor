@@ -13,7 +13,7 @@ public class ViewState
     public ViewSettings Settings { get; private set; } = new();
     
     /// <summary>Controls visibility of the left filter panel.</summary>
-    public bool ShowFilterPanel { get; set; } = true;
+    public bool ShowFilterPanel { get; set; } = false;
     
     /// <summary>Controls visibility of the right detail panel.</summary>
     public bool ShowDetailPanel { get; set; } = true;
@@ -183,7 +183,7 @@ public class ViewState
     public void ResetToDefaults()
     {
         Settings = new ViewSettings();
-        ShowFilterPanel = true;
+        ShowFilterPanel = false;
         ShowDetailPanel = true;
         NotifyStateChanged();
         Logs.Info("View settings reset to defaults");

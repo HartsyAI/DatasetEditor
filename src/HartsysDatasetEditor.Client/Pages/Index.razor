@@ -1,152 +1,217 @@
 @page "/"
 @using HartsysDatasetEditor.Core.Utilities
 
-<PageTitle>Dashboard - Hartsy's Dataset Editor</PageTitle>
+<PageTitle>Dashboard - DatasetStudio</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
-    <MudText Typo="Typo.h3" Class="mb-4">Welcome to Hartsy's Dataset Editor</MudText>
-    <MudText Typo="Typo.body1" Class="mb-6 mud-text-secondary">
-        A powerful tool for viewing, filtering, and managing billion-scale AI image datasets.
-    </MudText>
+<MudContainer MaxWidth="MaxWidth.False" Class="px-4 py-4">
+    <MudGrid Class="mb-6" GutterSize="3">
+        <MudItem xs="12" md="8">
+            <MudPaper Elevation="0" Class="pa-4">
+                <MudText Typo="Typo.overline" Class="mud-text-secondary mb-1">
+                    Overview
+                </MudText>
+                <MudText Typo="Typo.h4" Class="mb-2">
+                    Control center for your datasets
+                </MudText>
+                <MudText Typo="Typo.body1" Class="mb-4 mud-text-secondary">
+                    Start a new ingestion, jump back into the viewer, or explore your library of datasets.
+                </MudText>
 
-    <MudGrid>
-        <!-- Quick Actions Card -->
-        <MudItem xs="12" md="6">
+                <MudStack Row="true" Spacing="2">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.AddBox"
+                               OnClick="@NavigateToCreateDataset">
+                        New dataset
+                    </MudButton>
+
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Bookmarks"
+                               OnClick="@NavigateToLibrary">
+                        Open library
+                    </MudButton>
+
+                    <MudButton Variant="Variant.Text"
+                               Color="Color.Secondary"
+                               StartIcon="@Icons.Material.Filled.FolderOpen"
+                               OnClick="@NavigateToDatasetViewer">
+                        Resume viewer
+                    </MudButton>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="2" Class="pa-4">
+                <MudStack Spacing="1">
+                    <MudText Typo="Typo.overline" Class="mud-text-secondary">
+                        Current session
+                    </MudText>
+                    <MudText Typo="Typo.subtitle1" Class="mb-1">
+                        @(_currentDatasetName ?? "No dataset loaded")
+                    </MudText>
+
+                    <MudDivider Class="my-2" />
+
+                    <MudGrid GutterSize="1">
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                Total items
+                            </MudText>
+                            <MudText Typo="Typo.body1">
+                                @_totalItems.ToString("N0")
+                            </MudText>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                Selected
+                            </MudText>
+                            <MudText Typo="Typo.body1">
+                                @_selectedItems.ToString("N0")
+                            </MudText>
+                        </MudItem>
+                    </MudGrid>
+
+                    <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mt-3">
+                        Use the library or viewer to load a dataset into this session.
+                    </MudAlert>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <MudGrid Class="mb-6" GutterSize="3">
+        <MudItem xs="12" md="4">
             <MudCard Elevation="2">
                 <MudCardHeader>
                     <CardHeaderContent>
-                        <MudText Typo="Typo.h6">Quick Actions</MudText>
+                        <MudText Typo="Typo.subtitle1">Library</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            Browse and manage all saved datasets.
+                        </MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudIcon Icon="@Icons.Material.Filled.CollectionsBookmark" />
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardActions Class="px-4 pb-4 pt-0">
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Primary"
+                               FullWidth="true"
+                               OnClick="@NavigateToLibrary">
+                        Go to Library
+                    </MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudCard Elevation="2">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.subtitle1">Create &amp; ingest</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            Upload files, ZIPs, or import from HuggingFace.
+                        </MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudIcon Icon="@Icons.Material.Filled.CloudUpload" />
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardActions Class="px-4 pb-4 pt-0">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               FullWidth="true"
+                               OnClick="@NavigateToCreateDataset">
+                        Open Creator
+                    </MudButton>
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <MudCard Elevation="2">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.subtitle1">AI tools</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            Prepare datasets with captioning, tagging, and more.
+                        </MudText>
                     </CardHeaderContent>
                     <CardHeaderActions>
                         <MudIcon Icon="@Icons.Material.Filled.Bolt" />
                     </CardHeaderActions>
                 </MudCardHeader>
-                <MudCardContent>
-                    <MudStack Spacing="2">
-                        <MudButton Variant="Variant.Filled" 
-                                  Color="Color.Primary" 
-                                  StartIcon="@Icons.Material.Filled.Upload"
-                                  FullWidth="true"
-                                  OnClick="@NavigateToUpload">
-                            Upload New Dataset
-                        </MudButton>
-                        <MudButton Variant="Variant.Outlined" 
-                                  Color="Color.Primary" 
-                                  StartIcon="@Icons.Material.Filled.FolderOpen"
-                                  FullWidth="true"
-                                  OnClick="@NavigateToDatasetViewer">
-                            Open Dataset Viewer
-                        </MudButton>
-                        <MudButton Variant="Variant.Text" 
-                                  Color="Color.Secondary" 
-                                  StartIcon="@Icons.Material.Filled.Settings"
-                                  FullWidth="true"
-                                  OnClick="@NavigateToSettings">
-                            Application Settings
-                        </MudButton>
-                    </MudStack>
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
-
-        <!-- Statistics Card -->
-        <MudItem xs="12" md="6">
-            <MudCard Elevation="2">
-                <MudCardHeader>
-                    <CardHeaderContent>
-                        <MudText Typo="Typo.h6">Statistics</MudText>
-                    </CardHeaderContent>
-                    <CardHeaderActions>
-                        <MudIcon Icon="@Icons.Material.Filled.Analytics" />
-                    </CardHeaderActions>
-                </MudCardHeader>
-                <MudCardContent>
-                    <MudStack Spacing="3">
-                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-                            <MudText Typo="Typo.body2">Loaded Dataset:</MudText>
-                            <MudText Typo="Typo.body1" Color="Color.Primary">
-                                <strong>@(_currentDatasetName ?? "None")</strong>
-                            </MudText>
-                        </MudStack>
-                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-                            <MudText Typo="Typo.body2">Total Items:</MudText>
-                            <MudText Typo="Typo.body1">
-                                <strong>@_totalItems.ToString("N0")</strong>
-                            </MudText>
-                        </MudStack>
-                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-                            <MudText Typo="Typo.body2">Selected Items:</MudText>
-                            <MudText Typo="Typo.body1">
-                                <strong>@_selectedItems.ToString("N0")</strong>
-                            </MudText>
-                        </MudStack>
-                    </MudStack>
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
-
-        <!-- Features Card -->
-        <MudItem xs="12">
-            <MudCard Elevation="2">
-                <MudCardHeader>
-                    <CardHeaderContent>
-                        <MudText Typo="Typo.h6">Features</MudText>
-                    </CardHeaderContent>
-                </MudCardHeader>
-                <MudCardContent>
-                    <MudGrid>
-                        <MudItem xs="12" sm="6" md="3">
-                            <MudStack AlignItems="AlignItems.Center" Spacing="2">
-                                <MudIcon Icon="@Icons.Material.Filled.ViewModule" Size="Size.Large" Color="Color.Primary" />
-                                <MudText Typo="Typo.subtitle2" Align="Align.Center">
-                                    <strong>Virtualized Viewing</strong>
-                                </MudText>
-                                <MudText Typo="Typo.body2" Align="Align.Center" Class="mud-text-secondary">
-                                    Handle billions of images with constant memory usage
-                                </MudText>
-                            </MudStack>
-                        </MudItem>
-                        
-                        <MudItem xs="12" sm="6" md="3">
-                            <MudStack AlignItems="AlignItems.Center" Spacing="2">
-                                <MudIcon Icon="@Icons.Material.Filled.FilterAlt" Size="Size.Large" Color="Color.Success" />
-                                <MudText Typo="Typo.subtitle2" Align="Align.Center">
-                                    <strong>Advanced Filtering</strong>
-                                </MudText>
-                                <MudText Typo="Typo.body2" Align="Align.Center" Class="mud-text-secondary">
-                                    Filter by tags, dimensions, dates, and more
-                                </MudText>
-                            </MudStack>
-                        </MudItem>
-                        
-                        <MudItem xs="12" sm="6" md="3">
-                            <MudStack AlignItems="AlignItems.Center" Spacing="2">
-                                <MudIcon Icon="@Icons.Material.Filled.Search" Size="Size.Large" Color="Color.Info" />
-                                <MudText Typo="Typo.subtitle2" Align="Align.Center">
-                                    <strong>Fast Search</strong>
-                                </MudText>
-                                <MudText Typo="Typo.body2" Align="Align.Center" Class="mud-text-secondary">
-                                    Client-side search with instant results
-                                </MudText>
-                            </MudStack>
-                        </MudItem>
-                        
-                        <MudItem xs="12" sm="6" md="3">
-                            <MudStack AlignItems="AlignItems.Center" Spacing="2">
-                                <MudIcon Icon="@Icons.Material.Filled.DarkMode" Size="Size.Large" Color="Color.Secondary" />
-                                <MudText Typo="Typo.subtitle2" Align="Align.Center">
-                                    <strong>Dark Mode</strong>
-                                </MudText>
-                                <MudText Typo="Typo.body2" Align="Align.Center" Class="mud-text-secondary">
-                                    Easy on the eyes for long viewing sessions
-                                </MudText>
-                            </MudStack>
-                        </MudItem>
-                    </MudGrid>
-                </MudCardContent>
+                <MudCardActions Class="px-4 pb-4 pt-0">
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Secondary"
+                               FullWidth="true"
+                               OnClick="@NavigateToAiTools">
+                        Explore AI tools
+                    </MudButton>
+                </MudCardActions>
             </MudCard>
         </MudItem>
     </MudGrid>
+
+    <MudGrid GutterSize="3">
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="1" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Getting started</MudText>
+                <MudList Dense="true" T="string">
+                    <MudListItem T="string">
+                        <MudText Typo="Typo.body2">
+                            1. Create a dataset using the creator and choose your source.
+                        </MudText>
+                    </MudListItem>
+                    <MudListItem T="string">
+                        <MudText Typo="Typo.body2">
+                            2. Open the dataset viewer and filter down to interesting slices.
+                        </MudText>
+                    </MudListItem>
+                    <MudListItem T="string">
+                        <MudText Typo="Typo.body2">
+                            3. Use AI tools to enrich titles, captions, and tags at scale.
+                        </MudText>
+                    </MudListItem>
+                </MudList>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="1" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Power features</MudText>
+                <MudList Dense="true" T="string">
+                    <MudListItem T="string">
+                        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                            <MudIcon Icon="@Icons.Material.Filled.ViewModule" />
+                            <MudText Typo="Typo.body2">
+                                Virtualized grid viewer handles massive datasets smoothly.
+                            </MudText>
+                        </MudStack>
+                    </MudListItem>
+                    <MudListItem T="string">
+                        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                            <MudIcon Icon="@Icons.Material.Filled.FilterAlt" />
+                            <MudText Typo="Typo.body2">
+                                Rich filtering by status, source, and modality in the library.
+                            </MudText>
+                        </MudStack>
+                    </MudListItem>
+                    <MudListItem T="string">
+                        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                            <MudIcon Icon="@Icons.Material.Filled.Tune" />
+                            <MudText Typo="Typo.body2">
+                                Inline editing for titles and metadata in the viewer.
+                            </MudText>
+                        </MudStack>
+                    </MudListItem>
+                </MudList>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
 </MudContainer>
 
 @code {

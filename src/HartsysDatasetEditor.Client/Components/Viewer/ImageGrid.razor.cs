@@ -34,6 +34,7 @@ public partial class ImageGrid : IAsyncDisposable
     public int _totalItemCount = 0;
     public ElementReference _scrollContainer;
     public string _sentinelId = $"sentinel-{Guid.NewGuid():N}";
+    public string _topSentinelId = $"top-sentinel-{Guid.NewGuid():N}";
     public DotNetObjectReference<ImageGrid>? _dotNetRef;
 
     /// <summary>Initializes component, subscribes to state changes, and loads initial batch.</summary>
@@ -59,7 +60,7 @@ public partial class ImageGrid : IAsyncDisposable
             try
             {
                 _dotNetRef = DotNetObjectReference.Create(this);
-                await JSRuntime.InvokeVoidAsync("infiniteScrollHelper.initialize", _dotNetRef, _sentinelId, RootMarginPx);
+                await JSRuntime.InvokeVoidAsync("infiniteScrollHelper.initialize", _dotNetRef, _topSentinelId, _sentinelId, RootMarginPx);
                 Logs.Info("[ImageGrid] IntersectionObserver initialized");
             }
             catch (Exception ex)
@@ -100,6 +101,45 @@ public partial class ImageGrid : IAsyncDisposable
         _isLoadingMore = false;
         UpdateHasMoreFlag();
         StateHasChanged();
+    }
+
+    /// <summary>Called by JavaScript when user scrolls near the top (top sentinel becomes visible).</summary>
+    [JSInvokable]
+    public async Task OnScrolledToTop()
+    {
+        if (_isLoadingMore)
+        {
+            Logs.Info("[ImageGrid] Ignoring scroll-to-top event - already loading");
+            return;
+        }
+
+        if (DatasetCache.WindowStartIndex <= 0)
+        {
+            Logs.Info("[ImageGrid] At start of dataset window, ignoring scroll-to-top");
+            return;
+        }
+
+        Logs.Info($"[ImageGrid] User scrolled to top, loading previous items. WindowStartIndex={DatasetCache.WindowStartIndex}");
+        
+        _isLoadingMore = true;
+        StateHasChanged();
+
+        try
+        {
+            await DatasetCache.LoadPreviousPageAsync();
+            // Allow DatasetState to propagate changes
+            await Task.Delay(50);
+        }
+        catch (Exception ex)
+        {
+            Logs.Error($"[ImageGrid] Error loading previous items: {ex.Message}");
+        }
+        finally
+        {
+            _isLoadingMore = false;
+            UpdateHasMoreFlag();
+            StateHasChanged();
+        }
     }
 
     /// <summary>Loads the next batch of items from _allItems into _visibleItems.</summary>

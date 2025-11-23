@@ -167,4 +167,27 @@ public partial class ImageDetailPanel
             Snackbar.Add("Delete feature coming soon", Severity.Info);
         }
     }
+
+    public async Task OpenLightboxAsync()
+    {
+        if (Item is null)
+        {
+            return;
+        }
+
+        var parameters = new DialogParameters
+        {
+            { "Item", Item }
+        };
+
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.ExtraLarge,
+            FullWidth = true,
+            CloseButton = true,
+            CloseOnEscapeKey = true
+        };
+
+        await DialogService.ShowAsync<ImageLightbox>(Item.Title ?? "Image", parameters, options);
+    }
 }

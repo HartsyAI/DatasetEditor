@@ -48,6 +48,24 @@ public partial class Index : IDisposable
         Logs.Info("Navigating to dataset viewer");
     }
 
+    public void NavigateToCreateDataset()
+    {
+        NavigationService.NavigateTo("/datasets/create");
+        Logs.Info("Navigating to create dataset from dashboard");
+    }
+
+    public void NavigateToLibrary()
+    {
+        NavigationService.NavigateTo("/my-datasets");
+        Logs.Info("Navigating to library from dashboard");
+    }
+
+    public void NavigateToAiTools()
+    {
+        NavigationService.NavigateTo("/ai-tools");
+        Logs.Info("Navigating to AI tools from dashboard");
+    }
+
     /// <summary>Navigates to settings page.</summary>
     public void NavigateToSettings()
     {

@@ -180,30 +180,17 @@ public partial class DatasetViewer : IDisposable
 
     /// <summary>Handles item selection from the viewer.</summary>
     /// <param name="item">Selected dataset item.</param>
-    public async Task HandleItemSelected(IDatasetItem item)
+    public Task HandleItemSelected(IDatasetItem item)
     {
         _datasetState.SelectItem(item);
-        
-        // Open lightbox dialog to show full image
-        if (item is ImageItem imageItem)
+
+        if (!_viewState.ShowDetailPanel)
         {
-            var parameters = new DialogParameters
-            {
-                { "Item", imageItem }
-            };
-            
-            var options = new DialogOptions
-            {
-                MaxWidth = MaxWidth.ExtraLarge,
-                FullWidth = true,
-                CloseButton = true,
-                CloseOnEscapeKey = true
-            };
-            
-            await _dialogService.ShowAsync<ImageLightbox>(imageItem.Title ?? "Image", parameters, options);
+            _viewState.ToggleDetailPanel();
         }
-        
+
         Logs.Info($"Item selected: {item.Id}");
+        return Task.CompletedTask;
     }
 
     /// <summary>Handles infinite scroll request to load more items from API.</summary>
@@ -245,7 +232,8 @@ public partial class DatasetViewer : IDisposable
 
         if (datasetTotal > 0)
         {
-            long loaded = Math.Min(datasetTotal, _datasetState.Items.Count);
+            long loadedFromStart = _datasetCache.WindowStartIndex + _datasetState.Items.Count;
+            long loaded = Math.Min(datasetTotal, loadedFromStart);
             return $"{loaded:N0} / {datasetTotal:N0} items";
         }
 

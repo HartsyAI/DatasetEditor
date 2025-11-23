@@ -70,6 +70,13 @@ public class DatasetState
         }
     }
     
+    public void SetItemsWindow(List<IDatasetItem> items)
+    {
+        Items = items ?? new List<IDatasetItem>();
+        NotifyStateChanged();
+        Logs.Info($"Dataset window updated: {Items.Count} items");
+    }
+    
     /// <summary>Sets the loading state and clears any previous errors.</summary>
     /// <param name="isLoading">Whether dataset is currently loading.</param>
     public void SetLoading(bool isLoading)

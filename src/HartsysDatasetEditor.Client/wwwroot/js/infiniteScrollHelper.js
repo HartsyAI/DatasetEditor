@@ -2,17 +2,22 @@
 window.infiniteScrollHelper = {
     observer: null,
     dotNetRef: null,
+    topSentinelId: null,
+    bottomSentinelId: null,
 
     /**
-     * Initialize IntersectionObserver to detect when sentinel element becomes visible
+     * Initialize IntersectionObserver to detect when top/bottom sentinels become visible
      * @param {object} dotNetReference - .NET object reference to call back
-     * @param {string} sentinelId - ID of the sentinel element to observe
+     * @param {string} topSentinelId - ID of the top sentinel element to observe
+     * @param {string} bottomSentinelId - ID of the bottom sentinel element to observe
      * @param {number} rootMargin - Margin in pixels to trigger before sentinel is visible (default: 500px)
      */
-    initialize: function (dotNetReference, sentinelId, rootMargin = 500) {
-        console.log('[InfiniteScroll] Initializing observer for sentinel:', sentinelId);
+    initialize: function (dotNetReference, topSentinelId, bottomSentinelId, rootMargin = 500) {
+        console.log('[InfiniteScroll] Initializing observers for sentinels:', topSentinelId, bottomSentinelId);
         
         this.dotNetRef = dotNetReference;
+        this.topSentinelId = topSentinelId;
+        this.bottomSentinelId = bottomSentinelId;
         
         // Clean up existing observer if any
         if (this.observer) {
@@ -28,21 +33,39 @@ window.infiniteScrollHelper = {
 
         this.observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    console.log('[InfiniteScroll] Sentinel visible, requesting more items');
+                if (!entry.isIntersecting) {
+                    return;
+                }
+
+                const targetId = entry.target.id;
+                if (targetId === this.bottomSentinelId) {
+                    console.log('[InfiniteScroll] Bottom sentinel visible, requesting more items');
                     // Call back to .NET to load more items
                     dotNetReference.invokeMethodAsync('OnScrolledToBottom');
+                } else if (targetId === this.topSentinelId) {
+                    console.log('[InfiniteScroll] Top sentinel visible, requesting previous items');
+                    // Call back to .NET to load previous items
+                    dotNetReference.invokeMethodAsync('OnScrolledToTop');
                 }
             });
         }, options);
 
-        // Find and observe the sentinel element
-        const sentinel = document.getElementById(sentinelId);
-        if (sentinel) {
-            this.observer.observe(sentinel);
-            console.log('[InfiniteScroll] Observer attached to sentinel');
+        // Find and observe the top sentinel element
+        const top = document.getElementById(topSentinelId);
+        if (top) {
+            this.observer.observe(top);
+            console.log('[InfiniteScroll] Observer attached to top sentinel');
         } else {
-            console.error('[InfiniteScroll] Sentinel element not found:', sentinelId);
+            console.warn('[InfiniteScroll] Top sentinel element not found:', topSentinelId);
+        }
+
+        // Find and observe the bottom sentinel element
+        const bottom = document.getElementById(bottomSentinelId);
+        if (bottom) {
+            this.observer.observe(bottom);
+            console.log('[InfiniteScroll] Observer attached to bottom sentinel');
+        } else {
+            console.error('[InfiniteScroll] Bottom sentinel element not found:', bottomSentinelId);
         }
     },
 
@@ -56,6 +79,8 @@ window.infiniteScrollHelper = {
             this.observer = null;
         }
         this.dotNetRef = null;
+        this.topSentinelId = null;
+        this.bottomSentinelId = null;
     },
 
     /**

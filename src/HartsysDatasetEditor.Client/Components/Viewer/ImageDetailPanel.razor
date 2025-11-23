@@ -6,8 +6,11 @@
     <MudPaper Class="pa-4 h-100 overflow-y-auto" Elevation="1">
         <MudStack Spacing="3">
             @* Image Preview *@
-            <div class="detail-image-container">
+            <div class="detail-image-container" @onclick="OpenLightboxAsync">
                 <img src="@Item.ImageUrl" alt="@Item.Title" class="detail-image" />
+                <div class="detail-image-overlay">
+                    <MudIcon Icon="@Icons.Material.Filled.OpenInFull" Size="Size.Small" />
+                </div>
             </div>
             
             @* Title - Editable *@
@@ -233,12 +236,27 @@ else
         border-radius: 8px;
         overflow: hidden;
         background: var(--mud-palette-background-grey);
+        position: relative;
+        cursor: pointer;
     }
 
     .detail-image {
         width: 100%;
         height: auto;
         display: block;
+    }
+
+    .detail-image-overlay {
+        position: absolute;
+        right: 8px;
+        bottom: 8px;
+        padding: 4px;
+        border-radius: 9999px;
+        background-color: rgba(15, 23, 42, 0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: none;
     }
 
     .color-swatch {

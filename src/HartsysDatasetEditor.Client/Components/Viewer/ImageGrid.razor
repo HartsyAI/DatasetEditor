@@ -5,6 +5,7 @@
 @implements IAsyncDisposable
 
 <div class="image-grid-container" @ref="_scrollContainer">
+    <div id="@_topSentinelId" class="top-sentinel"></div>
     <div class="image-grid columns-@_gridColumns">
         @foreach (IDatasetItem item in _visibleItems)
         {
@@ -75,6 +76,11 @@
     .image-grid.columns-6 { grid-template-columns: repeat(6, 1fr); }
     .image-grid.columns-7 { grid-template-columns: repeat(7, 1fr); }
     .image-grid.columns-8 { grid-template-columns: repeat(8, 1fr); }
+
+    .top-sentinel {
+        width: 100%;
+        height: 1px;
+    }
 
     /* Loading sentinel */
     .loading-sentinel {

@@ -5,7 +5,7 @@
 @using HartsysDatasetEditor.Core.Utilities
 @using HartsysDatasetEditor.Contracts.Datasets
 
-<PageTitle>Dataset Viewer - Hartsy's Dataset Editor</PageTitle>
+<PageTitle>Dataset Viewer - DatasetStudio</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.False" Class="pa-0">
     @if (_isLoading)
@@ -37,20 +37,12 @@
     else
     {
         <!-- Dataset Loaded - Show Viewer -->
-        <MudGrid Spacing="0" Style="margin-top: 0; min-height: calc(100vh - 64px);">
-            <!-- Left Panel - Filters -->
-            @if (_viewState.ShowFilterPanel)
-            {
-                <MudItem Xs="12" Md="3" Lg="2" Style="height: calc(100vh - 64px); overflow-y: auto; border-right: 1px solid var(--mud-palette-divider); position: sticky; top: 64px;">
-                    <FilterPanel />
-                </MudItem>
-            }
-            
-            <!-- Main Content - Viewer (use full remaining width) -->
+        <MudGrid Spacing="0" Class="dataset-viewer-grid">
+            <!-- Main Content - Viewer (center column) -->
             <MudItem Xs="12" 
-                     Md="@(_viewState.ShowFilterPanel ? 9 : 12)" 
-                     Lg="@(_viewState.ShowFilterPanel ? 10 : 12)"
-                     Style="min-height: calc(100vh - 64px); overflow-y: auto;">
+                     Md="@(_viewState.ShowDetailPanel ? 9 : 12)" 
+                     Lg="@(_viewState.ShowDetailPanel ? 9 : 12)"
+                     Class="dataset-viewer-main">
                 <MudStack Spacing="2" Class="pa-4">
                     @if (_datasetDetail is not null)
                     {
@@ -145,11 +137,28 @@
                         </MudStack>
                     </MudPaper>
                     
+                    @if (_viewState.ShowFilterPanel)
+                    {
+                        <MudCollapse Expanded="_viewState.ShowFilterPanel">
+                            <MudPaper Elevation="1" Class="pa-3 mt-2">
+                                <FilterPanel />
+                            </MudPaper>
+                        </MudCollapse>
+                    }
+                    
                     <!-- Viewer Container -->
                     <ViewerContainer OnItemSelected="@HandleItemSelected"
                                      OnLoadMore="@HandleLoadMoreAsync" />
                 </MudStack>
             </MudItem>
+
+            <!-- Right Panel - Detail (optional) -->
+            @if (_viewState.ShowDetailPanel)
+            {
+                <MudItem Xs="12" Md="3" Lg="3" Class="dataset-viewer-detail">
+                    <ImageDetailPanel Item="@(_datasetState.SelectedItem as ImageItem)" />
+                </MudItem>
+            }
         </MudGrid>
     }
 </MudContainer>
@@ -157,3 +166,21 @@
 @code {
     // TODO: Move to separate .razor.cs file following component pattern
 }
+
+<style>
+    .dataset-viewer-grid {
+        height: 100vh;
+        overflow: hidden;
+    }
+
+    .dataset-viewer-main {
+        height: 100%;
+        overflow-y: auto;
+    }
+
+    .dataset-viewer-detail {
+        height: 100%;
+        overflow-y: auto;
+        border-left: 1px solid var(--mud-palette-divider);
+    }
+</style>

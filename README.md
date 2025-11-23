@@ -6,6 +6,7 @@ An API-first platform for ingesting, browsing, and analysing billion-scale AI im
 
 - **API-Driven Lifecycle**: Dataset creation, ingestion status, and item retrieval exposed via REST endpoints.
 - **Virtualized Viewing**: Only render what the user sees while prefetching nearby items for buttery scrolling.
+- **Sliding-Window Infinite Scroll**: Browse very large image datasets with a fixed-size in-memory window, loading pages ahead/behind as you scroll while evicting old items to avoid WebAssembly out-of-memory crashes.
 - **Streaming Ingestion (Roadmap)**: Designed for chunked uploads and background parsing to avoid memory spikes.
 - **Shared Contracts**: Typed DTOs shared between client and server for end-to-end consistency.
 - **Modular Extensibility**: Pluggable parsers, modalities, and viewers via dependency injection.
@@ -94,6 +95,13 @@ The editor follows a strictly API-first workflow so that every client action flo
 - **Backing Services** – pluggable storage (blob), database (PostgreSQL/Dynamo), and search index (Elastic/OpenSearch) abstractions so we can swap implementations as we scale.
 
 See the detailed blueprint, data flows, and phased roadmap in `docs/architecture.md` for deeper dives.
+
+### Dataset Viewer Sliding-Window Cache
+
+- Uses cursor-based paging from the API to request small, contiguous chunks of items.
+- Keeps a fixed-size in-memory window (`DatasetState.Items`) instead of materializing all N items on the client.
+- Slides the window forward and backward as you scroll, evicting old items from memory to avoid WebAssembly out-of-memory crashes.
+- Rehydrates earlier or later regions of the dataset from IndexedDB (when enabled) or the API when you scroll back.
 
 ## ▶️ Running the API + Client Together
 

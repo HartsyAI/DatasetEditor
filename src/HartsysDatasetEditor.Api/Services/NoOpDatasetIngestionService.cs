@@ -259,31 +259,22 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
         }
     }
 
-    private async Task<List<DatasetItemDto>> ParseUnsplashTsvAsync(
-        string filePath,
-        Dictionary<string, Dictionary<string, string>>? auxiliaryMetadata,
+    public async Task<List<DatasetItemDto>> ParseUnsplashTsvAsync(string filePath, Dictionary<string, Dictionary<string, string>>? auxiliaryMetadata,
         CancellationToken cancellationToken)
     {
         string[] lines = await File.ReadAllLinesAsync(filePath, cancellationToken);
         Logs.Info($"ParseUnsplashTsvAsync: Read {lines.Length} total lines from {Path.GetFileName(filePath)}");
-        
         if (lines.Length <= 1)
         {
-            return new List<DatasetItemDto>();
+            return [];
         }
-
         string[] headers = lines[0].Split('\t').Select(h => h.Trim()).ToArray();
-        Dictionary<string, int> headerIndex = headers
-            .Select((name, index) => new { name, index })
+        Dictionary<string, int> headerIndex = headers.Select((name, index) => new { name, index })
             .ToDictionary(x => x.name, x => x.index, StringComparer.OrdinalIgnoreCase);
-
         string GetValue(string[] values, string column)
         {
-            return headerIndex.TryGetValue(column, out int idx) && idx < values.Length
-                ? values[idx].Trim()
-                : string.Empty;
+            return headerIndex.TryGetValue(column, out int idx) && idx < values.Length ? values[idx].Trim() : string.Empty;
         }
-
         List<DatasetItemDto> items = new(lines.Length - 1);
         for (int i = 1; i < lines.Length; i++)
         {
@@ -292,14 +283,12 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
             {
                 continue;
             }
-
             string[] values = line.Split('\t');
             if (values.Length != headers.Length)
             {
                 Logs.Debug($"Skipping row {i + 1} due to column mismatch");
                 continue;
             }
-
             string imageUrl = GetValue(values, "photo_image_url");
             
             // Fix malformed URLs: Unsplash CSV uses double underscores for protocol separator
@@ -376,30 +365,22 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
         return items;
     }
 
-    private async Task<List<DatasetItemDto>> ParseParquetAsync(
-        Guid datasetId,
-        string filePath,
-        CancellationToken cancellationToken)
+    public async Task<List<DatasetItemDto>> ParseParquetAsync(Guid datasetId, string filePath, CancellationToken cancellationToken)
     {
         Logs.Info($"ParseParquetAsync: Reading Parquet file {Path.GetFileName(filePath)} for dataset {datasetId}");
-
-        List<DatasetItemDto> items = new();
-
+        List<DatasetItemDto> items = [];
         await using FileStream fileStream = File.OpenRead(filePath);
         using ParquetReader parquetReader = await ParquetReader.CreateAsync(fileStream);
         DataField[] dataFields = parquetReader.Schema.GetDataFields();
-
         for (int rowGroup = 0; rowGroup < parquetReader.RowGroupCount; rowGroup++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
             using ParquetRowGroupReader groupReader = parquetReader.OpenRowGroupReader(rowGroup);
             DataColumn[] columns = new DataColumn[dataFields.Length];
             for (int c = 0; c < dataFields.Length; c++)
             {
                 columns[c] = await groupReader.ReadColumnAsync(dataFields[c]);
             }
-
             int rowCount = columns.Length > 0 ? columns[0].Data.Length : 0;
             for (int rowIndex = 0; rowIndex < rowCount; rowIndex++)
             {
@@ -411,26 +392,22 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
                     object? value = dataArray.GetValue(rowIndex);
                     values[columnName] = value;
                 }
-
                 DatasetItemDto item = CreateDatasetItemFromParquetRow(values);
                 items.Add(item);
             }
         }
-
         Logs.Info($"ParseParquetAsync: Parsed {items.Count} items from {Path.GetFileName(filePath)}");
         return items;
     }
 
-    private DatasetItemDto CreateDatasetItemFromParquetRow(Dictionary<string, object?> values)
+    public DatasetItemDto CreateDatasetItemFromParquetRow(Dictionary<string, object?> values)
     {
         string externalId = GetFirstNonEmptyString(values, "id", "image_id", "uid", "uuid") ?? string.Empty;
         string? title = GetFirstNonEmptyString(values, "title", "caption", "text", "description", "label");
         string? description = GetFirstNonEmptyString(values, "description", "caption", "text");
         string? imageUrl = GetFirstNonEmptyString(values, "image_url", "img_url", "url");
-
         int width = GetIntValue(values, "width", "image_width", "w");
         int height = GetIntValue(values, "height", "image_height", "h");
-
         List<string> tags = new();
         string? tagsValue = GetFirstNonEmptyString(values, "tags", "labels");
         if (!string.IsNullOrWhiteSpace(tagsValue))
@@ -445,7 +422,6 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
                 }
             }
         }
-
         Dictionary<string, string> metadata = new(StringComparer.OrdinalIgnoreCase);
         foreach ((string key, object? value) in values)
         {
@@ -453,13 +429,10 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
             {
                 continue;
             }
-
             string stringValue = value.ToString() ?? string.Empty;
             metadata[key] = stringValue;
         }
-
         DateTime now = DateTime.UtcNow;
-
         return new DatasetItemDto
         {
             Id = Guid.NewGuid(),
@@ -478,7 +451,7 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
         };
     }
 
-    private static string? GetFirstNonEmptyString(
+    public static string? GetFirstNonEmptyString(
         IReadOnlyDictionary<string, object?> values,
         params string[] keys)
     {
@@ -493,13 +466,10 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
                 }
             }
         }
-
         return null;
     }
 
-    private static int GetIntValue(
-        IReadOnlyDictionary<string, object?> values,
-        params string[] keys)
+    public static int GetIntValue(IReadOnlyDictionary<string, object?> values, params string[] keys)
     {
         foreach (string key in keys)
         {
@@ -516,11 +486,10 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
                 }
             }
         }
-
         return 0;
     }
 
-    private void TryDeleteTempFile(string path)
+    public void TryDeleteTempFile(string path)
     {
         try
         {
@@ -535,12 +504,9 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
         }
     }
 
-    private async Task<Dictionary<string, Dictionary<string, string>>> LoadAuxiliaryMetadataAsync(
-        IEnumerable<string> files,
-        CancellationToken cancellationToken)
+    public async Task<Dictionary<string, Dictionary<string, string>>> LoadAuxiliaryMetadataAsync(IEnumerable<string> files, CancellationToken cancellationToken)
     {
         Dictionary<string, Dictionary<string, string>> aggregate = new(StringComparer.OrdinalIgnoreCase);
-
         foreach (string file in files)
         {
             try
@@ -550,11 +516,8 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
                 {
                     continue;
                 }
-
                 char separator = file.EndsWith(".tsv", StringComparison.OrdinalIgnoreCase) || file.EndsWith(".tsv000", StringComparison.OrdinalIgnoreCase)
-                    ? '\t'
-                    : ',';
-
+                    ? '\t' : ',';
                 string[] headers = lines[0].Split(separator).Select(h => h.Trim()).ToArray();
                 Logs.Info($"Parsing metadata file {Path.GetFileName(file)} with columns: {string.Join(", ", headers)}");
                 int idIndex = Array.FindIndex(headers, h => h.Equals("photo_id", StringComparison.OrdinalIgnoreCase) ||
@@ -564,7 +527,6 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
                 {
                     idIndex = 0;
                 }
-
                 int fileEntryCount = 0;
                 for (int i = 1; i < lines.Length; i++)
                 {
@@ -573,25 +535,21 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
                     {
                         continue;
                     }
-
                     string[] values = line.Split(separator);
                     if (values.Length <= idIndex)
                     {
                         continue;
                     }
-
                     string photoId = values[idIndex].Trim();
                     if (string.IsNullOrWhiteSpace(photoId))
                     {
                         continue;
                     }
-
                     if (!aggregate.TryGetValue(photoId, out Dictionary<string, string>? target))
                     {
                         target = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                         aggregate[photoId] = target;
                     }
-
                     fileEntryCount++;
                     for (int h = 0; h < headers.Length && h < values.Length; h++)
                     {
@@ -599,7 +557,6 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
                         {
                             continue;
                         }
-
                         string key = headers[h];
                         string value = values[h].Trim();
                         if (!string.IsNullOrWhiteSpace(key) && !target.ContainsKey(key) && !string.IsNullOrWhiteSpace(value))
@@ -608,7 +565,6 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
                         }
                     }
                 }
-
                 Logs.Info($"Loaded {fileEntryCount} rows from {Path.GetFileName(file)} (running distinct photo IDs: {aggregate.Count})");
             }
             catch (Exception ex)
@@ -616,7 +572,6 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
                 Logs.Warning($"Failed to parse auxiliary metadata file {file}: {ex.GetType().Name}: {ex.Message}");
             }
         }
-
         return aggregate;
     }
 }

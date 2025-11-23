@@ -14,6 +14,9 @@ public partial class MyDatasets
     private List<DatasetSummaryDto> _filteredDatasets = new();
     private string _searchQuery = string.Empty;
     private bool _isLoading = false;
+    private IngestionStatusDto? _statusFilter = null;
+    private DatasetSourceType? _sourceFilter = null;
+    private bool _onlyReady = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -39,7 +42,7 @@ public partial class MyDatasets
                     _datasets = JsonSerializer.Deserialize<List<DatasetSummaryDto>>(
                         datasetsElement.GetRawText(),
                         new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
-                    
+
                     _filteredDatasets = _datasets;
                 }
             }
@@ -62,18 +65,31 @@ public partial class MyDatasets
 
     private void FilterDatasets()
     {
-        if (string.IsNullOrWhiteSpace(_searchQuery))
+        IEnumerable<DatasetSummaryDto> query = _datasets;
+
+        if (!string.IsNullOrWhiteSpace(_searchQuery))
         {
-            _filteredDatasets = _datasets;
+            string text = _searchQuery.ToLowerInvariant();
+            query = query.Where(d => d.Name.ToLowerInvariant().Contains(text) ||
+                                     (d.Description?.ToLowerInvariant().Contains(text) ?? false));
         }
-        else
+
+        if (_statusFilter.HasValue)
         {
-            string query = _searchQuery.ToLowerInvariant();
-            _filteredDatasets = _datasets
-                .Where(d => d.Name.ToLowerInvariant().Contains(query) ||
-                           (d.Description?.ToLowerInvariant().Contains(query) ?? false))
-                .ToList();
+            query = query.Where(d => d.Status == _statusFilter.Value);
         }
+
+        if (_sourceFilter.HasValue)
+        {
+            query = query.Where(d => d.SourceType == _sourceFilter.Value);
+        }
+
+        if (_onlyReady)
+        {
+            query = query.Where(d => d.Status == IngestionStatusDto.Completed);
+        }
+
+        _filteredDatasets = query.ToList();
     }
 
     private void ViewDataset(DatasetSummaryDto dataset)
@@ -92,6 +108,46 @@ public partial class MyDatasets
         return description.Length > 100 
             ? description.Substring(0, 97) + "..." 
             : description;
+    }
+
+    private Color GetStatusColor(IngestionStatusDto status) => status switch
+    {
+        IngestionStatusDto.Pending => Color.Warning,
+        IngestionStatusDto.Processing => Color.Info,
+        IngestionStatusDto.Completed => Color.Success,
+        IngestionStatusDto.Failed => Color.Error,
+        _ => Color.Default
+    };
+
+    private string GetSourceLabel(DatasetSummaryDto dataset)
+    {
+        string source = dataset.SourceType switch
+        {
+            DatasetSourceType.LocalUpload => "Local upload",
+            DatasetSourceType.HuggingFaceDownload => "HuggingFace download",
+            DatasetSourceType.HuggingFaceStreaming => "HuggingFace streaming",
+            DatasetSourceType.ExternalS3Streaming => "External S3 streaming",
+            _ => "Unknown source"
+        };
+
+        if (dataset.IsStreaming && dataset.SourceType == DatasetSourceType.HuggingFaceDownload)
+        {
+            source += " (streaming)";
+        }
+
+        return source;
+    }
+
+    private void OnStatusFilterChanged(IngestionStatusDto? value)
+    {
+        _statusFilter = value;
+        FilterDatasets();
+    }
+
+    private void OnSourceFilterChanged(DatasetSourceType? value)
+    {
+        _sourceFilter = value;
+        FilterDatasets();
     }
 
     private string FormatTimeAgo(DateTime dateTime)

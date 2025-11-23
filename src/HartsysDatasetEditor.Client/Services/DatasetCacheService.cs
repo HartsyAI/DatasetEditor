@@ -26,14 +26,18 @@ public sealed class DatasetCacheService : IDisposable
     private readonly SemaphoreSlim _pageLock = new(1, 1);
     private bool _isIndexedDbEnabled = true;
     private bool _isBuffering;
+    private const int MaxBufferedItems = 100_000;
+    private int _windowStartIndex = 0;
 
     public Guid? CurrentDatasetId { get; private set; }
     public string? NextCursor { get; private set; }
     public DatasetDetailDto? CurrentDatasetDetail { get; private set; }
 
     public bool HasMorePages => !string.IsNullOrWhiteSpace(NextCursor);
+    public bool HasPreviousPages => _windowStartIndex > 0;
     public bool IsIndexedDbEnabled => _isIndexedDbEnabled;
     public bool IsBuffering => _isBuffering;
+    public int WindowStartIndex => _windowStartIndex;
 
     public event Action? OnDatasetDetailChanged;
     public event Action<bool>? OnBufferingStateChanged;
@@ -79,6 +83,7 @@ public sealed class DatasetCacheService : IDisposable
             List<IDatasetItem> items = MapItems(dataset.Id, page?.Items ?? Array.Empty<DatasetItemDto>());
 
             _datasetState.LoadDataset(mappedDataset, items);
+            _windowStartIndex = 0;
             CurrentDatasetId = datasetId;
             NextCursor = page?.NextCursor;
             CurrentDatasetDetail = dataset;
@@ -120,9 +125,106 @@ public sealed class DatasetCacheService : IDisposable
                 return false;
             }
 
-            List<IDatasetItem> items = MapItems(CurrentDatasetId.Value, page.Items);
-            _datasetState.AppendItems(items);
+            List<IDatasetItem> newItems = MapItems(CurrentDatasetId.Value, page.Items);
+
+            List<IDatasetItem> currentWindow = _datasetState.Items;
+            List<IDatasetItem> combined = new(currentWindow.Count + newItems.Count);
+            combined.AddRange(currentWindow);
+            combined.AddRange(newItems);
+
+            if (combined.Count > MaxBufferedItems)
+            {
+                int overflow = combined.Count - MaxBufferedItems;
+                if (overflow > 0)
+                {
+                    if (overflow > combined.Count)
+                    {
+                        overflow = combined.Count;
+                    }
+
+                    combined.RemoveRange(0, overflow);
+                    _windowStartIndex += overflow;
+                }
+            }
+
+            _datasetState.SetItemsWindow(combined);
             NextCursor = page.NextCursor;
+            return true;
+        }
+        finally
+        {
+            _pageLock.Release();
+            if (bufferingRaised)
+            {
+                SetBuffering(false);
+            }
+        }
+    }
+
+    public async Task<bool> LoadPreviousPageAsync(CancellationToken cancellationToken = default, bool suppressBufferingNotification = false)
+    {
+        if (CurrentDatasetId == null || _windowStartIndex <= 0)
+        {
+            return false;
+        }
+
+        bool bufferingRaised = false;
+        if (!suppressBufferingNotification)
+        {
+            SetBuffering(true);
+            bufferingRaised = true;
+        }
+
+        await _pageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            const int pageSize = 100;
+
+            int prevStartIndex = _windowStartIndex - pageSize;
+            int effectivePageSize = pageSize;
+            if (prevStartIndex < 0)
+            {
+                effectivePageSize += prevStartIndex; // prevStartIndex is negative here
+                prevStartIndex = 0;
+            }
+
+            if (effectivePageSize <= 0)
+            {
+                return false;
+            }
+
+            string? prevCursor = prevStartIndex == 0 ? null : prevStartIndex.ToString();
+
+            PageResponse<DatasetItemDto>? page = await FetchPageAsync(CurrentDatasetId.Value, effectivePageSize, prevCursor, cancellationToken).ConfigureAwait(false);
+            if (page == null || page.Items.Count == 0)
+            {
+                return false;
+            }
+
+            List<IDatasetItem> newItems = MapItems(CurrentDatasetId.Value, page.Items);
+
+            List<IDatasetItem> currentWindow = _datasetState.Items;
+            List<IDatasetItem> combined = new(newItems.Count + currentWindow.Count);
+            combined.AddRange(newItems);
+            combined.AddRange(currentWindow);
+
+            if (combined.Count > MaxBufferedItems)
+            {
+                int overflow = combined.Count - MaxBufferedItems;
+                if (overflow > 0)
+                {
+                    if (overflow > combined.Count)
+                    {
+                        overflow = combined.Count;
+                    }
+
+                    // For previous pages, evict from the end of the window
+                    combined.RemoveRange(combined.Count - overflow, overflow);
+                }
+            }
+
+            _windowStartIndex = prevStartIndex;
+            _datasetState.SetItemsWindow(combined);
             return true;
         }
         finally
@@ -142,11 +244,13 @@ public sealed class DatasetCacheService : IDisposable
             return;
         }
 
+        int effectiveMinimum = Math.Min(minimumCount, MaxBufferedItems);
+
         bool bufferingRaised = false;
 
         try
         {
-            while (_datasetState.Items.Count < minimumCount && HasMorePages)
+            while (_datasetState.Items.Count < effectiveMinimum && HasMorePages)
             {
                 if (!bufferingRaised)
                 {

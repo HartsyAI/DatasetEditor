@@ -12,6 +12,7 @@ html, body {
     font-family: 'Roboto', 'Helvetica', 'Arial', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    background-color: #020617;
 }
 
 #app {
@@ -20,9 +21,19 @@ html, body {
     flex-direction: column;
 }
 
+.mud-layout {
+    min-height: 100vh;
+}
+
+.mud-drawer {
+    top: 0 !important;
+    height: 100vh;
+}
+
 /* Blazor Error UI */
 #blazor-error-ui {
-    background: lightyellow;
+    background: #020617;
+    color: #e5e7eb;
     bottom: 0;
     box-shadow: 0 -1px 5px rgba(0, 0, 0, 0.35);
     display: none;
@@ -112,6 +123,7 @@ html, body {
 /* Custom MudBlazor Overrides */
 .mud-main-content {
     padding: 0 !important;
+    margin-top: 0 !important;
 }
 
 /* Ensure virtualized lists take full width */

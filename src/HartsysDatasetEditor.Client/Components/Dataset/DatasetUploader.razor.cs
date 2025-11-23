@@ -37,6 +37,7 @@ public partial class DatasetUploader
 
     // Tab management
     public int _activeTabIndex = 0;
+    [Parameter] public int InitialTabIndex { get; set; } = 0;
 
     // HuggingFace import fields
     public string _hfRepository = string.Empty;
@@ -47,6 +48,11 @@ public partial class DatasetUploader
     public bool _hfIsStreaming = false;
 
     private const string FileInputElementId = "fileInput";
+
+    protected override void OnInitialized()
+    {
+        _activeTabIndex = InitialTabIndex;
+    }
 
     private async Task OpenFilePickerAsync()
     {

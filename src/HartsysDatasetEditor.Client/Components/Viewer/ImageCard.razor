@@ -49,7 +49,31 @@
     
     @* Bottom gradient overlay with title *@
     <div class="bottom-info">
-        <MudText Typo="Typo.body2" Class="card-title">@GetDisplayTitle()</MudText>
+        @if (_isEditingTitle)
+        {
+            <MudTextField @bind-Value="_editTitle"
+                          Variant="Variant.Outlined"
+                          Dense="true"
+                          Class="card-title-input"
+                          Immediate="true"
+                          AutoFocus="true"
+                          OnKeyUp="HandleTitleKeyUp"
+                          OnBlur="SaveTitle" />
+        }
+        else
+        {
+            <div class="d-flex align-center justify-space-between">
+                <MudText Typo="Typo.body2" Class="card-title">@GetDisplayTitle()</MudText>
+                <div @onclick:stopPropagation="true">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                   Size="Size.Small"
+                                   Color="Color.Default"
+                                   OnClick="StartEditTitle"
+                                   Title="Edit title" />
+                </div>
+            </div>
+        }
+
         @if (!string.IsNullOrEmpty(Item.Photographer))
         {
             <MudText Typo="Typo.caption" Class="card-subtitle">@Item.Photographer</MudText>
@@ -206,6 +230,10 @@
         margin-bottom: 2px;
     }
     
+    .card-title-input {
+        width: 100%;
+        color: white;
+    }
     .card-subtitle {
         opacity: 0.9;
         color: rgba(255,255,255,0.9);
