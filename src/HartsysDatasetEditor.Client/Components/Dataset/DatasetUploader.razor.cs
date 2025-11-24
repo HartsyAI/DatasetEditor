@@ -654,12 +654,32 @@ public partial class DatasetUploader
             // Step 3: Handle completion differently for streaming vs download mode
             if (_hfIsStreaming)
             {
-                // Streaming mode: Dataset is ready but has no items
-                Logs.Info($"Streaming reference created for dataset {datasetId}");
-                NotificationService.ShowWarning(
-                    $"Streaming reference to '{_hfRepository}' created. " +
-                    "Note: Streaming mode is experimental and cannot display items yet. " +
-                    "For viewing datasets, please use download mode (uncheck 'Streaming Mode').");
+                // Streaming mode: dataset is a lightweight reference; items are streamed on demand
+                Logs.Info($"Streaming reference created for dataset {datasetId}. Preparing viewer...");
+
+                // Give the server a brief moment to finalize streaming metadata
+                await Task.Delay(2000);
+
+                DatasetDetailDto? updatedDataset = await DatasetApiClient.GetDatasetAsync(datasetId);
+                if (updatedDataset != null)
+                {
+                    Logs.Info($"Streaming dataset {datasetId} status: {updatedDataset.Status}, TotalItems: {updatedDataset.TotalItems}");
+                }
+
+                try
+                {
+                    DatasetState.SetLoading(true);
+                    await DatasetCacheService.LoadFirstPageAsync(datasetId);
+                    DatasetState.SetLoading(false);
+
+                    NotificationService.ShowSuccess(
+                        $"Streaming dataset '{datasetName}' imported successfully. Images will be streamed directly from HuggingFace.");
+                }
+                catch (Exception ex)
+                {
+                    Logs.Error($"Failed to load streaming dataset {datasetId} into viewer: {ex.Message}");
+                    NotificationService.ShowError($"Streaming dataset was created, but loading items failed: {ex.Message}");
+                }
 
                 // Clear form
                 _hfRepository = string.Empty;
@@ -668,8 +688,8 @@ public partial class DatasetUploader
                 _hfRevision = null;
                 _hfAccessToken = null;
 
-                // Don't navigate to viewer since there's nothing to show
-                // Stay on upload page so user can try again with download mode
+                await Task.Delay(1000);
+                NavigationService.NavigateToDataset(datasetId.ToString());
             }
             else
             {

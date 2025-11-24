@@ -26,7 +26,6 @@ internal sealed class NoOpDatasetIngestionService(
     private readonly string _datasetRootPath = configuration["Storage:DatasetRootPath"] ?? Path.Combine(AppContext.BaseDirectory, "data", "datasets");
     private readonly string _uploadRootPath = configuration["Storage:UploadPath"] ?? "./uploads";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
     public async Task ImportFromHuggingFaceAsync(Guid datasetId, ImportHuggingFaceDatasetRequest request, CancellationToken cancellationToken = default)
     {
         Logs.Info("========== [HF IMPORT START] ==========");
@@ -52,7 +51,11 @@ internal sealed class NoOpDatasetIngestionService(
 
             // Step 1: Validate dataset exists and fetch metadata
             Logs.Info("[HF IMPORT] Step 1: Fetching metadata from HuggingFace Hub...");
-            HuggingFaceDatasetInfo? info = await huggingFaceClient.GetDatasetInfoAsync(request.Repository, request.Revision, request.AccessToken, cancellationToken);
+            HuggingFaceDatasetInfo? info = await huggingFaceClient.GetDatasetInfoAsync(
+                request.Repository,
+                request.Revision,
+                request.AccessToken,
+                cancellationToken);
 
             if (info == null)
             {
@@ -65,6 +68,8 @@ internal sealed class NoOpDatasetIngestionService(
             Logs.Info($"[HF IMPORT] SUCCESS: Found dataset {request.Repository}");
             Logs.Info($"[HF IMPORT] File count: {info.Files.Count}");
             Logs.Info($"[HF IMPORT] Files: {string.Join(", ", info.Files.Select(f => $"{f.Path} ({f.Type}, {f.Size} bytes)"))}");
+
+            HuggingFaceDatasetProfile profile = HuggingFaceDatasetProfile.FromDatasetInfo(request.Repository, info);
 
             // Step 2: Update dataset metadata
             Logs.Info("[HF IMPORT] Step 2: Updating dataset metadata...");
@@ -84,87 +89,103 @@ internal sealed class NoOpDatasetIngestionService(
             Logs.Info($"[HF IMPORT] SourceUri: {dataset.SourceUri}");
 
             // Step 3: Handle streaming vs download mode
-            if (request.IsStreaming)
+            bool streamingRequested = request.IsStreaming;
+
+            if (streamingRequested)
             {
-                Logs.Info("[HF IMPORT] Step 3: Configuring STREAMING mode via datasets-server");
+                Logs.Info("[HF IMPORT] Step 3: Attempting streaming configuration via datasets-server");
 
                 dataset.HuggingFaceRepository = request.Repository;
-
                 string? accessToken = request.AccessToken;
 
-                HuggingFaceDatasetSizeInfo? sizeInfo = await huggingFaceDatasetServerClient.GetDatasetSizeAsync(
+                HuggingFaceStreamingPlan streamingPlan = await HuggingFaceStreamingStrategy.DiscoverStreamingPlanAsync(
+                    huggingFaceDatasetServerClient,
                     request.Repository,
-                    null,
-                    null,
                     accessToken,
                     cancellationToken);
 
-                if (sizeInfo != null)
+                if (streamingPlan.IsStreamingSupported)
                 {
-                    dataset.HuggingFaceConfig = sizeInfo.Config;
-                    dataset.HuggingFaceSplit = string.IsNullOrWhiteSpace(sizeInfo.Split) ? "train" : sizeInfo.Split;
-                    if (sizeInfo.NumRows.HasValue)
+                    dataset.HuggingFaceConfig = streamingPlan.Config;
+
+                    string? inferredSplit = streamingPlan.Split;
+                    if (string.IsNullOrWhiteSpace(inferredSplit))
                     {
-                        dataset.TotalItems = sizeInfo.NumRows.Value;
-                    }
-                }
-                else
-                {
-                    dataset.TotalItems = 0;
-                }
-
-                dataset.Status = IngestionStatusDto.Completed;
-                await datasetRepository.UpdateAsync(dataset, cancellationToken);
-
-                Logs.Info($"[HF IMPORT] Dataset {datasetId} configured as streaming reference");
-                Logs.Info($"[HF IMPORT] Streaming config: repo={dataset.HuggingFaceRepository}, config={dataset.HuggingFaceConfig}, split={dataset.HuggingFaceSplit}, totalRows={dataset.TotalItems}");
-                Logs.Info("========== [HF IMPORT COMPLETE - STREAMING] ==========");
-            }
-            else
-            {
-                Logs.Info("[HF IMPORT] Step 3: Starting DOWNLOAD mode");
-
-                List<HuggingFaceDatasetFile> dataFiles = info.Files
-                    .Where(f => f.Type == "csv" || f.Type == "json" || f.Type == "parquet")
-                    .ToList();
-
-                Logs.Info($"[HF IMPORT] Found {dataFiles.Count} supported data files (csv/json/parquet)");
-
-                if (dataFiles.Count == 0)
-                {
-                    Logs.Warning($"[HF IMPORT] No CSV/JSON/Parquet files found in {request.Repository}, attempting image-only import");
-                    Logs.Info($"[HF IMPORT] Available files: {string.Join(", ", info.Files.Select(f => f.Path))}");
-
-                    bool imageImportSucceeded = await TryImportImageOnlyDatasetFromHuggingFaceAsync(dataset, info, request, cancellationToken);
-                    if (!imageImportSucceeded)
-                    {
-                        dataset.Status = IngestionStatusDto.Failed;
-                        await datasetRepository.UpdateAsync(dataset, cancellationToken);
+                        inferredSplit = "train";
                     }
 
+                    dataset.HuggingFaceSplit = inferredSplit;
+
+                    if (streamingPlan.TotalRows.HasValue)
+                    {
+                        dataset.TotalItems = streamingPlan.TotalRows.Value;
+                    }
+
+                    dataset.SourceType = DatasetSourceType.HuggingFaceStreaming;
+                    dataset.IsStreaming = true;
+                    dataset.Status = IngestionStatusDto.Completed;
+                    await datasetRepository.UpdateAsync(dataset, cancellationToken);
+
+                    Logs.Info($"[HF IMPORT] Dataset {datasetId} configured as streaming reference");
+                    Logs.Info($"[HF IMPORT] Streaming config: repo={dataset.HuggingFaceRepository}, config={dataset.HuggingFaceConfig}, split={dataset.HuggingFaceSplit}, totalRows={dataset.TotalItems}, source={streamingPlan.Source}");
+                    Logs.Info("========== [HF IMPORT COMPLETE - STREAMING] ==========");
                     return;
                 }
 
-                HuggingFaceDatasetFile fileToDownload = dataFiles[0];
-                Logs.Info($"[HF IMPORT] Downloading file: {fileToDownload.Path} ({fileToDownload.Type}, {fileToDownload.Size} bytes)");
-
-                string tempDownloadPath = Path.Combine(
-                    Path.GetTempPath(),
-                    $"hf-dataset-{datasetId}-{Path.GetFileName(fileToDownload.Path)}");
-
-                Logs.Info($"[HF IMPORT] Download destination: {tempDownloadPath}");
-
-                await huggingFaceClient.DownloadFileAsync(request.Repository, fileToDownload.Path, tempDownloadPath, request.Revision, request.AccessToken, cancellationToken);
-
-                Logs.Info($"[HF IMPORT] Download complete. File size: {new FileInfo(tempDownloadPath).Length} bytes");
-
-                await datasetRepository.UpdateAsync(dataset, cancellationToken);
-
-                // Process the downloaded file
-                Logs.Info("[HF IMPORT] Starting ingestion pipeline...");
-                await StartIngestionAsync(datasetId, tempDownloadPath, cancellationToken);
-                Logs.Info("========== [HF IMPORT COMPLETE - DOWNLOAD] ==========");
+                // If we reach here, streaming was requested but could not be configured.
+                // Gracefully fall back to download mode using the regular ingestion pipeline.
+                Logs.Warning($"[HF IMPORT] Streaming mode requested but not supported for this dataset. Reason: {streamingPlan.FailureReason ?? "unknown"}. Falling back to download mode.");
+                dataset.SourceType = DatasetSourceType.HuggingFaceDownload;
+                dataset.IsStreaming = false;
             }
+
+            // Download mode ingestion (also used when streaming fallback occurs)
+            Logs.Info("[HF IMPORT] Step 3: Starting DOWNLOAD mode");
+
+            List<HuggingFaceDatasetFile> dataFiles = profile.DataFiles.ToList();
+
+            Logs.Info($"[HF IMPORT] Found {dataFiles.Count} supported data files (csv/json/parquet)");
+
+            if (dataFiles.Count == 0)
+            {
+                Logs.Warning($"[HF IMPORT] No CSV/JSON/Parquet files found in {request.Repository}, attempting image-only import");
+                Logs.Info($"[HF IMPORT] Available files: {string.Join(", ", info.Files.Select(f => f.Path))}");
+
+                bool imageImportSucceeded = await TryImportImageOnlyDatasetFromHuggingFaceAsync(dataset, info, request, cancellationToken);
+                if (!imageImportSucceeded)
+                {
+                    dataset.Status = IngestionStatusDto.Failed;
+                    await datasetRepository.UpdateAsync(dataset, cancellationToken);
+                }
+
+                return;
+            }
+
+            HuggingFaceDatasetFile fileToDownload = dataFiles[0];
+            Logs.Info($"[HF IMPORT] Downloading file: {fileToDownload.Path} ({fileToDownload.Type}, {fileToDownload.Size} bytes)");
+
+            string tempDownloadPath = Path.Combine(
+                Path.GetTempPath(),
+                $"hf-dataset-{datasetId}-{Path.GetFileName(fileToDownload.Path)}");
+
+            Logs.Info($"[HF IMPORT] Download destination: {tempDownloadPath}");
+
+            await huggingFaceClient.DownloadFileAsync(
+                request.Repository,
+                fileToDownload.Path,
+                tempDownloadPath,
+                request.Revision,
+                request.AccessToken,
+                cancellationToken);
+
+            Logs.Info($"[HF IMPORT] Download complete. File size: {new FileInfo(tempDownloadPath).Length} bytes");
+
+            await datasetRepository.UpdateAsync(dataset, cancellationToken);
+
+            // Process the downloaded file
+            Logs.Info("[HF IMPORT] Starting ingestion pipeline...");
+            await StartIngestionAsync(datasetId, tempDownloadPath, cancellationToken);
+            Logs.Info("========== [HF IMPORT COMPLETE - DOWNLOAD] ==========");
         }
         catch (Exception ex)
         {
