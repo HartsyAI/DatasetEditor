@@ -56,4 +56,10 @@ internal sealed class LiteDbDatasetEntityRepository : IDatasetRepository
         _collection.Update(dataset);
         return Task.CompletedTask;
     }
+
+    public Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        _collection.Delete(new BsonValue(id));
+        return Task.CompletedTask;
+    }
 }

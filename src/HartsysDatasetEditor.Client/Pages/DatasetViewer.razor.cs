@@ -54,9 +54,25 @@ public partial class DatasetViewer : IDisposable
         _datasetDetail = _datasetCache.CurrentDatasetDetail;
         _isIndexedDbEnabled = _datasetCache.IsIndexedDbEnabled;
 
-        // Check if dataset is already loaded
-        if (_datasetState.CurrentDataset != null)
+        // Check for dataset id in query string first
+        string? idParam = _navigationService.GetQueryParameter("id");
+        if (!string.IsNullOrWhiteSpace(idParam) && Guid.TryParse(idParam, out Guid requestedId))
         {
+            // If the requested dataset is already loaded, just apply filters
+            if (_datasetCache.CurrentDatasetId == requestedId && _datasetState.CurrentDataset != null)
+            {
+                ApplyFilters();
+                EnsureStatusPolling();
+            }
+            else
+            {
+                // Fire-and-forget dataset load; DatasetState/Cache events will drive the UI
+                _ = LoadDatasetFromNavigationAsync(requestedId);
+            }
+        }
+        else if (_datasetState.CurrentDataset != null)
+        {
+            // Fallback to existing behavior when no id is provided
             ApplyFilters();
             EnsureStatusPolling();
         }
@@ -216,6 +232,22 @@ public partial class DatasetViewer : IDisposable
         else if (!_datasetCache.HasMorePages)
         {
             Logs.Info("[DatasetViewer] No more pages available to load");
+        }
+    }
+
+    private async Task LoadDatasetFromNavigationAsync(Guid datasetId)
+    {
+        try
+        {
+            Logs.Info($"[DatasetViewer] Loading dataset {datasetId} from navigation");
+            await _datasetCache.LoadFirstPageAsync(datasetId);
+            ApplyFilters();
+            EnsureStatusPolling();
+        }
+        catch (Exception ex)
+        {
+            Logs.Error($"[DatasetViewer] Failed to load dataset {datasetId} from navigation: {ex.Message}");
+            _notificationService.ShowError("Failed to load selected dataset.");
         }
     }
 

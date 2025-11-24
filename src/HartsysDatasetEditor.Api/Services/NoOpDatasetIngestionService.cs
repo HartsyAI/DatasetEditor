@@ -1,8 +1,11 @@
 using System.Text;
+using System.Text.Json;
 using System.IO.Compression;
 using HartsysDatasetEditor.Api.Models;
 using HartsysDatasetEditor.Contracts.Datasets;
 using HartsysDatasetEditor.Core.Utilities;
+using Microsoft.Extensions.Configuration;
+using Microsoft.VisualBasic.FileIO;
 using Parquet;
 using Parquet.Data;
 using Parquet.Schema;
@@ -10,12 +13,19 @@ using Parquet.Schema;
 namespace HartsysDatasetEditor.Api.Services;
 
 /// <summary>
-/// Placeholder ingestion service. Updates dataset status without processing.
+/// Placeholder ingestion service. Updates dataset status and parses supported formats.
 /// TODO: Replace with real ingestion pipeline (see docs/architecture.md section 3.3).
 /// </summary>
-internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepository, IDatasetItemRepository datasetItemRepository,
-    IHuggingFaceClient huggingFaceClient) : IDatasetIngestionService
+internal sealed class NoOpDatasetIngestionService(
+    IDatasetRepository datasetRepository,
+    IDatasetItemRepository datasetItemRepository,
+    IHuggingFaceClient huggingFaceClient,
+    IConfiguration configuration) : IDatasetIngestionService
 {
+    private readonly string _datasetRootPath = configuration["Storage:DatasetRootPath"] ?? Path.Combine(AppContext.BaseDirectory, "data", "datasets");
+    private readonly string _uploadRootPath = configuration["Storage:UploadPath"] ?? "./uploads";
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     public async Task ImportFromHuggingFaceAsync(Guid datasetId, ImportHuggingFaceDatasetRequest request, CancellationToken cancellationToken = default)
     {
         Logs.Info("========== [HF IMPORT START] ==========");
@@ -90,7 +100,6 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
             {
                 Logs.Info("[HF IMPORT] Step 3: Starting DOWNLOAD mode");
 
-                // Download mode: Find and download dataset files
                 List<HuggingFaceDatasetFile> dataFiles = info.Files
                     .Where(f => f.Type == "csv" || f.Type == "json" || f.Type == "parquet")
                     .ToList();
@@ -99,14 +108,19 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
 
                 if (dataFiles.Count == 0)
                 {
-                    Logs.Error($"[HF IMPORT] FAIL: No supported data files found in {request.Repository}");
-                    Logs.Error($"[HF IMPORT] Available files: {string.Join(", ", info.Files.Select(f => f.Path))}");
-                    dataset.Status = IngestionStatusDto.Failed;
-                    await datasetRepository.UpdateAsync(dataset, cancellationToken);
+                    Logs.Warning($"[HF IMPORT] No CSV/JSON/Parquet files found in {request.Repository}, attempting image-only import");
+                    Logs.Info($"[HF IMPORT] Available files: {string.Join(", ", info.Files.Select(f => f.Path))}");
+
+                    bool imageImportSucceeded = await TryImportImageOnlyDatasetFromHuggingFaceAsync(dataset, info, request, cancellationToken);
+                    if (!imageImportSucceeded)
+                    {
+                        dataset.Status = IngestionStatusDto.Failed;
+                        await datasetRepository.UpdateAsync(dataset, cancellationToken);
+                    }
+
                     return;
                 }
 
-                // For now, download the first supported file
                 HuggingFaceDatasetFile fileToDownload = dataFiles[0];
                 Logs.Info($"[HF IMPORT] Downloading file: {fileToDownload.Path} ({fileToDownload.Type}, {fileToDownload.Size} bytes)");
 
@@ -140,6 +154,88 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
         }
     }
 
+    private async Task<bool> TryImportImageOnlyDatasetFromHuggingFaceAsync(
+        DatasetEntity dataset,
+        HuggingFaceDatasetInfo info,
+        ImportHuggingFaceDatasetRequest request,
+        CancellationToken cancellationToken)
+    {
+        List<HuggingFaceDatasetFile> imageFiles = info.Files
+            .Where(f =>
+            {
+                string extension = Path.GetExtension(f.Path).ToLowerInvariant();
+                return extension == ".jpg" || extension == ".jpeg" || extension == ".png" || extension == ".webp" || extension == ".gif" || extension == ".bmp";
+            })
+            .ToList();
+
+        Logs.Info($"[HF IMPORT] Image-only fallback: found {imageFiles.Count} image files");
+
+        if (imageFiles.Count == 0)
+        {
+            Logs.Error($"[HF IMPORT] FAIL: No supported CSV/JSON/Parquet files or image files found in {request.Repository}");
+            return false;
+        }
+
+        List<DatasetItemDto> items = new(imageFiles.Count);
+        string revision = string.IsNullOrWhiteSpace(request.Revision) ? "main" : request.Revision!;
+
+        foreach (HuggingFaceDatasetFile file in imageFiles)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            string imagePath = file.Path;
+            if (string.IsNullOrWhiteSpace(imagePath))
+            {
+                continue;
+            }
+
+            string imageUrl = $"https://huggingface.co/datasets/{request.Repository}/resolve/{revision}/{imagePath}";
+            string externalId = Path.GetFileNameWithoutExtension(imagePath);
+            string title = externalId;
+
+            Dictionary<string, string> metadata = new(StringComparer.OrdinalIgnoreCase)
+            {
+                ["hf_path"] = imagePath
+            };
+
+            DatasetItemDto item = new()
+            {
+                Id = Guid.NewGuid(),
+                ExternalId = externalId,
+                Title = title,
+                Description = null,
+                ImageUrl = imageUrl,
+                ThumbnailUrl = imageUrl,
+                Width = 0,
+                Height = 0,
+                Metadata = metadata
+            };
+
+            items.Add(item);
+        }
+
+        if (items.Count == 0)
+        {
+            Logs.Error($"[HF IMPORT] FAIL: No dataset items could be created from image files in {request.Repository}");
+            return false;
+        }
+
+        await datasetItemRepository.AddRangeAsync(dataset.Id, items, cancellationToken);
+        dataset.TotalItems = items.Count;
+        dataset.Status = IngestionStatusDto.Completed;
+        await datasetRepository.UpdateAsync(dataset, cancellationToken);
+        Logs.Info($"[HF IMPORT] Image-only dataset imported with {items.Count} items");
+
+        string dummyUpload = Path.Combine(Path.GetTempPath(), $"hf-images-{dataset.Id}.tmp");
+        string datasetFolder = GetDatasetFolderPath(dataset, dummyUpload);
+        await WriteDatasetMetadataFileAsync(dataset, datasetFolder, null, new List<string>(), cancellationToken);
+
+        Logs.Info($"[HF IMPORT] Final status: {dataset.Status}, TotalItems: {dataset.TotalItems}");
+        Logs.Info("========== [HF IMPORT COMPLETE - IMAGE-ONLY] ==========");
+
+        return true;
+    }
+
     public async Task StartIngestionAsync(Guid datasetId, string? uploadLocation, CancellationToken cancellationToken = default)
     {
         DatasetEntity? dataset = await datasetRepository.GetAsync(datasetId, cancellationToken);
@@ -162,37 +258,40 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
             dataset.Status = IngestionStatusDto.Processing;
             await datasetRepository.UpdateAsync(dataset, cancellationToken);
 
+            string datasetFolder = GetDatasetFolderPath(dataset, uploadLocation);
+
             string fileToProcess = uploadLocation;
             string? tempExtractedPath = null;
             Dictionary<string, Dictionary<string, string>>? auxiliaryMetadata = null;
-            
-            // Check if uploaded file is a ZIP
+            string? primaryFileForMetadata = null;
+            List<string> auxiliaryFilesForMetadata = new();
+
             if (Path.GetExtension(uploadLocation).Equals(".zip", StringComparison.OrdinalIgnoreCase))
             {
                 Logs.Info($"Extracting ZIP file for dataset {datasetId}");
-                
-                // Create temp directory for extraction
+
                 tempExtractedPath = Path.Combine(Path.GetTempPath(), $"dataset-{datasetId}-extracted-{Guid.NewGuid()}");
                 Directory.CreateDirectory(tempExtractedPath);
-                
-                // Extract ZIP to temp directory
+
                 ZipFile.ExtractToDirectory(uploadLocation, tempExtractedPath);
-                
-                // Find the primary dataset file (photos.tsv000 or photos.csv000)
-                string[] extractedFiles = Directory.GetFiles(tempExtractedPath, "*.*", SearchOption.AllDirectories);
-                string? primaryFile = extractedFiles.FirstOrDefault(f => 
+
+                string[] extractedFiles = Directory.GetFiles(tempExtractedPath, "*.*", System.IO.SearchOption.AllDirectories);
+                string? primaryFile = extractedFiles.FirstOrDefault(f =>
                     Path.GetFileName(f).StartsWith("photos", StringComparison.OrdinalIgnoreCase) &&
-                    (f.EndsWith(".tsv000", StringComparison.OrdinalIgnoreCase) || 
+                    (f.EndsWith(".tsv000", StringComparison.OrdinalIgnoreCase) ||
                      f.EndsWith(".csv000", StringComparison.OrdinalIgnoreCase) ||
                      f.EndsWith(".tsv", StringComparison.OrdinalIgnoreCase) ||
                      f.EndsWith(".csv", StringComparison.OrdinalIgnoreCase)));
-                
+
                 if (primaryFile == null)
                 {
                     throw new InvalidOperationException("No primary dataset file (photos.tsv/csv) found in ZIP archive");
                 }
-                
-                fileToProcess = primaryFile;
+
+                string primaryDestination = Path.Combine(datasetFolder, Path.GetFileName(primaryFile));
+                File.Copy(primaryFile, primaryDestination, overwrite: true);
+                fileToProcess = primaryDestination;
+                primaryFileForMetadata = Path.GetFileName(primaryDestination);
                 Logs.Info($"Found primary file in ZIP: {Path.GetFileName(primaryFile)}");
 
                 string[] auxiliaryFiles = extractedFiles
@@ -207,11 +306,29 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
                 {
                     Logs.Info($"Found {auxiliaryFiles.Length} auxiliary metadata files: {string.Join(", ", auxiliaryFiles.Select(f => Path.GetRelativePath(tempExtractedPath, f)))}");
                     auxiliaryMetadata = await LoadAuxiliaryMetadataAsync(auxiliaryFiles, cancellationToken);
+
+                    foreach (string auxiliaryFile in auxiliaryFiles)
+                    {
+                        string auxDestination = Path.Combine(datasetFolder, Path.GetFileName(auxiliaryFile));
+                        File.Copy(auxiliaryFile, auxDestination, overwrite: true);
+                        auxiliaryFilesForMetadata.Add(Path.GetFileName(auxDestination));
+                    }
                 }
                 else
                 {
                     Logs.Info($"Found primary file in ZIP: {Path.GetFileName(primaryFile)}");
                 }
+            }
+            else
+            {
+                string destination = Path.Combine(datasetFolder, Path.GetFileName(uploadLocation));
+                if (!string.Equals(uploadLocation, destination, StringComparison.OrdinalIgnoreCase))
+                {
+                    File.Copy(uploadLocation, destination, overwrite: true);
+                }
+
+                fileToProcess = destination;
+                primaryFileForMetadata = Path.GetFileName(destination);
             }
 
             List<DatasetItemDto> parsedItems;
@@ -219,6 +336,17 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
             if (extension.Equals(".parquet", StringComparison.OrdinalIgnoreCase))
             {
                 parsedItems = await ParseParquetAsync(datasetId, fileToProcess, cancellationToken);
+            }
+            else if (dataset.SourceType == DatasetSourceType.HuggingFaceDownload)
+            {
+                if (extension.Equals(".json", StringComparison.OrdinalIgnoreCase))
+                {
+                    parsedItems = await ParseHuggingFaceJsonAsync(datasetId, fileToProcess, cancellationToken);
+                }
+                else
+                {
+                    parsedItems = await ParseHuggingFaceCsvAsync(datasetId, fileToProcess, cancellationToken);
+                }
             }
             else
             {
@@ -233,6 +361,8 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
             dataset.Status = IngestionStatusDto.Completed;
             await datasetRepository.UpdateAsync(dataset, cancellationToken);
             Logs.Info($"Ingestion completed for dataset {datasetId} with {parsedItems.Count} items");
+
+            await WriteDatasetMetadataFileAsync(dataset, datasetFolder, primaryFileForMetadata, auxiliaryFilesForMetadata, cancellationToken);
             
             // Cleanup extracted files
             if (tempExtractedPath != null && Directory.Exists(tempExtractedPath))
@@ -365,6 +495,135 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
         return items;
     }
 
+    public async Task<List<DatasetItemDto>> ParseHuggingFaceCsvAsync(Guid datasetId, string filePath, CancellationToken cancellationToken)
+    {
+        Logs.Info($"ParseHuggingFaceCsvAsync: Reading CSV file {Path.GetFileName(filePath)} for dataset {datasetId}");
+
+        List<DatasetItemDto> items = new List<DatasetItemDto>();
+
+        if (!File.Exists(filePath))
+        {
+            Logs.Warning($"ParseHuggingFaceCsvAsync: File not found: {filePath}");
+            return items;
+        }
+
+        await Task.Yield();
+
+        using TextFieldParser parser = new TextFieldParser(filePath);
+        parser.TextFieldType = FieldType.Delimited;
+        parser.SetDelimiters(",");
+        parser.HasFieldsEnclosedInQuotes = true;
+
+        if (parser.EndOfData)
+        {
+            return items;
+        }
+
+        string[]? headers = parser.ReadFields();
+        if (headers == null || headers.Length == 0)
+        {
+            Logs.Warning("ParseHuggingFaceCsvAsync: CSV file has no header row");
+            return items;
+        }
+
+        string[] trimmedHeaders = new string[headers.Length];
+        for (int i = 0; i < headers.Length; i++)
+        {
+            trimmedHeaders[i] = headers[i].Trim();
+        }
+
+        int rowCount = 0;
+
+        while (!parser.EndOfData)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            string[]? fields = parser.ReadFields();
+            if (fields == null || fields.Length == 0)
+            {
+                continue;
+            }
+
+            Dictionary<string, object?> values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+            int maxIndex = trimmedHeaders.Length;
+            for (int i = 0; i < maxIndex; i++)
+            {
+                string header = trimmedHeaders[i];
+                string value = i < fields.Length && fields[i] != null ? fields[i]! : string.Empty;
+                values[header] = value;
+            }
+
+            DatasetItemDto item = CreateDatasetItemFromParquetRow(values);
+            items.Add(item);
+            rowCount++;
+        }
+
+        Logs.Info($"ParseHuggingFaceCsvAsync: Parsed {rowCount} items from {Path.GetFileName(filePath)}");
+        return items;
+    }
+
+    public async Task<List<DatasetItemDto>> ParseHuggingFaceJsonAsync(Guid datasetId, string filePath, CancellationToken cancellationToken)
+    {
+        Logs.Info($"ParseHuggingFaceJsonAsync: Reading JSON file {Path.GetFileName(filePath)} for dataset {datasetId}");
+
+        List<DatasetItemDto> items = new List<DatasetItemDto>();
+
+        if (!File.Exists(filePath))
+        {
+            Logs.Warning($"ParseHuggingFaceJsonAsync: File not found: {filePath}");
+            return items;
+        }
+
+        await using FileStream stream = File.OpenRead(filePath);
+        JsonDocument document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+
+        JsonElement root = document.RootElement;
+
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement element in root.EnumerateArray())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (element.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                Dictionary<string, object?> values = CreateDictionaryFromJsonElement(element);
+                DatasetItemDto item = CreateDatasetItemFromParquetRow(values);
+                items.Add(item);
+            }
+        }
+        else if (root.ValueKind == JsonValueKind.Object)
+        {
+            if (root.TryGetProperty("data", out JsonElement dataElement) && dataElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement element in dataElement.EnumerateArray())
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (element.ValueKind != JsonValueKind.Object)
+                    {
+                        continue;
+                    }
+
+                    Dictionary<string, object?> values = CreateDictionaryFromJsonElement(element);
+                    DatasetItemDto item = CreateDatasetItemFromParquetRow(values);
+                    items.Add(item);
+                }
+            }
+            else
+            {
+                Dictionary<string, object?> values = CreateDictionaryFromJsonElement(root);
+                DatasetItemDto item = CreateDatasetItemFromParquetRow(values);
+                items.Add(item);
+            }
+        }
+
+        Logs.Info($"ParseHuggingFaceJsonAsync: Parsed {items.Count} items from {Path.GetFileName(filePath)}");
+        return items;
+    }
+
     public async Task<List<DatasetItemDto>> ParseParquetAsync(Guid datasetId, string filePath, CancellationToken cancellationToken)
     {
         Logs.Info($"ParseParquetAsync: Reading Parquet file {Path.GetFileName(filePath)} for dataset {datasetId}");
@@ -402,10 +661,27 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
 
     public DatasetItemDto CreateDatasetItemFromParquetRow(Dictionary<string, object?> values)
     {
-        string externalId = GetFirstNonEmptyString(values, "id", "image_id", "uid", "uuid") ?? string.Empty;
-        string? title = GetFirstNonEmptyString(values, "title", "caption", "text", "description", "label");
+        string externalId = GetFirstNonEmptyString(values, "id", "image_id", "uid", "uuid", "__key", "sample_id") ?? string.Empty;
+        string? title = GetFirstNonEmptyString(values, "title", "caption", "text", "description", "label", "name");
         string? description = GetFirstNonEmptyString(values, "description", "caption", "text");
         string? imageUrl = GetFirstNonEmptyString(values, "image_url", "img_url", "url");
+        if (string.IsNullOrWhiteSpace(imageUrl))
+        {
+            foreach ((string key, object? rawValue) in values)
+            {
+                if (rawValue == null)
+                {
+                    continue;
+                }
+
+                string candidate = rawValue.ToString() ?? string.Empty;
+                if (IsLikelyImageUrl(candidate))
+                {
+                    imageUrl = candidate;
+                    break;
+                }
+            }
+        }
         int width = GetIntValue(values, "width", "image_width", "w");
         int height = GetIntValue(values, "height", "image_height", "h");
         List<string> tags = new();
@@ -489,18 +765,201 @@ internal sealed class NoOpDatasetIngestionService(IDatasetRepository datasetRepo
         return 0;
     }
 
+    private static Dictionary<string, object?> CreateDictionaryFromJsonElement(JsonElement element)
+    {
+        Dictionary<string, object?> values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (JsonProperty property in element.EnumerateObject())
+        {
+            object? value = ConvertJsonElementToObject(property.Value);
+            values[property.Name] = value;
+        }
+
+        return values;
+    }
+
+    private static object? ConvertJsonElementToObject(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String:
+                return element.GetString();
+            case JsonValueKind.Number:
+                if (element.TryGetInt64(out long longValue))
+                {
+                    return longValue;
+                }
+
+                if (element.TryGetDouble(out double doubleValue))
+                {
+                    return doubleValue;
+                }
+
+                return element.ToString();
+            case JsonValueKind.True:
+            case JsonValueKind.False:
+                return element.GetBoolean();
+            case JsonValueKind.Null:
+            case JsonValueKind.Undefined:
+                return null;
+            default:
+                return element.ToString();
+        }
+    }
+
+    private static bool IsLikelyImageUrl(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        string lower = value.ToLowerInvariant();
+        if (!lower.Contains("http"))
+        {
+            return false;
+        }
+
+        return lower.EndsWith(".jpg", StringComparison.Ordinal) ||
+               lower.EndsWith(".jpeg", StringComparison.Ordinal) ||
+               lower.EndsWith(".png", StringComparison.Ordinal) ||
+               lower.EndsWith(".webp", StringComparison.Ordinal) ||
+               lower.EndsWith(".gif", StringComparison.Ordinal) ||
+               lower.EndsWith(".bmp", StringComparison.Ordinal);
+    }
+
     public void TryDeleteTempFile(string path)
     {
         try
         {
-            if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+            if (string.IsNullOrWhiteSpace(path))
             {
-                File.Delete(path);
+                return;
+            }
+
+            string fullPath = Path.GetFullPath(path);
+
+            string tempRoot = Path.GetFullPath(Path.GetTempPath());
+            string uploadRoot = Path.GetFullPath(_uploadRootPath);
+            string datasetRoot = Path.GetFullPath(_datasetRootPath);
+
+            bool IsUnder(string root) => fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase);
+
+            if (!File.Exists(fullPath))
+            {
+                return;
+            }
+
+            if ((IsUnder(tempRoot) || IsUnder(uploadRoot)) && !IsUnder(datasetRoot))
+            {
+                File.Delete(fullPath);
             }
         }
         catch (Exception ex)
         {
             Logs.Debug($"Failed to delete temp file {path}: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    private string GetDatasetFolderPath(DatasetEntity dataset, string uploadLocation)
+    {
+        string root = Path.GetFullPath(_datasetRootPath);
+        Directory.CreateDirectory(root);
+
+        string uploadFullPath = Path.GetFullPath(uploadLocation);
+        string? uploadDirectory = Path.GetDirectoryName(uploadFullPath);
+
+        if (!string.IsNullOrEmpty(uploadDirectory))
+        {
+            // If the upload already lives inside a subfolder of the dataset root, reuse that folder
+            string normalizedRoot = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            string normalizedUploadDir = uploadDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            if (normalizedUploadDir.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(normalizedUploadDir, normalizedRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                return uploadDirectory;
+            }
+        }
+
+        // Otherwise, create a new slug-based folder for this dataset
+        string slug = Slugify(dataset.Name);
+        string shortId = dataset.Id.ToString("N")[..8];
+        string folderName = $"{slug}-{shortId}";
+        string datasetFolder = Path.Combine(root, folderName);
+        Directory.CreateDirectory(datasetFolder);
+        return datasetFolder;
+    }
+
+    private static string Slugify(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "dataset";
+        }
+
+        value = value.Trim().ToLowerInvariant();
+        StringBuilder sb = new(value.Length);
+        bool previousDash = false;
+
+        foreach (char c in value)
+        {
+            if (char.IsLetterOrDigit(c))
+            {
+                sb.Append(c);
+                previousDash = false;
+            }
+            else if (c == ' ' || c == '-' || c == '_' || c == '.')
+            {
+                if (!previousDash && sb.Length > 0)
+                {
+                    sb.Append('-');
+                    previousDash = true;
+                }
+            }
+        }
+
+        if (sb.Length == 0)
+        {
+            return "dataset";
+        }
+
+        if (sb[^1] == '-')
+        {
+            sb.Length--;
+        }
+
+        return sb.ToString();
+    }
+
+    private static async Task WriteDatasetMetadataFileAsync(
+        DatasetEntity dataset,
+        string datasetFolder,
+        string? primaryFile,
+        List<string> auxiliaryFiles,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            DatasetDiskMetadata metadata = new()
+            {
+                Id = dataset.Id,
+                Name = dataset.Name,
+                Description = dataset.Description,
+                SourceType = dataset.SourceType,
+                SourceUri = dataset.SourceUri,
+                SourceFileName = dataset.SourceFileName,
+                PrimaryFile = primaryFile,
+                AuxiliaryFiles = auxiliaryFiles
+            };
+
+            string metadataPath = Path.Combine(datasetFolder, "dataset.json");
+            string json = JsonSerializer.Serialize(metadata, JsonOptions);
+            await File.WriteAllTextAsync(metadataPath, json, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            Logs.Warning($"Failed to write dataset metadata file for {dataset.Id}: {ex.GetType().Name}: {ex.Message}");
         }
     }
 

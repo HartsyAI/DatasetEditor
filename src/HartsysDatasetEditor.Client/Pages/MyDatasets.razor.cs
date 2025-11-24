@@ -3,8 +3,7 @@ using Microsoft.AspNetCore.Components.Web;
 using MudBlazor;
 using HartsysDatasetEditor.Contracts.Datasets;
 using HartsysDatasetEditor.Core.Utilities;
-using System.Net.Http.Json;
-using System.Text.Json;
+using HartsysDatasetEditor.Client.Services.Api;
 
 namespace HartsysDatasetEditor.Client.Pages;
 
@@ -29,23 +28,9 @@ public partial class MyDatasets
         
         try
         {
-            // Call the new GetAllDatasets endpoint with pagination
-            HttpResponseMessage response = await HttpClient.GetAsync("/api/datasets?page=0&pageSize=50");
-            
-            if (response.IsSuccessStatusCode)
-            {
-                string json = await response.Content.ReadAsStringAsync();
-                using JsonDocument doc = JsonDocument.Parse(json);
-                
-                if (doc.RootElement.TryGetProperty("datasets", out JsonElement datasetsElement))
-                {
-                    _datasets = JsonSerializer.Deserialize<List<DatasetSummaryDto>>(
-                        datasetsElement.GetRawText(),
-                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
-
-                    _filteredDatasets = _datasets;
-                }
-            }
+            IReadOnlyList<DatasetSummaryDto> datasets = await DatasetApiClient.GetAllDatasetsAsync(page: 0, pageSize: 50);
+            _datasets = datasets.ToList();
+            _filteredDatasets = _datasets;
         }
         catch (Exception ex)
         {
@@ -101,6 +86,29 @@ public partial class MyDatasets
     {
         // TODO: Show context menu with options (rename, delete, export, etc.)
         Snackbar.Add("Context menu coming soon", Severity.Info);
+    }
+
+    private async Task DeleteDatasetAsync(DatasetSummaryDto dataset)
+    {
+        try
+        {
+            bool success = await DatasetApiClient.DeleteDatasetAsync(dataset.Id);
+            if (!success)
+            {
+                Snackbar.Add($"Failed to delete dataset '{dataset.Name}'.", Severity.Error);
+                return;
+            }
+
+            _datasets.RemoveAll(d => d.Id == dataset.Id);
+            _filteredDatasets.RemoveAll(d => d.Id == dataset.Id);
+
+            Snackbar.Add($"Dataset '{dataset.Name}' deleted.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Logs.Error("Failed to delete dataset", ex);
+            Snackbar.Add("Failed to delete dataset.", Severity.Error);
+        }
     }
 
     private string GetTruncatedDescription(string description)

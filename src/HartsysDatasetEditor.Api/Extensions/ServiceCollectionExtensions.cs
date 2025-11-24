@@ -40,12 +40,17 @@ public static class ServiceCollectionExtensions
         string blobPath = configuration["Storage:BlobPath"] ?? "./blobs";
         string thumbnailPath = configuration["Storage:ThumbnailPath"] ?? "./blobs/thumbnails";
         string uploadPath = configuration["Storage:UploadPath"] ?? "./uploads";
+        string datasetRootPath = configuration["Storage:DatasetRootPath"] ?? "./data/datasets";
 
         Directory.CreateDirectory(blobPath);
         Directory.CreateDirectory(thumbnailPath);
         Directory.CreateDirectory(uploadPath);
+        Directory.CreateDirectory(datasetRootPath);
 
-        Logs.Info($"Storage directories created: {blobPath}, {thumbnailPath}, {uploadPath}");
+        Logs.Info($"Storage directories created: {blobPath}, {thumbnailPath}, {uploadPath}, {datasetRootPath}");
+
+        // Register background service that can scan dataset folders on disk at startup
+        services.AddHostedService<DatasetDiskImportService>();
 
         return services;
     }

@@ -19,4 +19,6 @@ public interface IDatasetItemRepository
     Task UpdateItemAsync(DatasetItemDto item, CancellationToken cancellationToken = default);
 
     Task UpdateItemsAsync(IEnumerable<DatasetItemDto> items, CancellationToken cancellationToken = default);
+
+    Task DeleteByDatasetAsync(Guid datasetId, CancellationToken cancellationToken = default);
 }

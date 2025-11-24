@@ -37,6 +37,11 @@ internal static class DatasetEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status400BadRequest);
 
+        group.MapDelete("/{datasetId:guid}", DeleteDataset)
+            .WithName("DeleteDataset")
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status404NotFound);
+
         group.MapGet("/{datasetId:guid}/items", GetDatasetItems)
             .WithName("ListDatasetItems")
             .Produces<PageResponse<DatasetItemDto>>();
@@ -122,6 +127,25 @@ internal static class DatasetEndpoints
         await ingestionService.StartIngestionAsync(entity.Id, uploadLocation: null, cancellationToken);
         
         return Results.Created($"/api/datasets/{entity.Id}", entity.ToDetailDto());
+    }
+
+    /// <summary>Deletes a dataset and all of its items.</summary>
+    public static async Task<IResult> DeleteDataset(
+        Guid datasetId,
+        IDatasetRepository datasetRepository,
+        IDatasetItemRepository itemRepository,
+        CancellationToken cancellationToken)
+    {
+        DatasetEntity? dataset = await datasetRepository.GetAsync(datasetId, cancellationToken);
+        if (dataset is null)
+        {
+            return Results.NotFound();
+        }
+
+        await itemRepository.DeleteByDatasetAsync(datasetId, cancellationToken);
+        await datasetRepository.DeleteAsync(datasetId, cancellationToken);
+
+        return Results.NoContent();
     }
 
     /// <summary>Uploads a file to a dataset</summary>

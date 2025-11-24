@@ -83,4 +83,10 @@ internal sealed class LiteDbDatasetItemRepository : IDatasetItemRepository
         }
         return Task.CompletedTask;
     }
+
+    public Task DeleteByDatasetAsync(Guid datasetId, CancellationToken cancellationToken = default)
+    {
+        _collection.DeleteMany(i => i.DatasetId == datasetId);
+        return Task.CompletedTask;
+    }
 }

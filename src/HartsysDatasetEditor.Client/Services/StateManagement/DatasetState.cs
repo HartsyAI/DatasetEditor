@@ -72,7 +72,16 @@ public class DatasetState
     
     public void SetItemsWindow(List<IDatasetItem> items)
     {
-        Items = items ?? new List<IDatasetItem>();
+        if (items is null)
+        {
+            Items.Clear();
+        }
+        else
+        {
+            Items.Clear();
+            Items.AddRange(items);
+        }
+
         NotifyStateChanged();
         Logs.Info($"Dataset window updated: {Items.Count} items");
     }
