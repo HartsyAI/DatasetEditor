@@ -14,4 +14,7 @@ public sealed record DatasetDetailDto
     public DatasetSourceType SourceType { get; init; } = DatasetSourceType.LocalUpload;
     public string? SourceUri { get; init; }
     public bool IsStreaming { get; init; }
+    public string? HuggingFaceRepository { get; init; }
+    public string? HuggingFaceConfig { get; init; }
+    public string? HuggingFaceSplit { get; init; }
 }

@@ -23,5 +23,7 @@ public static class StorageKeys
     public const string ItemsPerPage = "hartsy_items_per_page";
     public const string ThumbnailSize = "hartsy_thumbnail_size";
     
+    public const string ApiKeys = "hartsy_api_keys";
+    
     // TODO: Add more storage keys as features are added
 }

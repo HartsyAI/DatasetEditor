@@ -22,6 +22,7 @@ public sealed class DatasetCacheService : IDisposable
     private readonly DatasetApiClient _apiClient;
     private readonly DatasetState _datasetState;
     private readonly DatasetIndexedDbCache _indexedDbCache;
+    private readonly ApiKeyState _apiKeyState;
     private readonly ILogger<DatasetCacheService> _logger;
     private readonly SemaphoreSlim _pageLock = new(1, 1);
     private bool _isIndexedDbEnabled = true;
@@ -46,11 +47,13 @@ public sealed class DatasetCacheService : IDisposable
         DatasetApiClient apiClient,
         DatasetState datasetState,
         DatasetIndexedDbCache indexedDbCache,
+        ApiKeyState apiKeyState,
         ILogger<DatasetCacheService> logger)
     {
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _datasetState = datasetState ?? throw new ArgumentNullException(nameof(datasetState));
         _indexedDbCache = indexedDbCache ?? throw new ArgumentNullException(nameof(indexedDbCache));
+        _apiKeyState = apiKeyState ?? throw new ArgumentNullException(nameof(apiKeyState));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -77,7 +80,7 @@ public sealed class DatasetCacheService : IDisposable
                 throw new InvalidOperationException("Dataset not found on server.");
             }
 
-            PageResponse<DatasetItemDto>? page = await FetchPageAsync(datasetId, pageSize: 100, cursor: null, cancellationToken).ConfigureAwait(false);
+            PageResponse<DatasetItemDto>? page = await FetchPageAsync(datasetId, pageSize: 100, cursor: null, dataset, cancellationToken).ConfigureAwait(false);
 
             Dataset mappedDataset = MapDataset(dataset);
             List<IDatasetItem> items = MapItems(dataset.Id, page?.Items ?? Array.Empty<DatasetItemDto>());
@@ -118,7 +121,7 @@ public sealed class DatasetCacheService : IDisposable
         await _pageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            PageResponse<DatasetItemDto>? page = await FetchPageAsync(CurrentDatasetId.Value, 100, NextCursor, cancellationToken).ConfigureAwait(false);
+            PageResponse<DatasetItemDto>? page = await FetchPageAsync(CurrentDatasetId.Value, 100, NextCursor, CurrentDatasetDetail, cancellationToken).ConfigureAwait(false);
             if (page == null || page.Items.Count == 0)
             {
                 NextCursor = null;
@@ -195,7 +198,7 @@ public sealed class DatasetCacheService : IDisposable
 
             string? prevCursor = prevStartIndex == 0 ? null : prevStartIndex.ToString();
 
-            PageResponse<DatasetItemDto>? page = await FetchPageAsync(CurrentDatasetId.Value, effectivePageSize, prevCursor, cancellationToken).ConfigureAwait(false);
+            PageResponse<DatasetItemDto>? page = await FetchPageAsync(CurrentDatasetId.Value, effectivePageSize, prevCursor, CurrentDatasetDetail, cancellationToken).ConfigureAwait(false);
             if (page == null || page.Items.Count == 0)
             {
                 return false;
@@ -303,7 +306,7 @@ public sealed class DatasetCacheService : IDisposable
         return Task.CompletedTask;
     }
 
-    private async Task<PageResponse<DatasetItemDto>?> FetchPageAsync(Guid datasetId, int pageSize, string? cursor, CancellationToken cancellationToken)
+    private async Task<PageResponse<DatasetItemDto>?> FetchPageAsync(Guid datasetId, int pageSize, string? cursor, DatasetDetailDto? datasetDetail, CancellationToken cancellationToken)
     {
         if (_isIndexedDbEnabled)
         {
@@ -327,7 +330,13 @@ public sealed class DatasetCacheService : IDisposable
             }
         }
 
-        PageResponse<DatasetItemDto>? page = await _apiClient.GetDatasetItemsAsync(datasetId, pageSize, cursor, cancellationToken).ConfigureAwait(false);
+        string? huggingFaceToken = null;
+        if (datasetDetail != null && datasetDetail.SourceType == DatasetSourceType.HuggingFaceStreaming && datasetDetail.IsStreaming)
+        {
+            huggingFaceToken = _apiKeyState.GetToken(ApiKeyState.ProviderHuggingFace);
+        }
+
+        PageResponse<DatasetItemDto>? page = await _apiClient.GetDatasetItemsAsync(datasetId, pageSize, cursor, huggingFaceToken, cancellationToken).ConfigureAwait(false);
         if (_isIndexedDbEnabled && page?.Items.Count > 0)
         {
             await _indexedDbCache.SavePageAsync(datasetId, cursor, page.Items, cancellationToken).ConfigureAwait(false);

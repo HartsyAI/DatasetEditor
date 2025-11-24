@@ -20,6 +20,7 @@ internal sealed class NoOpDatasetIngestionService(
     IDatasetRepository datasetRepository,
     IDatasetItemRepository datasetItemRepository,
     IHuggingFaceClient huggingFaceClient,
+    IHuggingFaceDatasetServerClient huggingFaceDatasetServerClient,
     IConfiguration configuration) : IDatasetIngestionService
 {
     private readonly string _datasetRootPath = configuration["Storage:DatasetRootPath"] ?? Path.Combine(AppContext.BaseDirectory, "data", "datasets");
@@ -85,15 +86,38 @@ internal sealed class NoOpDatasetIngestionService(
             // Step 3: Handle streaming vs download mode
             if (request.IsStreaming)
             {
-                Logs.Info("[HF IMPORT] Step 3: Configuring STREAMING mode");
-                Logs.Warning("[HF IMPORT] WARNING: Streaming mode is experimental - dataset will show 0 items");
+                Logs.Info("[HF IMPORT] Step 3: Configuring STREAMING mode via datasets-server");
+
+                dataset.HuggingFaceRepository = request.Repository;
+
+                string? accessToken = request.AccessToken;
+
+                HuggingFaceDatasetSizeInfo? sizeInfo = await huggingFaceDatasetServerClient.GetDatasetSizeAsync(
+                    request.Repository,
+                    null,
+                    null,
+                    accessToken,
+                    cancellationToken);
+
+                if (sizeInfo != null)
+                {
+                    dataset.HuggingFaceConfig = sizeInfo.Config;
+                    dataset.HuggingFaceSplit = string.IsNullOrWhiteSpace(sizeInfo.Split) ? "train" : sizeInfo.Split;
+                    if (sizeInfo.NumRows.HasValue)
+                    {
+                        dataset.TotalItems = sizeInfo.NumRows.Value;
+                    }
+                }
+                else
+                {
+                    dataset.TotalItems = 0;
+                }
 
                 dataset.Status = IngestionStatusDto.Completed;
-                dataset.TotalItems = 0; // Items will be fetched on-demand (not yet implemented)
                 await datasetRepository.UpdateAsync(dataset, cancellationToken);
 
                 Logs.Info($"[HF IMPORT] Dataset {datasetId} configured as streaming reference");
-                Logs.Info($"[HF IMPORT] Final status: {dataset.Status}, TotalItems: {dataset.TotalItems}");
+                Logs.Info($"[HF IMPORT] Streaming config: repo={dataset.HuggingFaceRepository}, config={dataset.HuggingFaceConfig}, split={dataset.HuggingFaceSplit}, totalRows={dataset.TotalItems}");
                 Logs.Info("========== [HF IMPORT COMPLETE - STREAMING] ==========");
             }
             else

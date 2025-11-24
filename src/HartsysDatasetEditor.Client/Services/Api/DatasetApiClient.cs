@@ -69,16 +69,26 @@ public sealed class DatasetApiClient
         return _httpClient.GetFromJsonAsync<DatasetDetailDto>($"api/datasets/{datasetId}", SerializerOptions, cancellationToken);
     }
 
-    public Task<PageResponse<DatasetItemDto>?> GetDatasetItemsAsync(Guid datasetId, int pageSize = 100, string? cursor = null, CancellationToken cancellationToken = default)
+    public async Task<PageResponse<DatasetItemDto>?> GetDatasetItemsAsync(Guid datasetId, int pageSize = 100, string? cursor = null, string? huggingFaceAccessToken = null, CancellationToken cancellationToken = default)
     {
-        var pathBuilder = new StringBuilder($"api/datasets/{datasetId}/items?pageSize={pageSize}");
+        StringBuilder pathBuilder = new StringBuilder($"api/datasets/{datasetId}/items?pageSize={pageSize}");
         if (!string.IsNullOrWhiteSpace(cursor))
         {
             pathBuilder.Append("&cursor=");
             pathBuilder.Append(Uri.EscapeDataString(cursor));
         }
 
-        return _httpClient.GetFromJsonAsync<PageResponse<DatasetItemDto>>(pathBuilder.ToString(), SerializerOptions, cancellationToken);
+        using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, pathBuilder.ToString());
+
+        if (!string.IsNullOrWhiteSpace(huggingFaceAccessToken))
+        {
+            request.Headers.Add("X-HF-Access-Token", huggingFaceAccessToken);
+        }
+
+        using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        return await response.Content.ReadFromJsonAsync<PageResponse<DatasetItemDto>>(SerializerOptions, cancellationToken);
     }
 
     public async Task<bool> ImportFromHuggingFaceAsync(Guid datasetId, ImportHuggingFaceDatasetRequest request, CancellationToken cancellationToken = default)

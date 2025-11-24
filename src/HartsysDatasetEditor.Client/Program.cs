@@ -72,6 +72,7 @@ builder.Services.AddScoped<AppState>();
 builder.Services.AddScoped<DatasetState>();
 builder.Services.AddScoped<FilterState>();
 builder.Services.AddScoped<ViewState>();
+builder.Services.AddScoped<ApiKeyState>();
 
 // TODO: Add Fluxor state management when complexity grows
 // TODO: Add authentication services when server is added

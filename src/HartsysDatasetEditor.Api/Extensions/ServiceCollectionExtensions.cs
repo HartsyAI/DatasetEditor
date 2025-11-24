@@ -13,6 +13,7 @@ public static class ServiceCollectionExtensions
 
         // Register HuggingFace client with HttpClient
         services.AddHttpClient<IHuggingFaceClient, HuggingFaceClient>();
+        services.AddHttpClient<IHuggingFaceDatasetServerClient, HuggingFaceDatasetServerClient>();
 
         // Configure LiteDB for persistence
         string dbPath = configuration["Database:LiteDbPath"]

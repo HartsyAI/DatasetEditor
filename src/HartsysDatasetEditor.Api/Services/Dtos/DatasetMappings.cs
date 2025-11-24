@@ -17,6 +17,9 @@ internal static class DatasetMappings
         SourceType = entity.SourceType,
         SourceUri = entity.SourceUri,
         IsStreaming = entity.IsStreaming,
+        HuggingFaceRepository = entity.HuggingFaceRepository,
+        HuggingFaceConfig = entity.HuggingFaceConfig,
+        HuggingFaceSplit = entity.HuggingFaceSplit,
     };
 
     public static DatasetDetailDto ToDetailDto(this DatasetEntity entity) => new()
@@ -32,5 +35,8 @@ internal static class DatasetMappings
         SourceType = entity.SourceType,
         SourceUri = entity.SourceUri,
         IsStreaming = entity.IsStreaming,
+        HuggingFaceRepository = entity.HuggingFaceRepository,
+        HuggingFaceConfig = entity.HuggingFaceConfig,
+        HuggingFaceSplit = entity.HuggingFaceSplit,
     };
 }

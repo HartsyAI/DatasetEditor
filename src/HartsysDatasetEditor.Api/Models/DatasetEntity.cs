@@ -15,4 +15,7 @@ public sealed class DatasetEntity
     public DatasetSourceType SourceType { get; set; } = DatasetSourceType.LocalUpload;
     public string? SourceUri { get; set; }
     public bool IsStreaming { get; set; }
+    public string? HuggingFaceRepository { get; set; }
+    public string? HuggingFaceConfig { get; set; }
+    public string? HuggingFaceSplit { get; set; }
 }
