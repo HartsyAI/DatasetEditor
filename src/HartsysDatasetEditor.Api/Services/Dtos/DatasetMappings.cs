@@ -38,5 +38,6 @@ internal static class DatasetMappings
         HuggingFaceRepository = entity.HuggingFaceRepository,
         HuggingFaceConfig = entity.HuggingFaceConfig,
         HuggingFaceSplit = entity.HuggingFaceSplit,
+        ErrorMessage = entity.ErrorMessage,
     };
 }

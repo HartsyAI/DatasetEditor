@@ -25,7 +25,7 @@ public sealed class DatasetCacheService : IDisposable
     private readonly ApiKeyState _apiKeyState;
     private readonly ILogger<DatasetCacheService> _logger;
     private readonly SemaphoreSlim _pageLock = new(1, 1);
-    private bool _isIndexedDbEnabled = true;
+    private bool _isIndexedDbEnabled = false;
     private bool _isBuffering;
     private const int MaxBufferedItems = 100_000;
     private int _windowStartIndex = 0;

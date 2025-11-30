@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
 using Microsoft.Extensions.Options;
+using MudBlazor;
 using HartsysDatasetEditor.Client.Services;
 using HartsysDatasetEditor.Client.Services.Api;
 using HartsysDatasetEditor.Client.Services.StateManagement;
@@ -23,6 +24,7 @@ public partial class DatasetUploader
     [Inject] public NotificationService NotificationService { get; set; } = default!;
     [Inject] public NavigationService NavigationService { get; set; } = default!;
     [Inject] public IOptions<DatasetApiOptions> DatasetApiOptions { get; set; } = default!;
+    [Inject] public IDialogService DialogService { get; set; } = default!;
 
     public bool _isDragging = false;
     public bool _isUploading = false;
@@ -46,6 +48,9 @@ public partial class DatasetUploader
     public string? _hfRevision = null;
     public string? _hfAccessToken = null;
     public bool _hfIsStreaming = false;
+    public HuggingFaceDiscoveryResponse? _hfDiscoveryResponse = null;
+    public bool _hfShowOptions = false;
+    public bool _hfDiscovering = false;
 
     private const string FileInputElementId = "fileInput";
 
@@ -587,8 +592,99 @@ public partial class DatasetUploader
         StateHasChanged();
     }
 
+    /// <summary>Discovers available configs/splits for a HuggingFace dataset.</summary>
+    public async Task DiscoverHuggingFaceDatasetAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_hfRepository))
+        {
+            _errorMessage = "Please enter a HuggingFace repository name.";
+            return;
+        }
+
+        _errorMessage = null;
+        _hfDiscovering = true;
+        _hfShowOptions = false;
+        _hfDiscoveryResponse = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            Logs.Info($"[HF DISCOVERY] Starting discovery for {_hfRepository}");
+
+            _hfDiscoveryResponse = await DatasetApiClient.DiscoverHuggingFaceDatasetAsync(
+                new HuggingFaceDiscoveryRequest
+                {
+                    Repository = _hfRepository,
+                    Revision = _hfRevision,
+                    IsStreaming = _hfIsStreaming,
+                    AccessToken = _hfAccessToken
+                });
+
+            if (_hfDiscoveryResponse != null && _hfDiscoveryResponse.IsAccessible)
+            {
+                // Respect user's choice of streaming vs download mode
+                Logs.Info($"[HF DISCOVERY] User selected streaming mode: {_hfIsStreaming}");
+                
+                // Check if we need to show options or can auto-import
+                bool needsUserSelection = false;
+
+                if (_hfIsStreaming && _hfDiscoveryResponse.StreamingOptions != null)
+                {
+                    // Show options if multiple configs/splits available
+                    needsUserSelection = _hfDiscoveryResponse.StreamingOptions.AvailableOptions.Count > 1;
+                }
+                else if (!_hfIsStreaming && _hfDiscoveryResponse.DownloadOptions != null)
+                {
+                    // Show options if multiple files available
+                    needsUserSelection = _hfDiscoveryResponse.DownloadOptions.AvailableFiles.Count > 1;
+                }
+
+                if (needsUserSelection)
+                {
+                    _hfShowOptions = true;
+                    Logs.Info($"[HF DISCOVERY] Multiple options found, showing selection UI");
+                }
+                else
+                {
+                    // Auto-import with single option
+                    Logs.Info($"[HF DISCOVERY] Single option found, auto-importing");
+                    await ImportFromHuggingFaceAsync(null, null, null);
+                }
+            }
+            else
+            {
+                _errorMessage = _hfDiscoveryResponse?.ErrorMessage ?? "Failed to discover dataset options.";
+            }
+        }
+        catch (Exception ex)
+        {
+            Logs.Error($"[HF DISCOVERY] Discovery failed: {ex.Message}");
+            _errorMessage = $"Discovery failed: {ex.Message}";
+        }
+        finally
+        {
+            _hfDiscovering = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>Cancels the dataset options selection.</summary>
+    public void CancelHuggingFaceOptions()
+    {
+        _hfShowOptions = false;
+        _hfDiscoveryResponse = null;
+        StateHasChanged();
+    }
+
+    /// <summary>Confirms dataset options and starts import.</summary>
+    public async Task ConfirmHuggingFaceOptions(string? config, string? split, string? dataFilePath)
+    {
+        _hfShowOptions = false;
+        await ImportFromHuggingFaceAsync(config, split, dataFilePath);
+    }
+
     /// <summary>Imports a dataset from HuggingFace Hub.</summary>
-    public async Task ImportFromHuggingFaceAsync()
+    public async Task ImportFromHuggingFaceAsync(string? selectedConfig = null, string? selectedSplit = null, string? selectedDataFile = null, bool confirmedDownloadFallback = false)
     {
         if (string.IsNullOrWhiteSpace(_hfRepository))
         {
@@ -631,14 +727,19 @@ public partial class DatasetUploader
 
             bool success = await DatasetApiClient.ImportFromHuggingFaceAsync(
                 datasetId,
-                new ImportHuggingFaceDatasetRequest(
-                    Repository: _hfRepository,
-                    Revision: _hfRevision,
-                    Name: datasetName,
-                    Description: description,
-                    IsStreaming: _hfIsStreaming,
-                    AccessToken: _hfAccessToken
-                ));
+                new ImportHuggingFaceDatasetRequest
+                {
+                    Repository = _hfRepository,
+                    Revision = _hfRevision,
+                    Name = datasetName,
+                    Description = description,
+                    IsStreaming = _hfIsStreaming && !confirmedDownloadFallback,
+                    AccessToken = _hfAccessToken,
+                    Config = selectedConfig,
+                    Split = selectedSplit,
+                    DataFilePath = selectedDataFile,
+                    ConfirmedDownloadFallback = confirmedDownloadFallback
+                });
 
             if (!success)
             {
@@ -664,6 +765,50 @@ public partial class DatasetUploader
                 if (updatedDataset != null)
                 {
                     Logs.Info($"Streaming dataset {datasetId} status: {updatedDataset.Status}, TotalItems: {updatedDataset.TotalItems}");
+                    
+                    // Check if streaming failed and offer fallback
+                    if (updatedDataset.Status == IngestionStatusDto.Failed && 
+                        updatedDataset.ErrorMessage?.StartsWith("STREAMING_UNAVAILABLE:") == true)
+                    {
+                        string reason = updatedDataset.ErrorMessage.Substring("STREAMING_UNAVAILABLE:".Length);
+                        Logs.Warning($"[HF IMPORT] Streaming failed: {reason}");
+                        
+                        // Ask user if they want to fallback to download mode
+                        bool? result = await DialogService.ShowMessageBox(
+                            "Streaming Not Available",
+                            $"Streaming mode is not supported for this dataset.\n\nReason: {reason}\n\nWould you like to download the dataset instead? This may require significant disk space and time.",
+                            yesText: "Download Dataset",
+                            cancelText: "Cancel");
+                        
+                        if (result == true)
+                        {
+                            Logs.Info("[HF IMPORT] User confirmed download fallback, restarting import...");
+                            
+                            // Delete the failed dataset
+                            await DatasetApiClient.DeleteDatasetAsync(datasetId);
+                            
+                            // Retry with download fallback flag
+                            await ImportFromHuggingFaceAsync(selectedConfig, selectedSplit, selectedDataFile, confirmedDownloadFallback: true);
+                            return;
+                        }
+                        else
+                        {
+                            Logs.Info("[HF IMPORT] User declined download fallback");
+                            
+                            // Delete the failed dataset
+                            await DatasetApiClient.DeleteDatasetAsync(datasetId);
+                            
+                            NotificationService.ShowWarning("Import cancelled. Streaming is not available for this dataset.");
+                            
+                            _hfRepository = string.Empty;
+                            _hfDatasetName = null;
+                            _hfDescription = null;
+                            _hfRevision = null;
+                            _hfAccessToken = null;
+                            
+                            return;
+                        }
+                    }
                 }
 
                 try
@@ -729,7 +874,10 @@ public partial class DatasetUploader
                     }
                     else if (updatedDataset.Status == IngestionStatusDto.Failed)
                     {
-                        throw new Exception($"Dataset import failed. Status: {updatedDataset.Status}");
+                        string errorDetail = !string.IsNullOrWhiteSpace(updatedDataset.ErrorMessage) 
+                            ? $" Error: {updatedDataset.ErrorMessage}" 
+                            : "";
+                        throw new Exception($"Dataset import failed. Status: {updatedDataset.Status}.{errorDetail}");
                     }
                     else
                     {
