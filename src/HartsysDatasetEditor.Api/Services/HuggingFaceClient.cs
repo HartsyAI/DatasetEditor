@@ -165,11 +165,49 @@ internal sealed class HuggingFaceClient : IHuggingFaceClient
             Directory.CreateDirectory(directory);
         }
 
-        using FileStream fileStream = new(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None);
-        await response.Content.CopyToAsync(fileStream, cancellationToken);
+        long? totalBytes = response.Content.Headers.ContentLength;
+
+        using FileStream fileStream = new(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 8192);
+        using Stream contentStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+
+        // Download with progress reporting
+        byte[] buffer = new byte[8192];
+        long totalBytesRead = 0;
+        int bytesRead;
+        long lastLoggedBytes = 0;
+        long logInterval = totalBytes.HasValue ? Math.Max(1024 * 1024 * 100, totalBytes.Value / 20) : 1024 * 1024 * 100; // Log every 100MB or 5%
+        DateTime lastLogTime = DateTime.UtcNow;
+
+        while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+        {
+            await fileStream.WriteAsync(buffer, 0, bytesRead, cancellationToken);
+            totalBytesRead += bytesRead;
+
+            // Log progress periodically
+            if (totalBytesRead - lastLoggedBytes >= logInterval || (DateTime.UtcNow - lastLogTime).TotalSeconds >= 5)
+            {
+                if (totalBytes.HasValue)
+                {
+                    double percentComplete = (totalBytesRead * 100.0) / totalBytes.Value;
+                    double downloadedGB = totalBytesRead / (1024.0 * 1024.0 * 1024.0);
+                    double totalGB = totalBytes.Value / (1024.0 * 1024.0 * 1024.0);
+                    _logger.LogInformation("Download progress: {Percent:F1}% ({DownloadedGB:F2} GB / {TotalGB:F2} GB)",
+                        percentComplete, downloadedGB, totalGB);
+                }
+                else
+                {
+                    double downloadedMB = totalBytesRead / (1024.0 * 1024.0);
+                    _logger.LogInformation("Download progress: {DownloadedMB:F2} MB downloaded",
+                        downloadedMB);
+                }
+
+                lastLoggedBytes = totalBytesRead;
+                lastLogTime = DateTime.UtcNow;
+            }
+        }
 
         _logger.LogInformation("Downloaded {FileName} ({Size} bytes) to {Destination}",
-            fileName, fileStream.Length, destinationPath);
+            fileName, totalBytesRead, destinationPath);
     }
 
     private static string GetFileType(string? path)

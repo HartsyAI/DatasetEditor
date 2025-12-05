@@ -57,6 +57,11 @@ internal static class DatasetEndpoints
             .Produces(StatusCodes.Status202Accepted)
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status400BadRequest);
+
+        group.MapGet("/{datasetId:guid}/files/{*filePath}", ServeDatasetFile)
+            .WithName("ServeDatasetFile")
+            .Produces<FileStreamResult>(StatusCodes.Status200OK, "image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp")
+            .Produces(StatusCodes.Status404NotFound);
     }
 
     /// <summary>Gets all datasets with pagination</summary>
@@ -574,6 +579,113 @@ internal static class DatasetEndpoints
             isStreaming = request.IsStreaming,
             message = "Import started. Check dataset status for progress."
         });
+    }
+
+    /// <summary>Serves a file from a dataset's folder (for locally stored images)</summary>
+    public static async Task<IResult> ServeDatasetFile(
+        Guid datasetId,
+        string filePath,
+        IDatasetRepository datasetRepository,
+        IConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        DatasetEntity? dataset = await datasetRepository.GetAsync(datasetId, cancellationToken);
+        if (dataset is null)
+        {
+            return Results.NotFound();
+        }
+
+        // Get dataset root path from configuration
+        string datasetRootPath = configuration["Storage:DatasetRootPath"]
+            ?? Path.Combine(AppContext.BaseDirectory, "data", "datasets");
+
+        // Build the dataset folder path
+        string datasetFolder = GetDatasetFolderPathForFile(dataset, datasetRootPath);
+
+        // Build the full file path
+        string fullPath = Path.Combine(datasetFolder, filePath);
+        string normalizedFullPath = Path.GetFullPath(fullPath);
+        string normalizedDatasetFolder = Path.GetFullPath(datasetFolder);
+
+        // Security check: ensure the file is within the dataset folder
+        if (!normalizedFullPath.StartsWith(normalizedDatasetFolder, StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.NotFound();
+        }
+
+        if (!File.Exists(normalizedFullPath))
+        {
+            return Results.NotFound();
+        }
+
+        // Determine content type based on file extension
+        string extension = Path.GetExtension(normalizedFullPath).ToLowerInvariant();
+        string contentType = extension switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".webp" => "image/webp",
+            ".gif" => "image/gif",
+            ".bmp" => "image/bmp",
+            _ => "application/octet-stream"
+        };
+
+        FileStream fileStream = File.OpenRead(normalizedFullPath);
+        return Results.File(fileStream, contentType, enableRangeProcessing: true);
+    }
+
+    private static string GetDatasetFolderPathForFile(DatasetEntity dataset, string datasetRootPath)
+    {
+        string root = Path.GetFullPath(datasetRootPath);
+        Directory.CreateDirectory(root);
+
+        string slug = Slugify(dataset.Name);
+        string shortId = dataset.Id.ToString("N")[..8];
+        string folderName = $"{slug}-{shortId}";
+        string datasetFolder = Path.Combine(root, folderName);
+
+        return datasetFolder;
+    }
+
+    private static string Slugify(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "dataset";
+        }
+
+        value = value.Trim().ToLowerInvariant();
+        System.Text.StringBuilder sb = new(value.Length);
+        bool previousDash = false;
+
+        foreach (char c in value)
+        {
+            if (char.IsLetterOrDigit(c))
+            {
+                sb.Append(c);
+                previousDash = false;
+            }
+            else if (c == ' ' || c == '-' || c == '_' || c == '.')
+            {
+                if (!previousDash && sb.Length > 0)
+                {
+                    sb.Append('-');
+                    previousDash = true;
+                }
+            }
+        }
+
+        if (sb.Length == 0)
+        {
+            return "dataset";
+        }
+
+        if (sb[^1] == '-')
+        {
+            sb.Length--;
+        }
+
+        return sb.ToString();
     }
 
     /// <summary>Discovers available configs, splits, and files for a HuggingFace dataset</summary>

@@ -268,11 +268,22 @@ internal sealed class NoOpDatasetIngestionService(
             })
             .ToList();
 
-        Logs.Info($"[HF IMPORT] Image-only fallback: found {imageFiles.Count} image files");
+        Logs.Info($"[HF IMPORT] Image-only fallback: found {imageFiles.Count} direct image files");
 
+        // If no direct images found, check for ZIP files containing images
         if (imageFiles.Count == 0)
         {
-            Logs.Error($"[HF IMPORT] FAIL: No supported CSV/JSON/Parquet files or image files found in {request.Repository}");
+            List<HuggingFaceDatasetFile> zipFiles = info.Files
+                .Where(f => Path.GetExtension(f.Path).Equals(".zip", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (zipFiles.Count > 0)
+            {
+                Logs.Info($"[HF IMPORT] No direct images found, but found {zipFiles.Count} ZIP file(s). Attempting to extract and search for images.");
+                return await TryImportImagesFromZipAsync(dataset, zipFiles[0], request, cancellationToken);
+            }
+
+            Logs.Error($"[HF IMPORT] FAIL: No supported CSV/JSON/Parquet files, direct image files, or ZIP archives found in {request.Repository}");
             return false;
         }
 
@@ -334,6 +345,371 @@ internal sealed class NoOpDatasetIngestionService(
         Logs.Info("========== [HF IMPORT COMPLETE - IMAGE-ONLY] ==========");
 
         return true;
+    }
+
+    private async Task<bool> TryImportImagesFromZipAsync(
+        DatasetEntity dataset,
+        HuggingFaceDatasetFile zipFile,
+        ImportHuggingFaceDatasetRequest request,
+        CancellationToken cancellationToken)
+    {
+        string? tempZipPath = null;
+        string? tempExtractedPath = null;
+
+        try
+        {
+            // Step 1: Download the ZIP file
+            double sizeInGB = zipFile.Size / (1024.0 * 1024.0 * 1024.0);
+            Logs.Info($"[HF IMPORT] ========== DOWNLOADING ZIP FILE ==========");
+            Logs.Info($"[HF IMPORT] File: {zipFile.Path}");
+            Logs.Info($"[HF IMPORT] Size: {zipFile.Size:N0} bytes ({sizeInGB:F2} GB)");
+            Logs.Info($"[HF IMPORT] This is a large file - download may take several minutes...");
+
+            tempZipPath = Path.Combine(Path.GetTempPath(), $"hf-images-{dataset.Id}-{Path.GetFileName(zipFile.Path)}");
+            Logs.Info($"[HF IMPORT] Download destination: {tempZipPath}");
+
+            await huggingFaceClient.DownloadFileAsync(
+                request.Repository,
+                zipFile.Path,
+                tempZipPath,
+                request.Revision,
+                request.AccessToken,
+                cancellationToken);
+
+            long downloadedSize = new FileInfo(tempZipPath).Length;
+            double downloadedGB = downloadedSize / (1024.0 * 1024.0 * 1024.0);
+            Logs.Info($"[HF IMPORT] ✓ ZIP download complete: {downloadedSize:N0} bytes ({downloadedGB:F2} GB)");
+
+            // Step 2: Extract ZIP to temp directory
+            Logs.Info($"[HF IMPORT] ========== EXTRACTING ZIP FILE ==========");
+            tempExtractedPath = Path.Combine(Path.GetTempPath(), $"hf-images-extracted-{dataset.Id}-{Guid.NewGuid()}");
+            Directory.CreateDirectory(tempExtractedPath);
+
+            Logs.Info($"[HF IMPORT] Extraction destination: {tempExtractedPath}");
+            Logs.Info($"[HF IMPORT] Extracting ZIP archive (this may take several minutes for large files)...");
+
+            ZipFile.ExtractToDirectory(tempZipPath, tempExtractedPath);
+
+            Logs.Info($"[HF IMPORT] ✓ ZIP extraction complete");
+
+            // Step 2.5: Log what's inside the ZIP
+            Logs.Info($"[HF IMPORT] ========== INSPECTING ZIP CONTENTS ==========");
+            string[] allFiles = Directory.GetFiles(tempExtractedPath, "*.*", System.IO.SearchOption.AllDirectories);
+            string[] allDirs = Directory.GetDirectories(tempExtractedPath, "*", System.IO.SearchOption.AllDirectories);
+
+            Logs.Info($"[HF IMPORT] Total files extracted: {allFiles.Length}");
+            Logs.Info($"[HF IMPORT] Total directories: {allDirs.Length}");
+
+            // Log directory structure (top level)
+            string[] topLevelItems = Directory.GetFileSystemEntries(tempExtractedPath);
+            Logs.Info($"[HF IMPORT] Top-level contents ({topLevelItems.Length} items):");
+            foreach (string item in topLevelItems.Take(10))
+            {
+                string name = Path.GetFileName(item);
+                bool isDir = Directory.Exists(item);
+                if (isDir)
+                {
+                    int fileCount = Directory.GetFiles(item, "*.*", System.IO.SearchOption.AllDirectories).Length;
+                    Logs.Info($"[HF IMPORT]   📁 {name}/ ({fileCount} files)");
+                }
+                else
+                {
+                    long fileSize = new FileInfo(item).Length;
+                    Logs.Info($"[HF IMPORT]   📄 {name} ({fileSize:N0} bytes)");
+                }
+            }
+            if (topLevelItems.Length > 10)
+            {
+                Logs.Info($"[HF IMPORT]   ... and {topLevelItems.Length - 10} more items");
+            }
+
+            // Step 3: Recursively find all image files in extracted directory
+            Logs.Info($"[HF IMPORT] ========== SEARCHING FOR IMAGES ==========");
+            string[] imageExtensions = { ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp" };
+            string[] extractedImageFiles = Directory.GetFiles(tempExtractedPath, "*.*", System.IO.SearchOption.AllDirectories)
+                .Where(f =>
+                {
+                    string ext = Path.GetExtension(f).ToLowerInvariant();
+                    return imageExtensions.Contains(ext);
+                })
+                .ToArray();
+
+            Logs.Info($"[HF IMPORT] ✓ Found {extractedImageFiles.Length} image files");
+
+            // Log some sample image paths
+            if (extractedImageFiles.Length > 0)
+            {
+                Logs.Info($"[HF IMPORT] Sample image files:");
+                foreach (string imgPath in extractedImageFiles.Take(5))
+                {
+                    string relativePath = Path.GetRelativePath(tempExtractedPath, imgPath);
+                    long fileSize = new FileInfo(imgPath).Length;
+                    Logs.Info($"[HF IMPORT]   🖼️  {relativePath} ({fileSize:N0} bytes)");
+                }
+                if (extractedImageFiles.Length > 5)
+                {
+                    Logs.Info($"[HF IMPORT]   ... and {extractedImageFiles.Length - 5} more images");
+                }
+            }
+
+            // Step 3.5: Look for caption files and metadata
+            Logs.Info($"[HF IMPORT] ========== SEARCHING FOR CAPTIONS AND METADATA ==========");
+            string[] captionFiles = Directory.GetFiles(tempExtractedPath, "*.caption", System.IO.SearchOption.AllDirectories);
+            Logs.Info($"[HF IMPORT] Found {captionFiles.Length} caption files (.caption)");
+
+            // Build a dictionary of captions by image filename
+            Dictionary<string, string> captionsByFilename = new(StringComparer.OrdinalIgnoreCase);
+            foreach (string captionFile in captionFiles)
+            {
+                try
+                {
+                    string captionFileName = Path.GetFileNameWithoutExtension(captionFile); // e.g., "IMG_001"
+                    string caption = await File.ReadAllTextAsync(captionFile, cancellationToken);
+                    if (!string.IsNullOrWhiteSpace(caption))
+                    {
+                        captionsByFilename[captionFileName] = caption.Trim();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logs.Warning($"[HF IMPORT] Failed to read caption file {Path.GetFileName(captionFile)}: {ex.Message}");
+                }
+            }
+
+            Logs.Info($"[HF IMPORT] Loaded {captionsByFilename.Count} captions");
+
+            // Look for metadata.json
+            Dictionary<string, JsonElement>? metadataJson = null;
+            string[] metadataFiles = Directory.GetFiles(tempExtractedPath, "metadata.json", System.IO.SearchOption.AllDirectories);
+            if (metadataFiles.Length > 0)
+            {
+                try
+                {
+                    Logs.Info($"[HF IMPORT] Found metadata.json at {Path.GetRelativePath(tempExtractedPath, metadataFiles[0])}");
+                    string jsonContent = await File.ReadAllTextAsync(metadataFiles[0], cancellationToken);
+                    using JsonDocument doc = JsonDocument.Parse(jsonContent);
+                    metadataJson = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+
+                    // Store the entire JSON structure
+                    foreach (JsonProperty prop in doc.RootElement.EnumerateObject())
+                    {
+                        metadataJson[prop.Name] = prop.Value.Clone();
+                    }
+
+                    Logs.Info($"[HF IMPORT] Loaded metadata.json with {metadataJson.Count} entries");
+                }
+                catch (Exception ex)
+                {
+                    Logs.Warning($"[HF IMPORT] Failed to parse metadata.json: {ex.Message}");
+                }
+            }
+            else
+            {
+                Logs.Info($"[HF IMPORT] No metadata.json found");
+            }
+
+            if (extractedImageFiles.Length == 0)
+            {
+                Logs.Error($"[HF IMPORT] FAIL: ZIP file {zipFile.Path} contains no supported image files");
+                return false;
+            }
+
+            // Step 4: Copy images to dataset folder and create dataset items
+            Logs.Info($"[HF IMPORT] ========== COPYING IMAGES TO DATASET FOLDER ==========");
+            string dummyUpload = Path.Combine(Path.GetTempPath(), $"hf-zip-images-{dataset.Id}.tmp");
+            string datasetFolder = GetDatasetFolderPath(dataset, dummyUpload);
+            string imagesFolder = Path.Combine(datasetFolder, "images");
+            Directory.CreateDirectory(imagesFolder);
+
+            Logs.Info($"[HF IMPORT] Dataset folder: {datasetFolder}");
+            Logs.Info($"[HF IMPORT] Images folder: {imagesFolder}");
+            Logs.Info($"[HF IMPORT] Copying {extractedImageFiles.Length} images...");
+
+            List<DatasetItemDto> items = new(extractedImageFiles.Length);
+            int copyCount = 0;
+            int logInterval = Math.Max(1, extractedImageFiles.Length / 10); // Log every 10%
+
+            foreach (string imagePath in extractedImageFiles)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Generate a relative path for the image within the ZIP structure
+                string relativePath = Path.GetRelativePath(tempExtractedPath, imagePath);
+                string fileName = Path.GetFileName(imagePath);
+                string externalId = Path.GetFileNameWithoutExtension(fileName);
+
+                // Copy image to dataset folder
+                string destinationPath = Path.Combine(imagesFolder, fileName);
+
+                // Handle duplicate filenames by appending a counter
+                int counter = 1;
+                while (File.Exists(destinationPath))
+                {
+                    string fileNameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+                    string ext = Path.GetExtension(fileName);
+                    destinationPath = Path.Combine(imagesFolder, $"{fileNameWithoutExt}_{counter}{ext}");
+                    counter++;
+                }
+
+                File.Copy(imagePath, destinationPath, overwrite: false);
+                copyCount++;
+
+                // Log progress periodically
+                if (copyCount % logInterval == 0 || copyCount == extractedImageFiles.Length)
+                {
+                    double percentComplete = (copyCount * 100.0) / extractedImageFiles.Length;
+                    Logs.Info($"[HF IMPORT] Progress: {copyCount}/{extractedImageFiles.Length} images copied ({percentComplete:F1}%)");
+                }
+
+                // Create dataset item with API URL reference
+                string localImagePath = Path.Combine("images", Path.GetFileName(destinationPath));
+                // Convert to forward slashes for URLs
+                string urlPath = localImagePath.Replace(Path.DirectorySeparatorChar, '/');
+                string imageApiUrl = $"/api/datasets/{dataset.Id}/files/{urlPath}";
+
+                // Look for caption for this image
+                string? caption = null;
+                string imageFileNameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+                if (captionsByFilename.TryGetValue(imageFileNameWithoutExt, out string? foundCaption))
+                {
+                    caption = foundCaption;
+                }
+
+                // Build metadata dictionary
+                Dictionary<string, string> metadata = new(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["source"] = "huggingface_zip",
+                    ["zip_file"] = zipFile.Path,
+                    ["original_path"] = relativePath,
+                    ["local_path"] = localImagePath,
+                    ["file_size"] = new FileInfo(destinationPath).Length.ToString()
+                };
+
+                // Add caption to metadata if found
+                if (!string.IsNullOrWhiteSpace(caption))
+                {
+                    metadata["blip_caption"] = caption;
+                }
+
+                // Add metadata from metadata.json if available
+                if (metadataJson != null && metadataJson.TryGetValue(imageFileNameWithoutExt, out JsonElement imageMetadata))
+                {
+                    try
+                    {
+                        // Flatten the metadata JSON into key-value pairs
+                        foreach (JsonProperty prop in imageMetadata.EnumerateObject())
+                        {
+                            string key = $"meta_{prop.Name}";
+                            string value = prop.Value.ValueKind == JsonValueKind.String
+                                ? prop.Value.GetString() ?? string.Empty
+                                : prop.Value.ToString();
+
+                            if (!string.IsNullOrWhiteSpace(value))
+                            {
+                                metadata[key] = value;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logs.Warning($"[HF IMPORT] Failed to parse metadata for {imageFileNameWithoutExt}: {ex.Message}");
+                    }
+                }
+
+                // Determine title: use caption if available, otherwise filename
+                string title = !string.IsNullOrWhiteSpace(caption) ? caption : externalId;
+
+                DatasetItemDto item = new()
+                {
+                    Id = Guid.NewGuid(),
+                    ExternalId = externalId,
+                    Title = title,  // Use caption as title if available
+                    Description = caption,  // Store caption in description too
+                    ImageUrl = imageApiUrl,
+                    ThumbnailUrl = imageApiUrl,
+                    Width = 0,
+                    Height = 0,
+                    Metadata = metadata
+                };
+
+                items.Add(item);
+            }
+
+            Logs.Info($"[HF IMPORT] ✓ All {copyCount} images copied successfully");
+
+            // Step 5: Save items to database
+            Logs.Info($"[HF IMPORT] ========== SAVING TO DATABASE ==========");
+            if (items.Count == 0)
+            {
+                Logs.Error($"[HF IMPORT] FAIL: No dataset items could be created from ZIP file {zipFile.Path}");
+                return false;
+            }
+
+            // Count how many items have captions
+            int itemsWithCaptions = items.Count(i => !string.IsNullOrWhiteSpace(i.Description));
+            int itemsWithMetadata = items.Count(i => i.Metadata.Count > 5); // More than just the basic 5 fields
+
+            Logs.Info($"[HF IMPORT] Dataset statistics:");
+            Logs.Info($"[HF IMPORT]   Total images: {items.Count}");
+            Logs.Info($"[HF IMPORT]   Images with BLIP captions: {itemsWithCaptions} ({itemsWithCaptions * 100.0 / items.Count:F1}%)");
+            Logs.Info($"[HF IMPORT]   Images with additional metadata: {itemsWithMetadata}");
+
+            Logs.Info($"[HF IMPORT] Saving {items.Count} dataset items to database...");
+            await datasetItemRepository.AddRangeAsync(dataset.Id, items, cancellationToken);
+
+            dataset.TotalItems = items.Count;
+            dataset.Status = IngestionStatusDto.Completed;
+            await datasetRepository.UpdateAsync(dataset, cancellationToken);
+
+            Logs.Info($"[HF IMPORT] ✓ Saved {items.Count} items to database");
+            Logs.Info($"[HF IMPORT] ✓ Dataset status updated to: {dataset.Status}");
+
+            Logs.Info($"[HF IMPORT] Writing dataset metadata file...");
+            await WriteDatasetMetadataFileAsync(dataset, datasetFolder, null, new List<string>(), cancellationToken);
+
+            Logs.Info($"[HF IMPORT] ========== IMPORT COMPLETE ==========");
+            Logs.Info($"[HF IMPORT] Dataset ID: {dataset.Id}");
+            Logs.Info($"[HF IMPORT] Total Items: {dataset.TotalItems}");
+            Logs.Info($"[HF IMPORT] Status: {dataset.Status}");
+            Logs.Info($"[HF IMPORT] Images Location: {imagesFolder}");
+            Logs.Info("========== [HF IMPORT COMPLETE - IMAGE-FROM-ZIP] ==========");
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logs.Error($"[HF IMPORT] Exception while importing images from ZIP: {ex.GetType().Name}: {ex.Message}", ex);
+            return false;
+        }
+        finally
+        {
+            // Cleanup: Delete temporary files
+            if (!string.IsNullOrWhiteSpace(tempZipPath) && File.Exists(tempZipPath))
+            {
+                try
+                {
+                    File.Delete(tempZipPath);
+                    Logs.Info($"[HF IMPORT] Cleaned up temp ZIP file: {tempZipPath}");
+                }
+                catch (Exception cleanupEx)
+                {
+                    Logs.Warning($"[HF IMPORT] Failed to delete temp ZIP file {tempZipPath}: {cleanupEx.Message}");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(tempExtractedPath) && Directory.Exists(tempExtractedPath))
+            {
+                try
+                {
+                    Directory.Delete(tempExtractedPath, recursive: true);
+                    Logs.Info($"[HF IMPORT] Cleaned up temp extraction directory: {tempExtractedPath}");
+                }
+                catch (Exception cleanupEx)
+                {
+                    Logs.Warning($"[HF IMPORT] Failed to delete temp extraction directory {tempExtractedPath}: {cleanupEx.Message}");
+                }
+            }
+        }
     }
 
     public async Task StartIngestionAsync(Guid datasetId, string? uploadLocation, CancellationToken cancellationToken = default)
