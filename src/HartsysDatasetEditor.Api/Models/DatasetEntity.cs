@@ -18,4 +18,5 @@ public sealed class DatasetEntity
     public string? HuggingFaceRepository { get; set; }
     public string? HuggingFaceConfig { get; set; }
     public string? HuggingFaceSplit { get; set; }
+    public string? ErrorMessage { get; set; }
 }

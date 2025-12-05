@@ -17,6 +17,11 @@ internal static class DatasetEndpoints
     {
         RouteGroupBuilder group = app.MapGroup("/api/datasets").WithTags("Datasets");
 
+        group.MapPost("/huggingface/discover", DiscoverHuggingFaceDataset)
+            .WithName("DiscoverHuggingFaceDataset")
+            .Produces<HuggingFaceDiscoveryResponse>()
+            .Produces(StatusCodes.Status400BadRequest);
+
         group.MapGet("/", GetAllDatasets)
             .WithName("GetAllDatasets")
             .Produces<object>();
@@ -569,5 +574,23 @@ internal static class DatasetEndpoints
             isStreaming = request.IsStreaming,
             message = "Import started. Check dataset status for progress."
         });
+    }
+
+    /// <summary>Discovers available configs, splits, and files for a HuggingFace dataset</summary>
+    public static async Task<IResult> DiscoverHuggingFaceDataset(
+        [FromBody] HuggingFaceDiscoveryRequest request,
+        IHuggingFaceDiscoveryService discoveryService,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.Repository))
+        {
+            return Results.BadRequest(new { error = "Repository name is required" });
+        }
+
+        HuggingFaceDiscoveryResponse response = await discoveryService.DiscoverDatasetAsync(
+            request,
+            cancellationToken);
+
+        return Results.Ok(response);
     }
 }

@@ -223,19 +223,26 @@
                               Label="Streaming Mode"
                               Color="Color.Primary">
                         <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                            Streaming mode stores only a reference without downloading the full dataset (currently experimental)
+                            Streaming mode stores only a reference without downloading the full dataset
                         </MudText>
                     </MudSwitch>
 
-                    @if (!string.IsNullOrWhiteSpace(_hfRepository))
+                    @if (_hfShowOptions && _hfDiscoveryResponse != null)
+                    {
+                        <HuggingFaceDatasetOptions DiscoveryResponse="@_hfDiscoveryResponse"
+                                                  IsStreamingMode="@_hfIsStreaming"
+                                                  OnConfirm="@(async (tuple) => await ConfirmHuggingFaceOptions(tuple.Item1, tuple.Item2, tuple.Item3))"
+                                                  OnCancel="@CancelHuggingFaceOptions" />
+                    }
+                    else if (!string.IsNullOrWhiteSpace(_hfRepository) && !_hfShowOptions)
                     {
                         <MudButton Variant="Variant.Filled"
                                   Color="Color.Primary"
-                                  StartIcon="@Icons.Material.Filled.Download"
-                                  OnClick="@ImportFromHuggingFaceAsync"
-                                  Disabled="@_isUploading"
+                                  StartIcon="@Icons.Material.Filled.Search"
+                                  OnClick="@DiscoverHuggingFaceDatasetAsync"
+                                  Disabled="@(_isUploading || _hfDiscovering)"
                                   FullWidth="true">
-                            @(_isUploading ? "Importing..." : _hfIsStreaming ? "Create Streaming Reference" : "Download and Import")
+                            @(_hfDiscovering ? "Discovering Options..." : "Discover Dataset")
                         </MudButton>
                     }
 

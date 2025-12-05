@@ -17,4 +17,5 @@ public sealed record DatasetDetailDto
     public string? HuggingFaceRepository { get; init; }
     public string? HuggingFaceConfig { get; init; }
     public string? HuggingFaceSplit { get; init; }
+    public string? ErrorMessage { get; init; }
 }

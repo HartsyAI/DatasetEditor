@@ -98,6 +98,42 @@ internal sealed class NoOpDatasetIngestionService(
                 dataset.HuggingFaceRepository = request.Repository;
                 string? accessToken = request.AccessToken;
 
+                // Check if user explicitly provided config/split (from discovery UI)
+                bool userProvidedConfig = !string.IsNullOrWhiteSpace(request.Config) || !string.IsNullOrWhiteSpace(request.Split);
+
+                if (userProvidedConfig)
+                {
+                    // User selected a specific config/split - use it directly
+                    Logs.Info($"[HF IMPORT] Using user-selected config/split: config={request.Config ?? "default"}, split={request.Split ?? "train"}");
+                    
+                    dataset.HuggingFaceConfig = request.Config;
+                    dataset.HuggingFaceSplit = request.Split ?? "train";
+
+                    // Try to get row count for this specific config/split
+                    HuggingFaceDatasetSizeInfo? sizeInfo = await huggingFaceDatasetServerClient.GetDatasetSizeAsync(
+                        request.Repository,
+                        request.Config,
+                        request.Split,
+                        accessToken,
+                        cancellationToken);
+
+                    if (sizeInfo?.NumRows.HasValue == true)
+                    {
+                        dataset.TotalItems = sizeInfo.NumRows.Value;
+                    }
+
+                    dataset.SourceType = DatasetSourceType.HuggingFaceStreaming;
+                    dataset.IsStreaming = true;
+                    dataset.Status = IngestionStatusDto.Completed;
+                    await datasetRepository.UpdateAsync(dataset, cancellationToken);
+
+                    Logs.Info($"[HF IMPORT] Dataset {datasetId} configured as streaming reference (user-selected)");
+                    Logs.Info($"[HF IMPORT] Streaming config: repo={dataset.HuggingFaceRepository}, config={dataset.HuggingFaceConfig}, split={dataset.HuggingFaceSplit}, totalRows={dataset.TotalItems}");
+                    Logs.Info("========== [HF IMPORT COMPLETE - STREAMING] ==========");
+                    return;
+                }
+
+                // No user-provided config/split - use auto-discovery
                 HuggingFaceStreamingPlan streamingPlan = await HuggingFaceStreamingStrategy.DiscoverStreamingPlanAsync(
                     huggingFaceDatasetServerClient,
                     request.Repository,
@@ -126,20 +162,36 @@ internal sealed class NoOpDatasetIngestionService(
                     dataset.Status = IngestionStatusDto.Completed;
                     await datasetRepository.UpdateAsync(dataset, cancellationToken);
 
-                    Logs.Info($"[HF IMPORT] Dataset {datasetId} configured as streaming reference");
+                    Logs.Info($"[HF IMPORT] Dataset {datasetId} configured as streaming reference (auto-discovered)");
                     Logs.Info($"[HF IMPORT] Streaming config: repo={dataset.HuggingFaceRepository}, config={dataset.HuggingFaceConfig}, split={dataset.HuggingFaceSplit}, totalRows={dataset.TotalItems}, source={streamingPlan.Source}");
                     Logs.Info("========== [HF IMPORT COMPLETE - STREAMING] ==========");
                     return;
                 }
 
                 // If we reach here, streaming was requested but could not be configured.
-                // Gracefully fall back to download mode using the regular ingestion pipeline.
-                Logs.Warning($"[HF IMPORT] Streaming mode requested but not supported for this dataset. Reason: {streamingPlan.FailureReason ?? "unknown"}. Falling back to download mode.");
+                // Do NOT automatically fall back - require user confirmation
+                if (!request.ConfirmedDownloadFallback)
+                {
+                    string failureReason = streamingPlan.FailureReason ?? "Streaming not supported for this dataset";
+                    Logs.Warning($"[HF IMPORT] Streaming mode requested but not supported for this dataset. Reason: {failureReason}");
+                    Logs.Warning($"[HF IMPORT] Fallback to download mode requires user confirmation. Failing import.");
+                    
+                    // Mark as failed with special error code that client can detect
+                    dataset.Status = IngestionStatusDto.Failed;
+                    dataset.ErrorMessage = $"STREAMING_UNAVAILABLE:{failureReason}";
+                    await datasetRepository.UpdateAsync(dataset, cancellationToken);
+                    
+                    Logs.Info("========== [HF IMPORT FAILED - STREAMING UNAVAILABLE] ==========");
+                    return;
+                }
+                
+                // User confirmed fallback to download mode
+                Logs.Info($"[HF IMPORT] User confirmed fallback to download mode. Reason: {streamingPlan.FailureReason ?? "unknown"}");
                 dataset.SourceType = DatasetSourceType.HuggingFaceDownload;
                 dataset.IsStreaming = false;
             }
 
-            // Download mode ingestion (also used when streaming fallback occurs)
+            // Download mode ingestion
             Logs.Info("[HF IMPORT] Step 3: Starting DOWNLOAD mode");
 
             List<HuggingFaceDatasetFile> dataFiles = profile.DataFiles.ToList();
@@ -155,6 +207,9 @@ internal sealed class NoOpDatasetIngestionService(
                 if (!imageImportSucceeded)
                 {
                     dataset.Status = IngestionStatusDto.Failed;
+                    dataset.ErrorMessage = $"No supported data files (CSV/JSON/Parquet) or image files found in {request.Repository}. " +
+                        $"Available files: {string.Join(", ", info.Files.Take(10).Select(f => f.Path))}" +
+                        (info.Files.Count > 10 ? $" and {info.Files.Count - 10} more..." : "");
                     await datasetRepository.UpdateAsync(dataset, cancellationToken);
                 }
 

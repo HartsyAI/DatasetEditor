@@ -19,6 +19,11 @@ internal interface IHuggingFaceDatasetServerClient
         string? accessToken,
         CancellationToken cancellationToken = default);
 
+    Task<List<HuggingFaceDatasetSplitInfo>?> GetAllSplitsAsync(
+        string dataset,
+        string? accessToken,
+        CancellationToken cancellationToken = default);
+
     Task<HuggingFaceRowsPage?> GetRowsAsync(
         string dataset,
         string? config,
@@ -152,6 +157,65 @@ internal sealed class HuggingFaceDatasetServerClient : IHuggingFaceDatasetServer
             };
 
             return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[HF DATASETS-SERVER] Error calling /size for {Dataset}", dataset);
+            return null;
+        }
+    }
+
+    public async Task<List<HuggingFaceDatasetSplitInfo>?> GetAllSplitsAsync(
+        string dataset,
+        string? accessToken,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(dataset))
+            {
+                throw new ArgumentException("Dataset name is required", nameof(dataset));
+            }
+
+            string url = DatasetServerBaseUrl + "/size?dataset=" + Uri.EscapeDataString(dataset);
+
+            using HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Get, url);
+
+            if (!string.IsNullOrWhiteSpace(accessToken))
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            }
+
+            using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("[HF DATASETS-SERVER] /size failed for {Dataset}: {StatusCode}", dataset, response.StatusCode);
+                return null;
+            }
+
+            string json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            HfSizeResponse? parsed = JsonSerializer.Deserialize<HfSizeResponse>(json, _jsonOptions);
+
+            if (parsed?.Size?.Splits == null || parsed.Size.Splits.Count == 0)
+            {
+                return null;
+            }
+
+            // Convert all splits to HuggingFaceDatasetSplitInfo
+            List<HuggingFaceDatasetSplitInfo> splits = new List<HuggingFaceDatasetSplitInfo>();
+            foreach (HfSizeSplitEntry splitEntry in parsed.Size.Splits)
+            {
+                splits.Add(new HuggingFaceDatasetSplitInfo
+                {
+                    Dataset = splitEntry.Dataset,
+                    Config = splitEntry.Config,
+                    Split = splitEntry.Split,
+                    NumRows = splitEntry.NumRows
+                });
+            }
+
+            return splits;
         }
         catch (Exception ex)
         {
@@ -350,4 +414,15 @@ internal sealed class HuggingFaceRow
     public long RowIndex { get; set; }
 
     public Dictionary<string, JsonElement> Columns { get; set; } = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// Information about a specific config/split combination.
+/// </summary>
+internal sealed class HuggingFaceDatasetSplitInfo
+{
+    public string Dataset { get; set; } = string.Empty;
+    public string? Config { get; set; }
+    public string Split { get; set; } = string.Empty;
+    public long NumRows { get; set; }
 }

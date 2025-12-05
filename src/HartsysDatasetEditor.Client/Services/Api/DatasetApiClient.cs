@@ -101,4 +101,17 @@ public sealed class DatasetApiClient
 
         return response.IsSuccessStatusCode;
     }
+
+    public async Task<HuggingFaceDiscoveryResponse?> DiscoverHuggingFaceDatasetAsync(HuggingFaceDiscoveryRequest request, CancellationToken cancellationToken = default)
+    {
+        HttpResponseMessage response = await _httpClient.PostAsJsonAsync(
+            "api/datasets/huggingface/discover",
+            request,
+            SerializerOptions,
+            cancellationToken);
+
+        response.EnsureSuccessStatusCode();
+
+        return await response.Content.ReadFromJsonAsync<HuggingFaceDiscoveryResponse>(SerializerOptions, cancellationToken);
+    }
 }
