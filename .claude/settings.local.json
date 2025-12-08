@@ -8,7 +8,8 @@
       "Bash(curl:*)",
       "Bash(tree:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git branch:*)"
     ],
     "deny": [],
     "ask": []
