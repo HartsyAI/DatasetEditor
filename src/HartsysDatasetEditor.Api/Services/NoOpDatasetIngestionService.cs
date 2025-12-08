@@ -561,7 +561,7 @@ internal sealed class NoOpDatasetIngestionService(
                     Logs.Info($"[HF IMPORT] Progress: {copyCount}/{extractedImageFiles.Length} images copied ({percentComplete:F1}%)");
                 }
 
-                // Create dataset item with API URL reference
+                // Create dataset item with API path reference (relative, client will prepend base URL)
                 string localImagePath = Path.Combine("images", Path.GetFileName(destinationPath));
                 // Convert to forward slashes for URLs
                 string urlPath = localImagePath.Replace(Path.DirectorySeparatorChar, '/');

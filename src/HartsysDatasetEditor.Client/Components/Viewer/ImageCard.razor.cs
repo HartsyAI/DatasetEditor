@@ -13,6 +13,7 @@ public partial class ImageCard
     [Inject] public ViewState ViewState { get; set; } = default!;
     [Inject] public DatasetState DatasetState { get; set; } = default!;
     [Inject] public ItemEditService EditService { get; set; } = default!;
+    [Inject] public ImageUrlHelper ImageUrlHelper { get; set; } = default!;
 
     /// <summary>The image item to display.</summary>
     [Parameter] public ImageItem Item { get; set; } = default!;
@@ -60,10 +61,12 @@ public partial class ImageCard
         }
 
         // Use thumbnail URL if available, otherwise use regular image URL
-        _imageUrl = string.IsNullOrEmpty(Item.ThumbnailUrl) 
-            ? Item.ImageUrl 
+        string baseUrl = string.IsNullOrEmpty(Item.ThumbnailUrl)
+            ? Item.ImageUrl
             : Item.ThumbnailUrl;
 
+        // Resolve to full URL (prepends API base address if relative)
+        _imageUrl = ImageUrlHelper.ResolveImageUrl(baseUrl);
         _imageLoaded = true;
         _imageError = false;
 

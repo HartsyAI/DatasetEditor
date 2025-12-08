@@ -17,8 +17,11 @@ public partial class ImageDetailPanel
     [Inject] public ItemEditService EditService { get; set; } = default!;
     [Inject] public IDialogService DialogService { get; set; } = default!;
     [Inject] public ISnackbar Snackbar { get; set; } = default!;
+    [Inject] public ImageUrlHelper ImageUrlHelper { get; set; } = default!;
 
     [Parameter] public ImageItem? Item { get; set; }
+
+    private string ResolvedImageUrl => Item != null ? ImageUrlHelper.ResolveImageUrl(Item.ImageUrl) : string.Empty;
 
     private bool _isEditingTitle = false;
     private bool _isEditingDescription = false;

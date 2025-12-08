@@ -176,11 +176,12 @@
 
 @code {
     [CascadingParameter] public MudDialogInstance Dialog { get; set; } = default!;
+    [Inject] public ImageUrlHelper ImageUrlHelper { get; set; } = default!;
 
     [Parameter] public string? ImageUrl { get; set; }
     [Parameter] public ImageItem? Item { get; set; }
 
-    private string _imageUrl => ImageUrl ?? Item?.ImageUrl ?? string.Empty;
+    private string _imageUrl => ImageUrlHelper.ResolveImageUrl(ImageUrl ?? Item?.ImageUrl);
 
     private string DisplayTitle => string.IsNullOrWhiteSpace(Item?.Title)
         ? (Item?.Id ?? "Image")

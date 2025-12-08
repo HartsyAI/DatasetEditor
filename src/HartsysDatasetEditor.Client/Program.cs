@@ -66,6 +66,7 @@ builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<NavigationService>();
 builder.Services.AddScoped<ItemEditService>();
 builder.Services.AddScoped<IndexedDbInterop>();
+builder.Services.AddScoped<ImageUrlHelper>();
 
 // Register State Management
 builder.Services.AddScoped<AppState>();

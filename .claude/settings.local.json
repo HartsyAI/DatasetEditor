@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(dotnet build:*)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(cat:*)",
+      "Bash(dir:*)",
+      "Bash(curl:*)",
+      "Bash(tree:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []
