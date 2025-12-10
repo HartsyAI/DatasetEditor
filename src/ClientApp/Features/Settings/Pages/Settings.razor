@@ -1,0 +1,68 @@
+@page "/settings"
+
+@* High-level settings surface for theme, language, and view preferences. *@
+<MudContainer MaxWidth="MaxWidth.False" Class="pa-6">
+    <MudStack Spacing="4">
+        <MudText Typo="Typo.h4">Settings</MudText>
+        <MudText Typo="Typo.body1" Class="mud-text-secondary">
+            TODO: Bind to ViewState and persist settings via LocalStorage once JsInterop helpers are in place.
+        </MudText>
+
+        <MudGrid>
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-4 h-100" Elevation="1">
+                    <ThemeSelector IsDark="false"
+                                   OnThemeChanged="@OnThemeChangedAsync" />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-4 h-100" Elevation="1">
+                    <LanguageSelector SelectedLanguage="@_language"
+                                      SupportedLanguages="@_languages"
+                                      OnLanguageChanged="@OnLanguageChangedAsync" />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-4 h-100" Elevation="1">
+                    <ViewPreferences SelectedViewMode="@_viewMode"
+                                     GridColumns="@_gridColumns"
+                                     ShowMetadataOverlay="@_showMetadataOverlay"
+                                     OnViewModeChanged="@OnViewModeChangedAsync"
+                                     OnGridColumnsChanged="@OnGridColumnsChangedAsync"
+                                     OnShowMetadataOverlayChanged="@OnShowMetadataOverlayChangedAsync" />
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-4 h-100" Elevation="1">
+                    <ApiKeySettingsPanel />
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        <MudAlert Severity="Severity.Info">
+            TODO: Add additional settings cards (keyboard shortcuts, accessibility) as they are defined.
+        </MudAlert>
+    </MudStack>
+</MudContainer>
+
+@code {
+    // TODO: Inject ViewState to hydrate defaults and dispatch updates to application state.
+    // TODO: Persist settings via LocalStorageInterop once implemented.
+
+    private string _language = "en";
+    private ViewMode _viewMode = ViewMode.Grid;
+    private int _gridColumns = 4;
+    private bool _showMetadataOverlay = true;
+
+    private readonly IReadOnlyList<LanguageSelector.LanguageOption> _languages = new List<LanguageSelector.LanguageOption>
+    {
+        new("en", "English"),
+        new("es", "Español")
+    };
+
+    private Task OnThemeChangedAsync(bool _) => Task.CompletedTask;
+    private Task OnLanguageChangedAsync(string _) => Task.CompletedTask;
+    private Task OnViewModeChangedAsync(ViewMode _) => Task.CompletedTask;
+    private Task OnGridColumnsChangedAsync(int _) => Task.CompletedTask;
+    private Task OnShowMetadataOverlayChangedAsync(bool _) => Task.CompletedTask;
+}

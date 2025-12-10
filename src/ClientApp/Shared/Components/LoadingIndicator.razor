@@ -1,0 +1,34 @@
+@* TODO: Swap placeholder skeletons/spinner once final loading UX is approved. *@
+<MudPaper Class="pa-6" Elevation="0">
+    <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Spacing="2">
+        @if (ShowSkeleton)
+        {
+            @* TODO: Replace with domain-specific skeleton layout (image cards, filters, etc.). *@
+            <MudSkeleton Width="240px" Height="180px" Class="mb-2" />
+            <MudSkeleton Width="75%" Height="28px" Class="mb-1" />
+            <MudSkeleton Width="50%" Height="20px" />
+        }
+        else
+        {
+            <MudProgressCircular Size="Size.Large" Color="Color.Primary" />
+        }
+
+        @if (!string.IsNullOrWhiteSpace(Message))
+        {
+            <MudText Typo="Typo.body1" Class="mud-text-secondary">@Message</MudText>
+        }
+    </MudStack>
+</MudPaper>
+
+@code {
+    /// <summary>
+    /// Exposes toggle for skeleton vs spinner modes.
+    /// TODO: FilterPanel / DatasetViewer should choose skeletons that match their layouts for perceived performance.
+    /// </summary>
+    [Parameter] public bool ShowSkeleton { get; set; }
+
+    /// <summary>
+    /// Optional loading message. Suggest passing localized resource keys once i18n is ready.
+    /// </summary>
+    [Parameter] public string? Message { get; set; }
+}

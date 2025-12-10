@@ -1,0 +1,51 @@
+@* Dedicated date range filter extracted from FilterPanel. *@
+<MudStack Spacing="2">
+    <MudDatePicker Date="@From"
+                  DateChanged="@OnFromChangedAsync"
+                  Label="From"
+                  Variant="Variant.Outlined"
+                  Clearable="true" />
+
+    <MudDatePicker Date="@To"
+                  DateChanged="@OnToChangedAsync"
+                  Label="To"
+                  Variant="Variant.Outlined"
+                  Clearable="true" />
+</MudStack>
+
+@code {
+    /// <summary>
+    /// Start date. Parent should bind to FilterState.DateFrom.
+    /// </summary>
+    [Parameter] public DateTime? From { get; set; }
+
+    /// <summary>
+    /// End date. Parent should bind to FilterState.DateTo.
+    /// </summary>
+    [Parameter] public DateTime? To { get; set; }
+
+    /// <summary>
+    /// Raised whenever either date changes. FilterPanel should call FilterService.ApplyAsync with updated criteria.
+    /// </summary>
+    [Parameter] public EventCallback<(DateTime? From, DateTime? To)> OnDateRangeChanged { get; set; }
+
+    private async Task OnFromChangedAsync(DateTime? newValue)
+    {
+        From = newValue;
+        await NotifyAsync(From, To);
+    }
+
+    private async Task OnToChangedAsync(DateTime? newValue)
+    {
+        To = newValue;
+        await NotifyAsync(From, To);
+    }
+
+    private async Task NotifyAsync(DateTime? from, DateTime? to)
+    {
+        if (OnDateRangeChanged.HasDelegate)
+        {
+            await OnDateRangeChanged.InvokeAsync((from, to));
+        }
+    }
+}

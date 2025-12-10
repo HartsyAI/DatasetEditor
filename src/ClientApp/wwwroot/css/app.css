@@ -1,0 +1,178 @@
+/* Hartsy's Dataset Editor - Main Styles */
+
+/* Base Styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    font-family: 'Roboto', 'Helvetica', 'Arial', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: #020617;
+}
+
+#app {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.mud-layout {
+    min-height: 100vh;
+}
+
+.mud-drawer {
+    top: 0 !important;
+    height: 100vh;
+}
+
+/* Blazor Error UI */
+#blazor-error-ui {
+    background: #020617;
+    color: #e5e7eb;
+    bottom: 0;
+    box-shadow: 0 -1px 5px rgba(0, 0, 0, 0.35);
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+}
+
+/* Loading Animation */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #94A3B8;
+}
+
+/* Dark Mode Scrollbar */
+.mud-theme-dark ::-webkit-scrollbar-thumb {
+    background: #475569;
+}
+
+.mud-theme-dark ::-webkit-scrollbar-thumb:hover {
+    background: #64748B;
+}
+
+/* Image Grid - Already defined in ImageGrid.razor but included here as fallback */
+.image-grid {
+    display: grid;
+    gap: 16px;
+    padding: 16px;
+    width: 100%;
+}
+
+/* Image Loading Placeholder Animation */
+@keyframes loading {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.image-loading {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: loading 1.5s ease-in-out infinite;
+}
+
+/* Dark Mode Image Loading */
+.mud-theme-dark .image-loading {
+    background: linear-gradient(90deg, #1E293B 25%, #0F172A 50%, #1E293B 75%);
+    background-size: 200% 100%;
+}
+
+/* Responsive Utility Classes */
+.full-height {
+    height: 100%;
+}
+
+.full-width {
+    width: 100%;
+}
+
+/* Custom MudBlazor Overrides */
+.mud-main-content {
+    padding: 0 !important;
+    margin-top: 0 !important;
+}
+
+/* Ensure virtualized lists take full width */
+.mud-virtual-scrollable {
+    width: 100%;
+}
+
+/* Custom Focus Styles for Accessibility */
+*:focus-visible {
+    outline: 2px solid #2563EB;
+    outline-offset: 2px;
+}
+
+/* Print Styles */
+@media print {
+    #blazor-error-ui {
+        display: none !important;
+    }
+    
+    .mud-appbar,
+    .mud-drawer,
+    .filter-panel {
+        display: none !important;
+    }
+}
+
+/* Responsive Breakpoints */
+@media (max-width: 960px) {
+    .hide-on-mobile {
+        display: none !important;
+    }
+}
+
+@media (max-width: 600px) {
+    .image-grid {
+        gap: 8px;
+        padding: 8px;
+    }
+}
+
+/* Performance: Reduce animations on low-end devices */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* TODO: Add theme-specific CSS files in themes/ folder */
+/* TODO: Add more responsive breakpoints for tablets */
+/* TODO: Add print-specific styles for reports */

@@ -1,0 +1,79 @@
+@inherits ErrorBoundaryBase
+
+@* TODO: Replace placeholder visuals once error-state visual language is approved. *@
+<MudPaper Class="pa-6" Elevation="1">
+    <MudStack Spacing="2">
+        <MudIcon Size="Size.Large" Color="Color.Error">@Icons.Material.Filled.ErrorOutline</MudIcon>
+        <MudText Typo="Typo.h5">Something went wrong</MudText>
+        <MudText Typo="Typo.body1" Class="mud-text-secondary">
+            @_friendlyErrorMessage
+        </MudText>
+
+        <MudStack Direction="Row" Spacing="2">
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="@OnRetryAsync">
+                Try again
+            </MudButton>
+            <MudButton Color="Color.Secondary" Variant="Variant.Text" OnClick="@LogAndReportAsync">
+                Report issue
+            </MudButton>
+        </MudStack>
+
+        @if (ShowTechnicalDetails && CurrentException is not null)
+        {
+            <MudExpansionPanel Text="Technical details" Class="mt-2" IsInitiallyExpanded="false">
+                <MudText Typo="Typo.caption">@CurrentException.ToString()</MudText>
+            </MudExpansionPanel>
+        }
+    </MudStack>
+</MudPaper>
+
+@code {
+    // TODO: Wire up telemetry/logging once Application Insights or chosen provider is configured.
+
+    /// <summary>
+    /// Friendly message to surface to users. Parent components can override for contextual messaging.
+    /// </summary>
+    [Parameter] public string FriendlyErrorMessage { get; set; } = "We hit an unexpected snag while rendering this section.";
+
+    /// <summary>
+    /// Controls whether the "technical details" accordion is shown.
+    /// TODO: Consider tying to a debug flag or user permission level.
+    /// </summary>
+    [Parameter] public bool ShowTechnicalDetails { get; set; }
+
+    /// <summary>
+    /// Callback for retry action. Consumers (e.g., DatasetViewer) should re-run the failing load logic here.
+    /// </summary>
+    [Parameter] public EventCallback OnRetry { get; set; }
+
+    private string _friendlyErrorMessage => FriendlyErrorMessage;
+
+    protected override void OnInitialized()
+    {
+        base.OnInitialized();
+        // TODO: Capture additional context (e.g., current route, dataset id) via injected services.
+    }
+
+    private async Task OnRetryAsync()
+    {
+        Recover();
+        if (OnRetry.HasDelegate)
+        {
+            await OnRetry.InvokeAsync();
+        }
+    }
+
+    private async Task LogAndReportAsync()
+    {
+        // TODO: Integrate with NotificationService to show feedback and send telemetry via Logs.Error/NotificationService.
+        Logs.Error("ErrorBoundary captured exception", CurrentException);
+        await Task.CompletedTask;
+    }
+
+    protected override Task OnErrorAsync(Exception exception)
+    {
+        // TODO: Provide richer error context (e.g., user actions, dataset metadata) before forwarding upstream.
+        Logs.Error("ErrorBoundary captured exception in OnErrorAsync", exception);
+        return Task.CompletedTask;
+    }
+}

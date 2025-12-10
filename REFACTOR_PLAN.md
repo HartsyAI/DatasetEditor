@@ -132,7 +132,7 @@ Interfaces/ → Core/Abstractions/
 Services/ → Core/BusinessLogic/
 ├── Parsers/
 │   ├── ParserRegistry.cs → Core/BusinessLogic/Parsers/ParserRegistry.cs
-│   ├── UnsplashTsvParser.cs → Core/BusinessLogic/Parsers/UnsplashTsvParser.cs
+│   ├── UnsplashTsvParser.cs → Core/BusinessLogic/Parsers/UnsplashCsvParser.cs
 │   └── BaseTsvParser.cs → Core/BusinessLogic/Parsers/BaseTsvParser.cs
 ├── Providers/
 │   ├── ImageModalityProvider.cs → Core/BusinessLogic/Modality/ImageModalityProvider.cs

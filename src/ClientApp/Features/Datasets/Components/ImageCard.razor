@@ -1,0 +1,291 @@
+@using DatasetStudio.Core.DomainModels
+@using DatasetStudio.Core.Utilities
+
+<div class="modern-image-card @(IsSelected ? "selected" : "")" 
+     @onmouseenter="HandleMouseEnter"
+     @onmouseleave="HandleMouseLeave"
+     @onclick="HandleClick">
+    
+    @* Favorite star (top-right corner) *@
+    @if (_isHovered || Item.IsFavorite)
+    {
+        <div class="favorite-star" @onclick:stopPropagation="true" @onclick="HandleToggleFavorite">
+            <MudIcon Icon="@(Item.IsFavorite ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarBorder)" 
+                     Color="@(Item.IsFavorite ? Color.Warning : Color.Surface)"
+                     Size="Size.Small" />
+        </div>
+    }
+    
+    @* Selection indicator (bottom-left when selected) *@
+    @if (IsSelected)
+    {
+        <div class="selection-indicator">
+            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Primary" Size="Size.Medium" />
+        </div>
+    }
+    
+    @* Image *@
+    <div class="image-container">
+        @if (_imageLoaded && !_imageError)
+        {
+            <img src="@_imageUrl" 
+                 alt="@Item.Title"
+                 loading="lazy"
+                 @onerror="HandleImageError"
+                 class="card-image" />
+        }
+        else if (_imageError)
+        {
+            <div class="image-placeholder">
+                <MudIcon Icon="@Icons.Material.Filled.BrokenImage" Color="Color.Error" Size="Size.Large" />
+                <MudText Typo="Typo.caption" Color="Color.Error">Failed to load</MudText>
+            </div>
+        }
+        else
+        {
+            <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="100%" Animation="Animation.Wave" />
+        }
+    </div>
+    
+    @* Bottom gradient overlay with title *@
+    <div class="bottom-info">
+        @if (_isEditingTitle)
+        {
+            <MudTextField @bind-Value="_editTitle"
+                          Variant="Variant.Outlined"
+                          Dense="true"
+                          Class="card-title-input"
+                          Immediate="true"
+                          AutoFocus="true"
+                          OnKeyUp="HandleTitleKeyUp"
+                          OnBlur="SaveTitle" />
+        }
+        else
+        {
+            <div class="d-flex align-center justify-space-between">
+                <MudText Typo="Typo.body2" Class="card-title">@GetDisplayTitle()</MudText>
+                <div @onclick:stopPropagation="true">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                   Size="Size.Small"
+                                   Color="Color.Default"
+                                   OnClick="StartEditTitle"
+                                   Title="Edit title" />
+                </div>
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(Item.Photographer))
+        {
+            <MudText Typo="Typo.caption" Class="card-subtitle">@Item.Photographer</MudText>
+        }
+    </div>
+    
+    @* Hover overlay with detailed info *@
+    @if (_isHovered && ViewState.Settings.ShowMetadataOverlay)
+    {
+        <div class="hover-details">
+            <div class="details-content">
+                <div class="details-section">
+                    <MudIcon Icon="@Icons.Material.Outlined.PhotoSizeSelectActual" Size="Size.Small" Class="detail-icon" />
+                    <span>@Item.GetFormattedDimensions()</span>
+                </div>
+                
+                @if (Item.FileSizeBytes > 0)
+                {
+                    <div class="details-section">
+                        <MudIcon Icon="@Icons.Material.Outlined.Storage" Size="Size.Small" Class="detail-icon" />
+                        <span>@Item.GetFormattedFileSize()</span>
+                    </div>
+                }
+                
+                @if (!string.IsNullOrEmpty(Item.GetEngagementSummary()))
+                {
+                    <div class="details-section">
+                        <MudIcon Icon="@Icons.Material.Outlined.Favorite" Size="Size.Small" Class="detail-icon" />
+                        <span>@Item.GetEngagementSummary()</span>
+                    </div>
+                }
+            </div>
+            
+            @* Quick actions *@
+            <div class="hover-actions" @onclick:stopPropagation="true">
+                <MudIconButton Icon="@Icons.Material.Outlined.Fullscreen" 
+                              Size="Size.Small" 
+                              Color="Color.Surface"
+                              Title="View fullscreen"
+                              OnClick="@(() => HandleClick())" />
+                <MudIconButton Icon="@Icons.Material.Outlined.Edit" 
+                              Size="Size.Small" 
+                              Color="Color.Surface"
+                              Title="Edit"
+                              OnClick="HandleEditClick" />
+                <MudIconButton Icon="@Icons.Material.Outlined.Download" 
+                              Size="Size.Small" 
+                              Color="Color.Surface"
+                              Title="Download"
+                              OnClick="HandleDownload" />
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .modern-image-card {
+        position: relative;
+        border-radius: 12px;
+        overflow: hidden;
+        background: var(--mud-palette-surface);
+        box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: pointer;
+        height: 100%;
+    }
+    
+    .modern-image-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.16);
+    }
+    
+    .modern-image-card.selected {
+        box-shadow: 0 0 0 3px var(--mud-palette-primary);
+    }
+    
+    .favorite-star {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        z-index: 10;
+        background: rgba(0,0,0,0.5);
+        backdrop-filter: blur(8px);
+        border-radius: 50%;
+        padding: 6px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .favorite-star:hover {
+        background: rgba(0,0,0,0.7);
+        transform: scale(1.1);
+    }
+    
+    .selection-indicator {
+        position: absolute;
+        bottom: 12px;
+        left: 12px;
+        z-index: 10;
+        animation: scaleIn 0.2s ease;
+    }
+    
+    @@keyframes scaleIn {
+        from { transform: scale(0); }
+        to { transform: scale(1); }
+    }
+    
+    .image-container {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        overflow: hidden;
+        background: var(--mud-palette-background-grey);
+    }
+    
+    .card-image {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.3s ease;
+    }
+    
+    .modern-image-card:hover .card-image {
+        transform: scale(1.05);
+    }
+    
+    .image-placeholder {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        background: var(--mud-palette-background-grey);
+    }
+    
+    .bottom-info {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        padding: 16px;
+        background: linear-gradient(to top, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.6) 50%, transparent 100%);
+        color: white;
+        z-index: 5;
+    }
+    
+    .card-title {
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: white;
+        margin-bottom: 2px;
+    }
+    
+    .card-title-input {
+        width: 100%;
+        color: white;
+    }
+    .card-subtitle {
+        opacity: 0.9;
+        color: rgba(255,255,255,0.9);
+    }
+    
+    .hover-details {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 16px;
+        background: rgba(0,0,0,0.88);
+        backdrop-filter: blur(4px);
+        color: white;
+        z-index: 8;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        animation: fadeIn 0.2s ease;
+    }
+    
+    @@keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    
+    .details-content {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding-top: 40px;
+    }
+    
+    .details-section {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.875rem;
+        color: rgba(255,255,255,0.95);
+    }
+    
+    .detail-icon {
+        opacity: 0.8;
+    }
+    
+    .hover-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        padding: 8px;
+        background: rgba(0,0,0,0.3);
+        border-radius: 8px;
+    }
+</style>

@@ -1,0 +1,48 @@
+@* TODO: Replace placeholder markup with MudBlazor card layout once visual design is finalized. *@
+@* PURPOSE: Reusable empty-state representation for dataset- or filter-driven views. *@
+<MudPaper Class="d-flex flex-column align-center justify-center pa-6 text-center" Elevation="0">
+    <MudIcon Size="Size.Large" Color="Color.Primary">@_icon</MudIcon>
+    <MudText Typo="Typo.h5" Class="mt-4">@_headline</MudText>
+    <MudText Typo="Typo.body1" Class="mt-2 mud-text-secondary">@_description</MudText>
+
+    @if (ActionContent is not null)
+    {
+        <MudDivider Class="my-4" />
+        <MudStack AlignItems="AlignItems.Center">
+            @ActionContent
+        </MudStack>
+    }
+</MudPaper>
+
+@code {
+    // TODO: Inject any shared UX state (e.g., ViewState) once the component needs dynamic theme awareness.
+
+    /// <summary>
+    /// Display text shown as the primary headline.
+    /// TODO: Bind from parent components such as Index.razor when no datasets are loaded.
+    /// </summary>
+    [Parameter] public string Headline { get; set; } = "No data available";
+
+    /// <summary>
+    /// Optional supporting description.
+    /// TODO: Pass localized strings via i18n when translation pipeline is wired up.
+    /// </summary>
+    [Parameter] public string? Description { get; set; }
+        = "Upload a dataset or adjust your filters to get started.";
+
+    /// <summary>
+    /// Material icon identifier to be shown above the message.
+    /// TODO: Consider switching to MudBlazor icon enums for compile-time safety.
+    /// </summary>
+    [Parameter] public string Icon { get; set; } = Icons.Material.Outlined.FolderOff;
+
+    /// <summary>
+    /// Optional CTA button/action rendered underneath the message.
+    /// TODO: Parent components should pass a MudButton via <ActionContent> to trigger uploads or navigation.
+    /// </summary>
+    [Parameter] public RenderFragment? ActionContent { get; set; }
+
+    private string _headline => Headline;
+    private string _description => Description ?? string.Empty;
+    private string _icon => Icon;
+}

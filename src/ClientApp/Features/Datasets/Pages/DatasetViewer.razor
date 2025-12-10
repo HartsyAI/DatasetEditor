@@ -1,0 +1,186 @@
+@page "/dataset-viewer"
+@using DatasetStudio.ClientApp.Features.Datasets.Components
+@using DatasetStudio.ClientApp.Features.Datasets.Components
+@using DatasetStudio.ClientApp.Features.Datasets.Components
+@using DatasetStudio.Core.Utilities
+@using DatasetStudio.DTO.Datasets
+
+<PageTitle>Dataset Viewer - DatasetStudio</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.False" Class="pa-0">
+    @if (_isLoading)
+    {
+        <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Style="height: 80vh;">
+            <MudProgressCircular Color="Color.Primary" Size="Size.Large" Indeterminate="true" />
+            <MudText Typo="Typo.h6">Loading dataset...</MudText>
+        </MudStack>
+    }
+    else if (!string.IsNullOrEmpty(_errorMessage))
+    {
+        <MudAlert Severity="Severity.Error" Class="ma-4">
+            @_errorMessage
+            <MudButton Color="Color.Error" Variant="Variant.Text" OnClick="@ClearError">Dismiss</MudButton>
+        </MudAlert>
+    }
+    else if (_datasetState.CurrentDataset == null)
+    {
+        <!-- No Dataset Loaded - Show Upload Component -->
+        <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Style="height: 80vh;" Spacing="4">
+            <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Size="Size.Large" Color="Color.Primary" />
+            <MudText Typo="Typo.h4">No Dataset Loaded</MudText>
+            <MudText Typo="Typo.body1" Class="mud-text-secondary">
+                Upload a dataset file to get started
+            </MudText>
+            <DatasetUploader />
+        </MudStack>
+    }
+    else
+    {
+        <!-- Dataset Loaded - Show Viewer -->
+        <MudGrid Spacing="0" Class="dataset-viewer-grid">
+            <!-- Main Content - Viewer (center column) -->
+            <MudItem Xs="12" 
+                     Md="@(_viewState.ShowDetailPanel ? 9 : 12)" 
+                     Lg="@(_viewState.ShowDetailPanel ? 9 : 12)"
+                     Class="dataset-viewer-main">
+                <MudStack Spacing="2" Class="pa-4">
+                    @if (_datasetDetail is not null)
+                    {
+                        <MudAlert Severity="@GetStatusSeverity(_datasetDetail.Status)" Variant="Variant.Filled" Dense="true">
+                            <MudStack Spacing="1">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                    <MudText Typo="Typo.subtitle2">Ingestion status</MudText>
+                                    <MudChip T="string" Color="Color.Dark" Variant="Variant.Text" Size="Size.Small">
+                                        @_datasetDetail.Status
+                                    </MudChip>
+                                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                        Last updated @(_datasetDetail.UpdatedAt.ToLocalTime().ToString("g")) • Total items: @_datasetDetail.TotalItems
+                                    </MudText>
+                                    <MudTooltip Text="Refresh status now">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                                                       Disabled="@_isStatusRefreshing"
+                                                       Color="Color.Default"
+                                                       OnClick="@(() => RefreshStatusAsync())" />
+                                    </MudTooltip>
+                                </MudStack>
+
+                                @if (_datasetDetail.Status == IngestionStatusDto.Pending || _datasetDetail.Status == IngestionStatusDto.Processing)
+                                {
+                                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                        Ingestion still running—viewer auto-refreshes every few seconds until completion.
+                                    </MudText>
+                                }
+                            </MudStack>
+                        </MudAlert>
+                    }
+
+                    <!-- Top Action Bar -->
+                    <MudPaper Elevation="1" Class="pa-3">
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudIconButton Icon="@Icons.Material.Filled.FilterList" 
+                                             Color="Color.Primary" 
+                                             OnClick="@_viewState.ToggleFilterPanel"
+                                             Title="Toggle filters" />
+                                <MudText Typo="Typo.h6">@_datasetState.CurrentDataset.Name</MudText>
+                                <MudChip T="string" Value="@GetItemCountLabel()"
+                                         Size="Size.Small"
+                                         Color="Color.Info">
+                                    @GetItemCountLabel()
+                                </MudChip>
+                                @if (_isBuffering)
+                                {
+                                    <MudTooltip Text="Fetching more images from the server">
+                                        <MudProgressCircular Size="Size.Small" Color="Color.Primary" Class="ml-2" />
+                                    </MudTooltip>
+                                }
+                                @if (_datasetState.HasSelection)
+                                {
+                                    <MudChip T="string" Value="@(_datasetState.SelectedCount.ToString())"
+                                             Size="Size.Small"
+                                             Color="Color.Primary">
+                                        @_datasetState.SelectedCount selected
+                                    </MudChip>
+                                }
+                            </MudStack>
+                            
+                            <MudStack Row="true" Spacing="1">
+                                <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+                                    <MudIconButton Icon="@Icons.Material.Filled.GridView" 
+                                                 Color="@(_viewMode == ViewMode.Grid ? Color.Primary : Color.Default)"
+                                                 OnClick="@(() => SetViewMode(ViewMode.Grid))"
+                                                 Title="Grid view" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.ViewList" 
+                                                 Color="@(_viewMode == ViewMode.List ? Color.Primary : Color.Default)"
+                                                 OnClick="@(() => SetViewMode(ViewMode.List))"
+                                                 Title="List view" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.ViewModule" 
+                                                 Color="@(_viewMode == ViewMode.Gallery ? Color.Primary : Color.Default)"
+                                                 OnClick="@(() => SetViewMode(ViewMode.Gallery))"
+                                                 Title="Gallery view" />
+                                </MudButtonGroup>
+                                
+                                <MudIconButton Icon="@Icons.Material.Filled.Info" 
+                                             Color="Color.Default" 
+                                             OnClick="@_viewState.ToggleDetailPanel"
+                                             Title="Toggle details" />
+
+                                <MudTooltip Text="Store paged results locally so paging is faster when you revisit the dataset.">
+                                    <MudSwitch T="bool"
+                                               Checked="@_isIndexedDbEnabled"
+                                               CheckedChanged="@((bool enabled) => ToggleOfflineCacheAsync(enabled))"
+                                               Color="Color.Primary"
+                                               Label="IndexedDB cache (beta)" />
+                                </MudTooltip>
+                            </MudStack>
+                        </MudStack>
+                    </MudPaper>
+                    
+                    @if (_viewState.ShowFilterPanel)
+                    {
+                        <MudCollapse Expanded="_viewState.ShowFilterPanel">
+                            <MudPaper Elevation="1" Class="pa-3 mt-2">
+                                <FilterPanel />
+                            </MudPaper>
+                        </MudCollapse>
+                    }
+                    
+                    <!-- Viewer Container -->
+                    <ViewerContainer OnItemSelected="@HandleItemSelected"
+                                     OnLoadMore="@HandleLoadMoreAsync" />
+                </MudStack>
+            </MudItem>
+
+            <!-- Right Panel - Detail (optional) -->
+            @if (_viewState.ShowDetailPanel)
+            {
+                <MudItem Xs="12" Md="3" Lg="3" Class="dataset-viewer-detail">
+                    <ImageDetailPanel Item="@(_datasetState.SelectedItem as ImageItem)" />
+                </MudItem>
+            }
+        </MudGrid>
+    }
+</MudContainer>
+
+@code {
+    // TODO: Move to separate .razor.cs file following component pattern
+}
+
+<style>
+    .dataset-viewer-grid {
+        height: 100vh;
+        overflow: hidden;
+    }
+
+    .dataset-viewer-main {
+        height: 100%;
+        overflow-y: auto;
+    }
+
+    .dataset-viewer-detail {
+        height: 100%;
+        overflow-y: auto;
+        border-left: 1px solid var(--mud-palette-divider);
+    }
+</style>

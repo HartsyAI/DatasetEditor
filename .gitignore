@@ -64,3 +64,9 @@ dkms.conf
 /src/HartsysDatasetEditor.Core/obj
 /.vs
 /src/HartsysDatasetEditor.Api/data
+/src/DTO/obj
+/src/DTO/bin
+/src/Core/obj
+/src/ClientApp/obj
+/.claude
+/src/APIBackend/obj

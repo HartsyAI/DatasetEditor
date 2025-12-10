@@ -1,0 +1,91 @@
+@page "/datasets/create"
+
+<PageTitle>Create Dataset - DatasetStudio</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
+    <MudText Typo="Typo.h4" Class="mb-4">Create Dataset</MudText>
+
+    <MudStepper ActiveIndex="_activeStep" ActiveIndexChanged="OnActiveStepChanged" Elevation="1">
+        <MudStep Label="Source">
+            <MudStack Spacing="3" Class="mt-4">
+                <MudText Typo="Typo.body1" Class="mud-text-secondary">
+                    Choose how you want to create or import your dataset.
+                </MudText>
+
+                <MudGrid>
+                    <MudItem xs="12" md="4">
+                        <MudCard Class="pa-3" Elevation="2">
+                            <MudText Typo="Typo.subtitle1">Upload files or ZIP</MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                Upload TSV/CSV or ZIP archives from your machine.
+                            </MudText>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3"
+                                       StartIcon="@Icons.Material.Filled.CloudUpload"
+                                       OnClick='@(() => SelectSource("upload"))'>
+                                Use Upload
+                            </MudButton>
+                        </MudCard>
+                    </MudItem>
+
+                    <MudItem xs="12" md="4">
+                        <MudCard Class="pa-3" Elevation="2">
+                            <MudText Typo="Typo.subtitle1">Import from HuggingFace</MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                Create datasets from HuggingFace repositories.
+                            </MudText>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3"
+                                       StartIcon="@Icons.Material.Filled.Cloud"
+                                       OnClick='@(() => SelectSource("hf"))'>
+                                Use HuggingFace
+                            </MudButton>
+                        </MudCard>
+                    </MudItem>
+
+                    <MudItem xs="12" md="4">
+                        <MudCard Class="pa-3" Elevation="1" Disabled="true">
+                            <MudText Typo="Typo.subtitle1">Local folder (coming soon)</MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                Point DatasetStudio at folders of images on disk.
+                            </MudText>
+                        </MudCard>
+                    </MudItem>
+                </MudGrid>
+            </MudStack>
+        </MudStep>
+
+        <MudStep Label="Configure &amp; Ingest" Disabled="@string.IsNullOrEmpty(_selectedSource)">
+            <MudStack Spacing="3" Class="mt-4">
+                @if (string.IsNullOrEmpty(_selectedSource))
+                {
+                    <MudAlert Severity="Severity.Info">
+                        Choose a source in the first step to continue.
+                    </MudAlert>
+                }
+                else if (_selectedSource == "upload")
+                {
+                    <DatasetUploader InitialTabIndex="0" />
+                }
+                else if (_selectedSource == "hf")
+                {
+                    <DatasetUploader InitialTabIndex="1" />
+                }
+            </MudStack>
+        </MudStep>
+    </MudStepper>
+</MudContainer>
+
+@code {
+    private int _activeStep = 0;
+    private string _selectedSource = string.Empty;
+
+    private void OnActiveStepChanged(int step)
+    {
+        _activeStep = step;
+    }
+
+    private void SelectSource(string source)
+    {
+        _selectedSource = source;
+        _activeStep = 1;
+    }
+}

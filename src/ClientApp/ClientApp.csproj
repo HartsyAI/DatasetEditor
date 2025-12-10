@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>DatasetStudio.ClientApp</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Blazor WebAssembly -->
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="8.0.*" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="8.0.*" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.*" />
+
+    <!-- MudBlazor UI Framework -->
+    <PackageReference Include="MudBlazor" Version="7.8.*" />
+
+    <!-- LocalStorage for browser storage -->
+    <PackageReference Include="Blazored.LocalStorage" Version="4.5.*" />
+
+    <!-- CSV/TSV parsing -->
+    <PackageReference Include="CsvHelper" Version="33.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Reference to Core and DTO libraries -->
+    <ProjectReference Include="..\Core\Core.csproj" />
+    <ProjectReference Include="..\DTO\DatasetStudio.DTO.csproj" />
+  </ItemGroup>
+
+</Project>

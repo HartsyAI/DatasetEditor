@@ -1,0 +1,117 @@
+using DatasetStudio.ClientApp.Services.Interop;
+using DatasetStudio.DTO.Datasets;
+using DatasetStudio.Core.Utilities;
+using Microsoft.Extensions.Logging;
+
+namespace DatasetStudio.ClientApp.Services.Caching;
+
+/// <summary>
+/// IndexedDB cache for dataset pages with full persistence via Dexie.js
+/// </summary>
+public sealed class IndexedDbCache
+{
+    private readonly IndexedDbInterop _indexedDb;
+    private readonly ILogger<IndexedDbCache> _logger;
+    private readonly Dictionary<string, int> _cursorToPageMap = new();
+    private int _currentPage = 0;
+
+    public IndexedDbCache(IndexedDbInterop indexedDb, ILogger<IndexedDbCache> logger)
+    {
+        _indexedDb = indexedDb ?? throw new ArgumentNullException(nameof(indexedDb));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    public async Task SavePageAsync(Guid datasetId, string? cursor, IReadOnlyList<DatasetItemDto> items, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Map cursor to page number
+            if (!string.IsNullOrEmpty(cursor))
+            {
+                _cursorToPageMap[cursor] = _currentPage;
+            }
+
+            _logger.LogDebug("💾 Saving {Count} items to IndexedDB for dataset {DatasetId} (page={Page})", 
+                items.Count, datasetId, _currentPage);
+
+            bool success = await _indexedDb.SavePageAsync(
+                datasetId.ToString(), 
+                _currentPage, 
+                items.ToList());
+
+            if (success)
+            {
+                Logs.Info($"[CACHE SAVED] Page {_currentPage} with {items.Count} items");
+                _currentPage++;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save page to IndexedDB");
+        }
+    }
+
+    public async Task<IReadOnlyList<DatasetItemDto>?> TryLoadPageAsync(Guid datasetId, string? cursor, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Get page number from cursor
+            // If cursor is null, it's page 0 (first page)
+            // If cursor is provided but not in map, return null (cache miss) instead of defaulting to page 0
+            int page;
+            if (string.IsNullOrEmpty(cursor))
+            {
+                page = 0; // First page
+            }
+            else if (_cursorToPageMap.TryGetValue(cursor, out int mappedPage))
+            {
+                page = mappedPage;
+            }
+            else
+            {
+                // Cursor not in cache map - this is a cache miss, not page 0
+                Logs.Info($"[CACHE MISS] Cursor '{cursor}' not found in cache map");
+                return null;
+            }
+
+            _logger.LogDebug("🔍 Looking up cached page {Page} for dataset {DatasetId}", page, datasetId);
+
+            CachedPage? cachedPage = await _indexedDb.GetPageAsync(datasetId.ToString(), page);
+
+            if (cachedPage != null && cachedPage.Items.Any())
+            {
+                Logs.Info($"[CACHE HIT] Page {page} loaded from IndexedDB ({cachedPage.Items.Count} items)");
+                return cachedPage.Items;
+            }
+
+            Logs.Info($"[CACHE MISS] Page {page} not found in IndexedDB");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load page from IndexedDB");
+            return null;
+        }
+    }
+
+    public async Task ClearAsync(Guid datasetId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _logger.LogDebug("🧹 Clearing IndexedDB cache for dataset {DatasetId}", datasetId);
+
+            bool success = await _indexedDb.ClearDatasetAsync(datasetId.ToString());
+
+            if (success)
+            {
+                _cursorToPageMap.Clear();
+                _currentPage = 0;
+                Logs.Info($"[CACHE CLEARED] Dataset {datasetId}");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to clear IndexedDB cache");
+        }
+    }
+}
