@@ -9,7 +9,16 @@
       "Bash(tree:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git branch:*)"
+      "Bash(git branch:*)",
+      "Bash(find:*)",
+      "Bash(powershell -Command:*)",
+      "Bash(python migrate_client.py:*)",
+      "Bash(/c/Users/kaleb/AppData/Local/Microsoft/WindowsApps/python3 migrate_client.py)",
+      "Bash(chmod:*)",
+      "Bash(bash:*)",
+      "Bash(dotnet restore:*)",
+      "Bash(dotnet new:*)",
+      "Bash(dotnet sln:*)"
     ],
     "deny": [],
     "ask": []

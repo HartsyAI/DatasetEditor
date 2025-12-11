@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "id": "core-viewer",
+  "name": "Core Dataset Viewer",
+  "version": "1.0.0",
+  "description": "Built-in dataset viewer providing essential visualization capabilities for exploring and analyzing datasets",
+  "author": {
+    "name": "Dataset Studio Team",
+    "email": "team@datasetstudio.dev"
+  },
+  "license": "MIT",
+  "homepage": "https://datasetstudio.dev",
+  "repository": "https://github.com/datasetstudio/core-viewer",
+  "tags": [
+    "viewer",
+    "visualization",
+    "core"
+  ],
+  "categories": [
+    "viewers",
+    "essential"
+  ],
+  "entryPoint": "DatasetStudio.Extensions.BuiltIn.CoreViewer.CoreViewerExtension",
+  "capabilities": {
+    "dataset-table-view": {
+      "displayName": "Table View",
+      "description": "Display dataset items in a tabular format with sorting and filtering",
+      "category": "viewers",
+      "parameters": [
+        "datasetId",
+        "pageSize",
+        "sortBy",
+        "filterExpression"
+      ]
+    },
+    "dataset-stats-view": {
+      "displayName": "Statistics View",
+      "description": "Display statistical summaries and analytics for dataset properties",
+      "category": "viewers",
+      "parameters": [
+        "datasetId",
+        "propertyName"
+      ]
+    },
+    "dataset-preview": {
+      "displayName": "Quick Preview",
+      "description": "Quick preview of dataset contents with basic statistics",
+      "category": "viewers",
+      "parameters": [
+        "datasetId"
+      ]
+    }
+  },
+  "configuration": {
+    "schema": {
+      "type": "object",
+      "title": "Core Viewer Configuration",
+      "properties": {
+        "pageSize": {
+          "type": "integer",
+          "title": "Table Page Size",
+          "description": "Number of items to display per page in table view",
+          "default": 50,
+          "minimum": 10,
+          "maximum": 1000
+        },
+        "enableStatsCache": {
+          "type": "boolean",
+          "title": "Enable Statistics Cache",
+          "description": "Cache computed statistics for faster subsequent loads",
+          "default": true
+        },
+        "maxPreviewItems": {
+          "type": "integer",
+          "title": "Max Preview Items",
+          "description": "Maximum number of items to show in preview",
+          "default": 100,
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "enableDetailedLogging": {
+          "type": "boolean",
+          "title": "Detailed Logging",
+          "description": "Enable verbose logging for debugging",
+          "default": false
+        }
+      }
+    }
+  },
+  "requiredPermissions": [
+    "dataset.read",
+    "dataset.enumerate",
+    "storage.read"
+  ],
+  "dependencies": {
+    "core": ">=1.0.0"
+  },
+  "minimumCoreVersion": "1.0.0",
+  "maximumCoreVersion": null,
+  "activationEvents": [
+    "onDatasetOpen",
+    "onViewerRequest",
+    "onCommand:core-viewer.showTable",
+    "onCommand:core-viewer.showStats"
+  ],
+  "platforms": [
+    "Windows",
+    "Linux",
+    "macOS"
+  ],
+  "loadOrder": 1,
+  "isEnabled": true,
+  "_comment": "TODO: Phase 3 - Core Viewer Extension\n\nPurpose: Provide essential dataset visualization capabilities including table view, statistics view, and quick preview.\n\nImplementation Plan:\n1. Implement CoreViewerExtension class inheriting from BaseExtension\n2. Create TableViewComponent for rendering dataset items in a grid\n3. Implement StatisticsViewComponent for displaying dataset analytics\n4. Create PreviewComponent for quick dataset exploration\n5. Implement sorting and filtering functionality\n6. Add pagination support for large datasets\n7. Implement statistics caching mechanism\n8. Add configuration handling for display options\n9. Implement error handling and fallback views\n10. Add comprehensive logging\n\nDependencies:\n- BaseExtension (src/Extensions/SDK/BaseExtension.cs)\n- IDatasetService\n- IStorageService\n- ILoggingService\n- ICachingService\n- INotificationService\n\nReferences:\n- See REFACTOR_PLAN.md Phase 3-4 for Core Viewer implementation details\n- See src/Extensions/SDK/DevelopmentGuide.md for extension development instructions\n- See src/Extensions/SDK/ExtensionMetadata.cs for metadata structure\n\nPhases:\n- Phase 3: Extension system infrastructure and base implementation\n- Phase 4: Table view and basic statistics\n- Phase 4: Filtering and sorting functionality\n- Phase 5: Advanced statistics and caching\n- Phase 5: Performance optimization"
+}

@@ -24,7 +24,7 @@
   <ItemGroup>
     <!-- Reference to Core and DTO libraries -->
     <ProjectReference Include="..\Core\Core.csproj" />
-    <ProjectReference Include="..\DTO\DatasetStudio.DTO.csproj" />
+    <ProjectReference Include="..\DTO\DTO.csproj" />
   </ItemGroup>
 
 </Project>

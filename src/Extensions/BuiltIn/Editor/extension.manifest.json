@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 1,
+  "id": "dataset-editor",
+  "name": "Dataset Editor",
+  "version": "1.0.0",
+  "description": "Built-in extension providing dataset editing capabilities including cell editing, row manipulation, and batch operations",
+  "author": {
+    "name": "Dataset Studio Team",
+    "email": "team@datasetstudio.dev"
+  },
+  "license": "MIT",
+  "homepage": "https://datasetstudio.dev",
+  "repository": "https://github.com/datasetstudio/dataset-editor",
+  "tags": [
+    "editor",
+    "manipulation",
+    "batch",
+    "core"
+  ],
+  "categories": [
+    "editing",
+    "essential"
+  ],
+  "entryPoint": "DatasetStudio.Extensions.BuiltIn.Editor.DatasetEditorExtension",
+  "capabilities": {
+    "cell-editor": {
+      "displayName": "Cell Editor",
+      "description": "Edit individual dataset cell values with type-aware input validation",
+      "category": "editing",
+      "parameters": [
+        "datasetId",
+        "itemId",
+        "propertyName",
+        "cellType"
+      ]
+    },
+    "row-operations": {
+      "displayName": "Row Operations",
+      "description": "Add, delete, duplicate, and reorder dataset rows",
+      "category": "editing",
+      "parameters": [
+        "datasetId",
+        "itemIds",
+        "operation"
+      ]
+    },
+    "column-operations": {
+      "displayName": "Column Operations",
+      "description": "Add, delete, rename, and reorder dataset columns",
+      "category": "editing",
+      "parameters": [
+        "datasetId",
+        "columnNames",
+        "operation"
+      ]
+    },
+    "batch-edit": {
+      "displayName": "Batch Editor",
+      "description": "Perform batch operations on multiple cells or rows with find-and-replace",
+      "category": "editing",
+      "parameters": [
+        "datasetId",
+        "findExpression",
+        "replaceExpression",
+        "scope"
+      ]
+    },
+    "data-validation": {
+      "displayName": "Data Validation",
+      "description": "Validate dataset against schema and perform type coercion",
+      "category": "editing",
+      "parameters": [
+        "datasetId",
+        "validationRules"
+      ]
+    },
+    "undo-redo": {
+      "displayName": "Undo/Redo",
+      "description": "Undo and redo editing operations with change history",
+      "category": "editing",
+      "parameters": [
+        "datasetId",
+        "historyLimit"
+      ]
+    }
+  },
+  "configuration": {
+    "schema": {
+      "type": "object",
+      "title": "Dataset Editor Configuration",
+      "properties": {
+        "enableAutoSave": {
+          "type": "boolean",
+          "title": "Enable Auto-save",
+          "description": "Automatically save changes at regular intervals",
+          "default": true
+        },
+        "autoSaveInterval": {
+          "type": "integer",
+          "title": "Auto-save Interval (ms)",
+          "description": "Time interval for auto-saving in milliseconds",
+          "default": 30000,
+          "minimum": 5000,
+          "maximum": 300000
+        },
+        "enableUndoRedo": {
+          "type": "boolean",
+          "title": "Enable Undo/Redo",
+          "description": "Track edit history for undo/redo functionality",
+          "default": true
+        },
+        "historyLimit": {
+          "type": "integer",
+          "title": "History Limit",
+          "description": "Maximum number of undo/redo operations to track",
+          "default": 100,
+          "minimum": 10,
+          "maximum": 1000
+        },
+        "validateOnEdit": {
+          "type": "boolean",
+          "title": "Validate on Edit",
+          "description": "Validate cells as they are edited",
+          "default": true
+        },
+        "showValidationErrors": {
+          "type": "boolean",
+          "title": "Show Validation Errors",
+          "description": "Display inline validation error indicators",
+          "default": true
+        },
+        "batchEditMaxSize": {
+          "type": "integer",
+          "title": "Batch Edit Max Size",
+          "description": "Maximum number of items to modify in batch operation",
+          "default": 10000,
+          "minimum": 100,
+          "maximum": 1000000
+        },
+        "confirmDestructiveOps": {
+          "type": "boolean",
+          "title": "Confirm Destructive Operations",
+          "description": "Show confirmation dialog for delete operations",
+          "default": true
+        }
+      }
+    }
+  },
+  "requiredPermissions": [
+    "dataset.read",
+    "dataset.write",
+    "dataset.delete",
+    "storage.write",
+    "undo.manage"
+  ],
+  "dependencies": {
+    "core": ">=1.0.0"
+  },
+  "minimumCoreVersion": "1.0.0",
+  "maximumCoreVersion": null,
+  "activationEvents": [
+    "onDatasetOpen",
+    "onCommand:editor.editCell",
+    "onCommand:editor.addRow",
+    "onCommand:editor.deleteRow",
+    "onCommand:editor.addColumn",
+    "onCommand:editor.deleteColumn",
+    "onCommand:editor.batchEdit",
+    "onCommand:editor.validate",
+    "onCommand:editor.undo",
+    "onCommand:editor.redo"
+  ],
+  "platforms": [
+    "Windows",
+    "Linux",
+    "macOS"
+  ],
+  "loadOrder": 3,
+  "isEnabled": true,
+  "_comment": "TODO: Phase 3 - Dataset Editor Extension\n\nPurpose: Provide comprehensive editing capabilities for modifying datasets including cell editing, row/column operations, batch editing, and validation.\n\nImplementation Plan:\n1. Implement DatasetEditorExtension class\n2. Create CellEditorComponent with type-aware input\n3. Implement row operations (add, delete, duplicate, reorder)\n4. Implement column operations (add, delete, rename, reorder)\n5. Create BatchEditComponent with find-and-replace functionality\n6. Implement DataValidationEngine with type coercion\n7. Implement undo/redo functionality with operation history\n8. Add auto-save mechanism with configurable intervals\n9. Implement change tracking and dirty state management\n10. Add conflict detection for concurrent edits\n11. Implement data transformation operations\n12. Add comprehensive error handling and user feedback\n\nDependencies:\n- BaseExtension (src/Extensions/SDK/BaseExtension.cs)\n- IDatasetService\n- IStorageService\n- INotificationService\n- ILoggingService\n- IChangeTrackingService\n- Schema validation utilities\n\nReferences:\n- See REFACTOR_PLAN.md Phase 3-6 for Dataset Editor implementation details\n- See src/Extensions/SDK/DevelopmentGuide.md for extension development instructions\n- See src/Core/DomainModels/Datasets for dataset structure\n- See src/Core/Abstractions/Storage for storage interfaces\n\nPhases:\n- Phase 3: Extension system infrastructure\n- Phase 4: Cell editing and row operations\n- Phase 5: Column operations and batch editing\n- Phase 5: Data validation and type coercion\n- Phase 6: Undo/redo functionality\n- Phase 6: Auto-save and conflict detection\n- Phase 7: Advanced transformations"
+}
