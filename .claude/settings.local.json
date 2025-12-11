@@ -18,7 +18,8 @@
       "Bash(bash:*)",
       "Bash(dotnet restore:*)",
       "Bash(dotnet new:*)",
-      "Bash(dotnet sln:*)"
+      "Bash(dotnet sln:*)",
+      "Bash(wc:*)"
     ],
     "deny": [],
     "ask": []
