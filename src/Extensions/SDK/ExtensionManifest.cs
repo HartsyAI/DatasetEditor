@@ -1,30 +1,7 @@
-// TODO: Phase 3 - Extension Manifest Management
-//
-// Purpose: Handle reading, parsing, validating, and writing extension manifest files
-// (extension.manifest.json). The manifest file is the core definition of an extension's
-// capabilities and configuration.
-//
-// Implementation Plan:
-// 1. Define manifest file schema and structure
-// 2. Implement JSON serialization/deserialization
-// 3. Create manifest validator with detailed error messages
-// 4. Implement manifest loader from file system
-// 5. Create manifest writer for extension creation
-// 6. Add manifest versioning and migration logic
-// 7. Implement manifest caching mechanism
-// 8. Create schema provider for documentation
-//
-// Dependencies:
-// - System.Text.Json or Newtonsoft.Json
-// - ExtensionMetadata.cs
-// - IFileSystem interface for file operations
-// - JsonSchemaValidator for schema validation
-// - System.IO for file operations
-//
-// References:
-// - See REFACTOR_PLAN.md Phase 3 - Extension System Infrastructure for details
-// - Manifest format should follow VS Code extension manifest conventions
-// - See built-in extension manifests for examples
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace DatasetStudio.Extensions.SDK;
 
@@ -156,8 +133,21 @@ public class ExtensionManifest
     /// <returns>Loaded manifest</returns>
     public static ExtensionManifest LoadFromFile(string filePath)
     {
-        // TODO: Phase 3 - Implement manifest loading from file
-        throw new NotImplementedException("TODO: Phase 3 - Implement manifest loading from file");
+        if (!File.Exists(filePath))
+        {
+            throw new FileNotFoundException($"Manifest file not found: {filePath}");
+        }
+
+        var jsonContent = File.ReadAllText(filePath);
+        var manifest = LoadFromJson(jsonContent);
+
+        // Set file metadata
+        manifest.ManifestPath = filePath;
+        manifest.DirectoryPath = Path.GetDirectoryName(filePath);
+        manifest.LastModified = File.GetLastWriteTimeUtc(filePath);
+        manifest.FileHash = ComputeFileHash(filePath);
+
+        return manifest;
     }
 
     /// <summary>
@@ -167,15 +157,42 @@ public class ExtensionManifest
     /// <returns>Loaded manifest</returns>
     public static ExtensionManifest LoadFromJson(string jsonContent)
     {
-        // TODO: Phase 3 - Implement manifest parsing from JSON string
-        // Steps:
-        // 1. Parse JSON content
-        // 2. Validate schema
-        // 3. Map to ExtensionMetadata
-        // 4. Load capabilities and configuration
-        // 5. Return populated ExtensionManifest
+        if (string.IsNullOrWhiteSpace(jsonContent))
+        {
+            throw new ArgumentException("JSON content cannot be empty", nameof(jsonContent));
+        }
 
-        throw new NotImplementedException("TODO: Phase 3 - Implement manifest parsing from JSON");
+        try
+        {
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true,
+                ReadCommentHandling = JsonCommentHandling.Skip,
+                AllowTrailingCommas = true,
+                Converters = { new JsonStringEnumConverter() }
+            };
+
+            var manifest = JsonSerializer.Deserialize<ExtensionManifest>(jsonContent, options);
+
+            if (manifest == null)
+            {
+                throw new InvalidOperationException("Failed to deserialize manifest: result was null");
+            }
+
+            // Validate the manifest
+            var validationErrors = manifest.Validate();
+            if (validationErrors.Count > 0)
+            {
+                var errors = string.Join(Environment.NewLine, validationErrors);
+                throw new InvalidOperationException($"Manifest validation failed:{Environment.NewLine}{errors}");
+            }
+
+            return manifest;
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException($"Failed to parse manifest JSON: {ex.Message}", ex);
+        }
     }
 
     /// <summary>
@@ -184,17 +201,99 @@ public class ExtensionManifest
     /// <returns>List of validation errors (empty if valid)</returns>
     public IReadOnlyList<string> Validate()
     {
-        // TODO: Phase 3 - Implement comprehensive manifest validation
-        // Validations:
-        // - Check SchemaVersion is supported
-        // - Validate ExtensionMetadata
-        // - Validate capability names and structures
-        // - Check for required fields
-        // - Validate activation events format
-        // - Check entry points exist
-        // - Validate configuration schema format
+        var errors = new List<string>();
 
-        throw new NotImplementedException("TODO: Phase 3 - Implement manifest validation");
+        // Validate schema version
+        if (SchemaVersion != ManifestSchemaVersion)
+        {
+            errors.Add($"Unsupported schema version: {SchemaVersion}. Expected: {ManifestSchemaVersion}");
+        }
+
+        // Validate metadata
+        if (Metadata == null)
+        {
+            errors.Add("Metadata is required");
+            return errors; // Can't continue without metadata
+        }
+
+        if (string.IsNullOrWhiteSpace(Metadata.Id))
+        {
+            errors.Add("Metadata.Id is required");
+        }
+
+        if (string.IsNullOrWhiteSpace(Metadata.Name))
+        {
+            errors.Add("Metadata.Name is required");
+        }
+
+        if (string.IsNullOrWhiteSpace(Metadata.Version))
+        {
+            errors.Add("Metadata.Version is required");
+        }
+
+        // Validate deployment target
+        if (!Enum.IsDefined(typeof(ExtensionDeploymentTarget), DeploymentTarget))
+        {
+            errors.Add($"Invalid DeploymentTarget: {DeploymentTarget}");
+        }
+
+        // Validate dependencies
+        foreach (var (depId, depVersion) in Dependencies)
+        {
+            if (string.IsNullOrWhiteSpace(depId))
+            {
+                errors.Add("Dependency ID cannot be empty");
+            }
+            if (string.IsNullOrWhiteSpace(depVersion))
+            {
+                errors.Add($"Dependency version for '{depId}' cannot be empty");
+            }
+        }
+
+        // Validate API endpoints
+        foreach (var endpoint in ApiEndpoints)
+        {
+            if (string.IsNullOrWhiteSpace(endpoint.Method))
+            {
+                errors.Add("API endpoint method cannot be empty");
+            }
+            if (string.IsNullOrWhiteSpace(endpoint.Route))
+            {
+                errors.Add("API endpoint route cannot be empty");
+            }
+            if (string.IsNullOrWhiteSpace(endpoint.HandlerType))
+            {
+                errors.Add($"API endpoint handler type cannot be empty for route: {endpoint.Route}");
+            }
+        }
+
+        // Validate navigation items
+        foreach (var navItem in NavigationItems)
+        {
+            if (string.IsNullOrWhiteSpace(navItem.Text))
+            {
+                errors.Add("Navigation item text cannot be empty");
+            }
+            if (string.IsNullOrWhiteSpace(navItem.Route))
+            {
+                errors.Add($"Navigation item route cannot be empty for: {navItem.Text}");
+            }
+        }
+
+        // Validate background workers
+        foreach (var worker in BackgroundWorkers)
+        {
+            if (string.IsNullOrWhiteSpace(worker.Id))
+            {
+                errors.Add("Background worker ID cannot be empty");
+            }
+            if (string.IsNullOrWhiteSpace(worker.TypeName))
+            {
+                errors.Add($"Background worker type name cannot be empty for: {worker.Id}");
+            }
+        }
+
+        return errors;
     }
 
     /// <summary>
@@ -203,8 +302,20 @@ public class ExtensionManifest
     /// <param name="filePath">Path where manifest should be saved</param>
     public void SaveToFile(string filePath)
     {
-        // TODO: Phase 3 - Implement manifest serialization to file
-        throw new NotImplementedException("TODO: Phase 3 - Implement manifest saving to file");
+        var directory = Path.GetDirectoryName(filePath);
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        var json = ToJson(indented: true);
+        File.WriteAllText(filePath, json);
+
+        // Update metadata
+        ManifestPath = filePath;
+        DirectoryPath = Path.GetDirectoryName(filePath);
+        LastModified = File.GetLastWriteTimeUtc(filePath);
+        FileHash = ComputeFileHash(filePath);
     }
 
     /// <summary>
@@ -214,16 +325,26 @@ public class ExtensionManifest
     /// <returns>JSON representation of the manifest</returns>
     public string ToJson(bool indented = true)
     {
-        // TODO: Phase 3 - Implement manifest serialization to JSON
-        throw new NotImplementedException("TODO: Phase 3 - Implement manifest serialization to JSON");
+        var options = new JsonSerializerOptions
+        {
+            WriteIndented = indented,
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+            Converters = { new JsonStringEnumConverter() }
+        };
+
+        return JsonSerializer.Serialize(this, options);
     }
 
-    // TODO: Phase 3 - Add manifest utilities
-    // Methods needed:
-    // - static string GetJsonSchema() - returns the manifest schema
-    // - static ExtensionManifest CreateTemplate(string extensionId)
-    // - bool IsValidForSchema()
-    // - IReadOnlyList<string> GetMissingRequiredFields()
+    /// <summary>
+    /// Computes SHA256 hash of a file.
+    /// </summary>
+    private static string ComputeFileHash(string filePath)
+    {
+        using var stream = File.OpenRead(filePath);
+        using var sha256 = SHA256.Create();
+        var hashBytes = sha256.ComputeHash(stream);
+        return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
 }
 
 /// <summary>

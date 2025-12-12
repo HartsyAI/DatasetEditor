@@ -1,0 +1,12 @@
+c:\Users\kaleb\OneDrive\Desktop\Projects\DatasetEditor\src\Extensions\SDK\obj\Debug\net8.0\Extensions.SDK.GeneratedMSBuildEditorConfig.editorconfig
+c:\Users\kaleb\OneDrive\Desktop\Projects\DatasetEditor\src\Extensions\SDK\obj\Debug\net8.0\Extensions.SDK.AssemblyInfoInputs.cache
+c:\Users\kaleb\OneDrive\Desktop\Projects\DatasetEditor\src\Extensions\SDK\obj\Debug\net8.0\Extensions.SDK.AssemblyInfo.cs
+c:\Users\kaleb\OneDrive\Desktop\Projects\DatasetEditor\src\Extensions\SDK\obj\Debug\net8.0\Extensions.SDK.csproj.CoreCompileInputs.cache
+c:\Users\kaleb\OneDrive\Desktop\Projects\DatasetEditor\src\Extensions\SDK\obj\Debug\net8.0\Extensions.SDK.sourcelink.json
+c:\Users\kaleb\OneDrive\Desktop\Projects\DatasetEditor\src\Extensions\SDK\bin\Debug\net8.0\Extensions.SDK.deps.json
+c:\Users\kaleb\OneDrive\Desktop\Projects\DatasetEditor\src\Extensions\SDK\bin\Debug\net8.0\Extensions.SDK.dll
+c:\Users\kaleb\OneDrive\Desktop\Projects\DatasetEditor\src\Extensions\SDK\bin\Debug\net8.0\Extensions.SDK.pdb
+c:\Users\kaleb\OneDrive\Desktop\Projects\DatasetEditor\src\Extensions\SDK\obj\Debug\net8.0\Extensions.SDK.dll
+c:\Users\kaleb\OneDrive\Desktop\Projects\DatasetEditor\src\Extensions\SDK\obj\Debug\net8.0\refint\Extensions.SDK.dll
+c:\Users\kaleb\OneDrive\Desktop\Projects\DatasetEditor\src\Extensions\SDK\obj\Debug\net8.0\Extensions.SDK.pdb
+c:\Users\kaleb\OneDrive\Desktop\Projects\DatasetEditor\src\Extensions\SDK\obj\Debug\net8.0\ref\Extensions.SDK.dll

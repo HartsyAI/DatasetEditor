@@ -1,28 +1,4 @@
-// TODO: Phase 3 - Extension Metadata
-//
-// Purpose: Define the metadata structure that describes an extension's identity,
-// version, capabilities, and requirements. This information is used by the core
-// system to validate, load, and manage extensions.
-//
-// Implementation Plan:
-// 1. Define version information class
-// 2. Create author/publisher information class
-// 3. Define capabilities enumeration
-// 4. Create metadata container class
-// 5. Implement validation logic
-// 6. Add serialization support for JSON/YAML manifests
-// 7. Create builder pattern for fluent metadata construction
-//
-// Dependencies:
-// - System.Runtime.Serialization for serialization
-// - System.Text.Json or Newtonsoft.Json for JSON support
-// - IExtensionValidator interface
-// - SemanticVersioning library (or custom implementation)
-//
-// References:
-// - See REFACTOR_PLAN.md Phase 3 - Extension System Infrastructure for details
-// - Should follow NuGet package metadata conventions
-// - See ExtensionManifest.cs for manifest file integration
+using System.Text.Json.Serialization;
 
 namespace DatasetStudio.Extensions.SDK;
 
@@ -32,42 +8,83 @@ namespace DatasetStudio.Extensions.SDK;
 /// </summary>
 public class ExtensionMetadata
 {
-    // TODO: Phase 3 - Add required metadata properties
-    // Properties needed:
-    // - string Id (unique identifier)
-    // - string Name
-    // - string Version
-    // - string Description
-    // - string Author
-    // - string License
-    // - string Homepage (URI)
-    // - string Repository (URI)
-    // - IReadOnlyList<string> Tags
-    // - IReadOnlyList<string> Categories
+    /// <summary>
+    /// Unique identifier for the extension (e.g., "dataset-studio.core-viewer").
+    /// </summary>
+    [JsonPropertyName("id")]
+    public required string Id { get; set; }
 
-    // TODO: Phase 3 - Add capability and requirement metadata
-    // Properties needed:
-    // - IReadOnlyList<string> ProvidedCapabilities
-    // - IReadOnlyList<string> RequiredPermissions
-    // - IReadOnlyDictionary<string, string> RequiredDependencies (name -> version)
-    // - string MinimumCoreVersion
-    // - string MaximumCoreVersion
+    /// <summary>
+    /// Display name of the extension (e.g., "Core Viewer").
+    /// </summary>
+    [JsonPropertyName("name")]
+    public required string Name { get; set; }
 
-    // TODO: Phase 3 - Add extension configuration metadata
-    // Properties needed:
-    // - string EntryPoint (fully qualified type name)
-    // - string ConfigurationSchema (JSON schema)
-    // - bool IsEnabled (default true)
-    // - int LoadOrder (priority)
-    // - string[] Platforms (Windows, Linux, macOS)
+    /// <summary>
+    /// Semantic version of the extension (e.g., "1.0.0").
+    /// </summary>
+    [JsonPropertyName("version")]
+    public required string Version { get; set; }
 
-    // TODO: Phase 3 - Add timestamp and signature metadata
-    // Properties needed:
-    // - DateTime CreatedDate
-    // - DateTime ModifiedDate
-    // - string PublisherSignature
-    // - bool IsVerified
-    // - string CompatibilityHash
+    /// <summary>
+    /// Description of what the extension does.
+    /// </summary>
+    [JsonPropertyName("description")]
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// Author or publisher of the extension.
+    /// </summary>
+    [JsonPropertyName("author")]
+    public string? Author { get; set; }
+
+    /// <summary>
+    /// License identifier (e.g., "MIT", "Apache-2.0").
+    /// </summary>
+    [JsonPropertyName("license")]
+    public string? License { get; set; }
+
+    /// <summary>
+    /// Homepage URL for the extension.
+    /// </summary>
+    [JsonPropertyName("homepage")]
+    public string? Homepage { get; set; }
+
+    /// <summary>
+    /// Repository URL (e.g., GitHub, GitLab).
+    /// </summary>
+    [JsonPropertyName("repository")]
+    public string? Repository { get; set; }
+
+    /// <summary>
+    /// Tags for categorization and search.
+    /// </summary>
+    [JsonPropertyName("tags")]
+    public List<string> Tags { get; set; } = new();
+
+    /// <summary>
+    /// Categories this extension belongs to.
+    /// </summary>
+    [JsonPropertyName("categories")]
+    public List<string> Categories { get; set; } = new();
+
+    /// <summary>
+    /// Icon path or URL for the extension.
+    /// </summary>
+    [JsonPropertyName("icon")]
+    public string? Icon { get; set; }
+
+    /// <summary>
+    /// Minimum core version required (e.g., "1.0.0").
+    /// </summary>
+    [JsonPropertyName("minimumCoreVersion")]
+    public string? MinimumCoreVersion { get; set; }
+
+    /// <summary>
+    /// Maximum compatible core version.
+    /// </summary>
+    [JsonPropertyName("maximumCoreVersion")]
+    public string? MaximumCoreVersion { get; set; }
 
     /// <summary>
     /// Validates the metadata to ensure all required fields are present and valid.
@@ -75,16 +92,7 @@ public class ExtensionMetadata
     /// <returns>true if metadata is valid; otherwise false</returns>
     public bool Validate()
     {
-        // TODO: Phase 3 - Implement validation logic
-        // Validations needed:
-        // - Check required fields are not empty
-        // - Validate version format (semantic versioning)
-        // - Validate Id format (alphanumeric + dash/underscore)
-        // - Check entry point type can be resolved
-        // - Validate capability names
-        // - Check for circular dependencies
-
-        throw new NotImplementedException("TODO: Phase 3 - Implement metadata validation");
+        return GetValidationErrors().Count == 0;
     }
 
     /// <summary>
@@ -92,18 +100,25 @@ public class ExtensionMetadata
     /// </summary>
     public IReadOnlyList<string> GetValidationErrors()
     {
-        // TODO: Phase 3 - Collect and return detailed validation errors
-        throw new NotImplementedException("TODO: Phase 3 - Implement validation error collection");
-    }
+        var errors = new List<string>();
 
-    // TODO: Phase 3 - Add builder pattern for fluent construction
-    // Methods needed:
-    // - static MetadataBuilder CreateBuilder()
-    // - MetadataBuilder WithId(string id)
-    // - MetadataBuilder WithVersion(string version)
-    // - MetadataBuilder WithAuthor(string author)
-    // - MetadataBuilder WithCapability(string capability)
-    // - ExtensionMetadata Build()
+        if (string.IsNullOrWhiteSpace(Id))
+        {
+            errors.Add("Id is required");
+        }
+
+        if (string.IsNullOrWhiteSpace(Name))
+        {
+            errors.Add("Name is required");
+        }
+
+        if (string.IsNullOrWhiteSpace(Version))
+        {
+            errors.Add("Version is required");
+        }
+
+        return errors;
+    }
 }
 
 /// <summary>

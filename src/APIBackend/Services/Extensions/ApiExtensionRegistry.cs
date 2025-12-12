@@ -232,12 +232,12 @@ public class ApiExtensionRegistry
         {
             try
             {
-                // TODO: Phase 3 - Implement ExtensionManifest.LoadFromFile
-                // For now, create a placeholder
                 _logger.LogDebug("Loading manifest: {ManifestFile}", manifestFile);
 
-                // var manifest = ExtensionManifest.LoadFromFile(manifestFile);
-                // manifests.Add(manifest);
+                var manifest = ExtensionManifest.LoadFromFile(manifestFile);
+                manifests.Add(manifest);
+
+                _logger.LogDebug("Loaded manifest for extension: {ExtensionId}", manifest.Metadata.Id);
             }
             catch (Exception ex)
             {
