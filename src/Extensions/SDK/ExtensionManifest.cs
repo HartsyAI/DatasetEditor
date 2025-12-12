@@ -44,21 +44,91 @@ public class ExtensionManifest
     /// </summary>
     public const int ManifestSchemaVersion = 1;
 
-    // TODO: Phase 3 - Add manifest properties
-    // Properties needed:
-    // - int SchemaVersion (currently 1)
-    // - ExtensionMetadata Metadata
-    // - IReadOnlyDictionary<string, object> ActivationEvents
-    // - IReadOnlyList<string> EntryPoints
-    // - IReadOnlyDictionary<string, ExtensionCapabilityDescriptor> Capabilities
-    // - IReadOnlyDictionary<string, object> Configuration
+    /// <summary>
+    /// Schema version of this manifest (for future migration support).
+    /// </summary>
+    public int SchemaVersion { get; set; } = ManifestSchemaVersion;
 
-    // TODO: Phase 3 - Add manifest location and file tracking
-    // Properties needed:
-    // - string DirectoryPath
-    // - string ManifestPath
-    // - DateTime LastModified
-    // - string FileHash (for caching)
+    /// <summary>
+    /// Extension metadata (id, name, version, author, etc.).
+    /// </summary>
+    public required ExtensionMetadata Metadata { get; set; }
+
+    /// <summary>
+    /// Specifies where this extension runs: "api", "client", or "both".
+    /// CRITICAL for distributed deployments where API and Client are on different servers.
+    /// </summary>
+    public required ExtensionDeploymentTarget DeploymentTarget { get; set; }
+
+    /// <summary>
+    /// Dependencies on other extensions (extensionId -> version requirement).
+    /// Format: "extensionId": ">=1.0.0" or "extensionId": "^2.0.0"
+    /// </summary>
+    public Dictionary<string, string> Dependencies { get; set; } = new();
+
+    /// <summary>
+    /// Required permissions for this extension.
+    /// e.g., "filesystem.read", "api.datasets.write", "ai.huggingface"
+    /// </summary>
+    public List<string> RequiredPermissions { get; set; } = new();
+
+    /// <summary>
+    /// API endpoints registered by this extension (only for API-side extensions).
+    /// e.g., "/api/extensions/aitools/caption", "/api/extensions/editor/batch"
+    /// </summary>
+    public List<ApiEndpointDescriptor> ApiEndpoints { get; set; } = new();
+
+    /// <summary>
+    /// Blazor components registered by this extension (only for Client-side extensions).
+    /// Maps component name to fully qualified type name.
+    /// </summary>
+    public Dictionary<string, string> BlazorComponents { get; set; } = new();
+
+    /// <summary>
+    /// Navigation menu items to register (only for Client-side extensions).
+    /// </summary>
+    public List<NavigationMenuItem> NavigationItems { get; set; } = new();
+
+    /// <summary>
+    /// Background workers/services registered by this extension (API-side only).
+    /// </summary>
+    public List<BackgroundWorkerDescriptor> BackgroundWorkers { get; set; } = new();
+
+    /// <summary>
+    /// Database migrations provided by this extension (API-side only).
+    /// </summary>
+    public List<string> DatabaseMigrations { get; set; } = new();
+
+    /// <summary>
+    /// Configuration schema for this extension (JSON Schema format).
+    /// </summary>
+    public string? ConfigurationSchema { get; set; }
+
+    /// <summary>
+    /// Default configuration values.
+    /// </summary>
+    public Dictionary<string, object> DefaultConfiguration { get; set; } = new();
+
+    // Manifest location and file tracking
+    /// <summary>
+    /// Directory path where this extension is located.
+    /// </summary>
+    public string? DirectoryPath { get; set; }
+
+    /// <summary>
+    /// Full path to the manifest file.
+    /// </summary>
+    public string? ManifestPath { get; set; }
+
+    /// <summary>
+    /// Last modification time of the manifest file.
+    /// </summary>
+    public DateTime? LastModified { get; set; }
+
+    /// <summary>
+    /// SHA256 hash of the manifest file (for caching and change detection).
+    /// </summary>
+    public string? FileHash { get; set; }
 
     /// <summary>
     /// Loads a manifest from the specified directory.
@@ -202,4 +272,122 @@ public class ManifestValidationResult
     // - IReadOnlyList<ManifestValidationError> Errors
     // - IReadOnlyList<ManifestValidationWarning> Warnings
     // - string SummaryMessage
+}
+
+/// <summary>
+/// Specifies where an extension runs - critical for distributed deployments.
+/// </summary>
+public enum ExtensionDeploymentTarget
+{
+    /// <summary>
+    /// Extension runs only on the API server.
+    /// Use for: background workers, database operations, file system access, AI processing.
+    /// </summary>
+    Api,
+
+    /// <summary>
+    /// Extension runs only on the Client (Blazor WebAssembly).
+    /// Use for: UI components, client-side rendering, browser interactions.
+    /// </summary>
+    Client,
+
+    /// <summary>
+    /// Extension has both API and Client components.
+    /// Use for: full-stack features requiring server logic and UI.
+    /// Example: AITools has API for HuggingFace calls, Client for UI.
+    /// </summary>
+    Both
+}
+
+/// <summary>
+/// Describes an API endpoint registered by an extension.
+/// </summary>
+public class ApiEndpointDescriptor
+{
+    /// <summary>
+    /// HTTP method (GET, POST, PUT, DELETE, PATCH).
+    /// </summary>
+    public required string Method { get; set; }
+
+    /// <summary>
+    /// Route pattern (e.g., "/api/extensions/aitools/caption").
+    /// </summary>
+    public required string Route { get; set; }
+
+    /// <summary>
+    /// Handler type name (fully qualified).
+    /// </summary>
+    public required string HandlerType { get; set; }
+
+    /// <summary>
+    /// Brief description of what this endpoint does.
+    /// </summary>
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// Whether this endpoint requires authentication.
+    /// </summary>
+    public bool RequiresAuth { get; set; } = false;
+}
+
+/// <summary>
+/// Describes a navigation menu item registered by a client extension.
+/// </summary>
+public class NavigationMenuItem
+{
+    /// <summary>
+    /// Display text for the menu item.
+    /// </summary>
+    public required string Text { get; set; }
+
+    /// <summary>
+    /// Route/URL to navigate to.
+    /// </summary>
+    public required string Route { get; set; }
+
+    /// <summary>
+    /// Icon name (MudBlazor icon or custom).
+    /// </summary>
+    public string? Icon { get; set; }
+
+    /// <summary>
+    /// Display order (lower numbers appear first).
+    /// </summary>
+    public int Order { get; set; } = 100;
+
+    /// <summary>
+    /// Parent menu item (for sub-menus).
+    /// </summary>
+    public string? ParentId { get; set; }
+
+    /// <summary>
+    /// Required permission to see this menu item.
+    /// </summary>
+    public string? RequiredPermission { get; set; }
+}
+
+/// <summary>
+/// Describes a background worker/service registered by an API extension.
+/// </summary>
+public class BackgroundWorkerDescriptor
+{
+    /// <summary>
+    /// Unique identifier for this worker.
+    /// </summary>
+    public required string Id { get; set; }
+
+    /// <summary>
+    /// Worker type name (fully qualified, must implement IHostedService).
+    /// </summary>
+    public required string TypeName { get; set; }
+
+    /// <summary>
+    /// Brief description of what this worker does.
+    /// </summary>
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// Whether to start this worker automatically on startup.
+    /// </summary>
+    public bool AutoStart { get; set; } = true;
 }
