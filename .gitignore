@@ -73,3 +73,7 @@ dkms.conf
 /src/APIBackend/bin
 /src/ClientApp/bin
 /src/Core/bin
+/tests/ClientApp.Tests/obj
+/tests/ClientApp.Tests/bin
+/tests/APIBackend.Tests/obj
+/tests/APIBackend.Tests/bin
