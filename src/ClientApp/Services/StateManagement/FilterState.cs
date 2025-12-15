@@ -1,5 +1,6 @@
 using DatasetStudio.Core.DomainModels;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
 
 namespace DatasetStudio.ClientApp.Services.StateManagement;
 

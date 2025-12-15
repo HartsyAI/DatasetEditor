@@ -10,7 +10,7 @@ namespace DatasetStudio.APIBackend.Services.Integration;
 /// Client for the Hugging Face datasets-server API used for streaming dataset metadata and rows.
 /// Docs: https://huggingface.co/docs/dataset-viewer
 /// </summary>
-internal interface IHuggingFaceDatasetServerClient
+public interface IHuggingFaceDatasetServerClient
 {
     Task<HuggingFaceDatasetSizeInfo?> GetDatasetSizeAsync(
         string dataset,
@@ -382,7 +382,7 @@ internal sealed class HuggingFaceDatasetServerClient : IHuggingFaceDatasetServer
 /// <summary>
 /// Summary information about a dataset's size and default config/split as reported by datasets-server.
 /// </summary>
-internal sealed class HuggingFaceDatasetSizeInfo
+public sealed class HuggingFaceDatasetSizeInfo
 {
     public string Dataset { get; set; } = string.Empty;
 
@@ -396,7 +396,7 @@ internal sealed class HuggingFaceDatasetSizeInfo
 /// <summary>
 /// A page of rows streamed from datasets-server.
 /// </summary>
-internal sealed class HuggingFaceRowsPage
+public sealed class HuggingFaceRowsPage
 {
     public string Dataset { get; set; } = string.Empty;
 
@@ -409,7 +409,7 @@ internal sealed class HuggingFaceRowsPage
     public List<HuggingFaceRow> Rows { get; set; } = new List<HuggingFaceRow>();
 }
 
-internal sealed class HuggingFaceRow
+public sealed class HuggingFaceRow
 {
     public long RowIndex { get; set; }
 
@@ -419,7 +419,7 @@ internal sealed class HuggingFaceRow
 /// <summary>
 /// Information about a specific config/split combination.
 /// </summary>
-internal sealed class HuggingFaceDatasetSplitInfo
+public sealed class HuggingFaceDatasetSplitInfo
 {
     public string Dataset { get; set; } = string.Empty;
     public string? Config { get; set; }

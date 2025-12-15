@@ -1,3 +1,5 @@
+@using DatasetStudio.Core.Enumerations
+
 @* Controls for view mode, grid density, and detail panel visibility. *@
 <MudStack Spacing="3">
     <MudText Typo="Typo.subtitle1">View preferences</MudText>
@@ -26,7 +28,7 @@
 
     <MudSwitch T="bool"
                Checked="@ShowMetadataOverlay"
-               CheckedChanged="@OnShowMetadataOverlayChangedAsync"
+               CheckedChanged="OnShowMetadataOverlayChangedAsync"
                Color="Color.Primary"
                Label="Show metadata overlay" />
 </MudStack>

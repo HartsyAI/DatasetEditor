@@ -1,6 +1,7 @@
 using Microsoft.JSInterop;
 using DatasetStudio.Core.DomainModels;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
 using DatasetStudio.DTO.Datasets;
 
 namespace DatasetStudio.ClientApp.Services.Interop;

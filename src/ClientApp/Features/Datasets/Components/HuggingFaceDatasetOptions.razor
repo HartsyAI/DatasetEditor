@@ -58,7 +58,7 @@
                                     Multiple configurations detected. Select one to stream:
                                 </MudText>
 
-                                <MudRadioGroup @bind-Value="_selectedStreamingOption">
+                                <MudRadioGroup T="HuggingFaceConfigOption" @bind-Value="_selectedStreamingOption">
                                     @foreach (var option in DiscoveryResponse.StreamingOptions.AvailableOptions)
                                     {
                                         <MudRadio Value="@option" Color="Color.Primary">
@@ -120,7 +120,7 @@
                                     Multiple data files detected. Select one to download:
                                 </MudText>
 
-                                <MudRadioGroup @bind-Value="_selectedDownloadFile">
+                                <MudRadioGroup T="HuggingFaceDataFileOption" @bind-Value="_selectedDownloadFile">
                                     @foreach (var file in DiscoveryResponse.DownloadOptions.AvailableFiles)
                                     {
                                         <MudRadio Value="@file" Color="Color.Primary">

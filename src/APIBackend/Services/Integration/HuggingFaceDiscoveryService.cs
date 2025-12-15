@@ -6,10 +6,14 @@ using System.Threading.Tasks;
 using DatasetStudio.APIBackend.Models;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
 
 namespace DatasetStudio.APIBackend.Services.Integration;
 
-internal interface IHuggingFaceDiscoveryService
+/// <summary>
+/// Service for discovering HuggingFace dataset capabilities (streaming, download options, etc.)
+/// </summary>
+public interface IHuggingFaceDiscoveryService
 {
     Task<HuggingFaceDiscoveryResponse> DiscoverDatasetAsync(
         HuggingFaceDiscoveryRequest request,

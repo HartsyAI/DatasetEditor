@@ -1,4 +1,4 @@
-using DatasetStudio.APIBackend.Models;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities;
 
 namespace DatasetStudio.APIBackend.Services.DatasetManagement;
 

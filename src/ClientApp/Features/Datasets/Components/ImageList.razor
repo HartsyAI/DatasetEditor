@@ -1,12 +1,12 @@
 @using DatasetStudio.Core.DomainModels
 @using DatasetStudio.Core.Abstractions
+@using DatasetStudio.ClientApp.Services.StateManagement
+@using DatasetStudio.DTO.Datasets
 @inject DatasetState DatasetState
 
 <div class="image-list-container">
-    @foreach (IDatasetItem item in DatasetState.Items)
+    @foreach (DatasetItemDto imageItem in DatasetState.Items)
     {
-        ImageItem imageItem = (ImageItem)item;
-        
         <MudCard Class="list-item mb-3" Elevation="1">
             <div class="list-item-content">
                 @* Thumbnail *@
@@ -24,7 +24,7 @@
                     <MudStack Row="true" Spacing="2" Class="mt-2">
                         <MudChip T="string" Size="Size.Small">@imageItem.GetFormattedDimensions()</MudChip>
                         <MudChip T="string" Size="Size.Small">@imageItem.GetFormattedFileSize()</MudChip>
-                        <MudChip T="string" Size="Size.Small">@imageItem.Format</MudChip>
+                        <MudChip T="string" Size="Size.Small">@imageItem.Format()</MudChip>
                     </MudStack>
                     
                     @if (imageItem.Tags.Any())

@@ -1,16 +1,21 @@
 @using DatasetStudio.Core.DomainModels
 @using DatasetStudio.Core.Abstractions
+@using DatasetStudio.ClientApp.Services.StateManagement
+@using Microsoft.AspNetCore.Components.Web
+@using MudBlazor
+@using DatasetStudio.DTO.Datasets
 @inject DatasetState DatasetState
 
 <MudDialog>
     <DialogContent>
-        <MudTextField @bind-Value="@_newTag"
+        <MudTextField T="string"
+                     @@@bind-Value="@_newTag"
                      Label="Tag Name"
                      Variant="Variant.Outlined"
                      Immediate="true"
                      AutoFocus="true"
                      @onkeyup="HandleKeyUp" />
-        
+
         @if (_suggestedTags.Any())
         {
             <MudText Typo="Typo.subtitle2" Class="mt-4 mb-2">Suggested Tags</MudText>
@@ -40,18 +45,15 @@
     {
         // Get all tags from current dataset for suggestions
         HashSet<string> allTags = new();
-        
-        foreach (IDatasetItem item in DatasetState.Items)
+
+        foreach (DatasetItemDto item in DatasetState.Items)
         {
-            if (item is ImageItem imageItem)
+            foreach (string tag in item.Tags)
             {
-                foreach (string tag in imageItem.Tags)
-                {
-                    allTags.Add(tag);
-                }
+                allTags.Add(tag);
             }
         }
-        
+
         _suggestedTags = allTags.OrderBy(t => t).Take(10).ToList();
     }
 

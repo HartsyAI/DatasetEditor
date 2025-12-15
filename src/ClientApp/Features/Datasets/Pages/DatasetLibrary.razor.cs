@@ -3,12 +3,18 @@ using Microsoft.AspNetCore.Components.Web;
 using MudBlazor;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
 using DatasetStudio.ClientApp.Services.ApiClients;
 
 namespace DatasetStudio.ClientApp.Features.Datasets.Pages;
 
-public partial class MyDatasets
+public partial class DatasetLibrary : ComponentBase
 {
+    [Inject] public DatasetApiClient DatasetApiClient { get; set; } = default!;
+    [Inject] public NavigationManager Navigation { get; set; } = default!;
+    [Inject] public ISnackbar Snackbar { get; set; } = default!;
+
+
     private List<DatasetSummaryDto> _datasets = new();
     private List<DatasetSummaryDto> _filteredDatasets = new();
     private string _searchQuery = string.Empty;
@@ -17,9 +23,9 @@ public partial class MyDatasets
     private DatasetSourceType? _sourceFilter = null;
     private bool _onlyReady = false;
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync()
     {
-        await LoadDatasetsAsync();
+        return LoadDatasetsAsync();
     }
 
     private async Task LoadDatasetsAsync()
@@ -28,7 +34,7 @@ public partial class MyDatasets
         
         try
         {
-            IReadOnlyList<DatasetSummaryDto> datasets = await DatasetApiClient.GetAllDatasetsAsync(page: 0, pageSize: 50);
+            IReadOnlyList<DatasetSummaryDto> datasets = await DatasetApiClient.GetAllDatasetsAsync(page: 0, pageSize: 50, CancellationToken.None);
             _datasets = datasets.ToList();
             _filteredDatasets = _datasets;
         }
@@ -92,7 +98,7 @@ public partial class MyDatasets
     {
         try
         {
-            bool success = await DatasetApiClient.DeleteDatasetAsync(dataset.Id);
+            bool success = await DatasetApiClient.DeleteDatasetAsync(dataset.Id, CancellationToken.None);
             if (!success)
             {
                 Snackbar.Add($"Failed to delete dataset '{dataset.Name}'.", Severity.Error);

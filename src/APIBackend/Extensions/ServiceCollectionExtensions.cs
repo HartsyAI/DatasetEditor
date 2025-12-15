@@ -1,62 +1,129 @@
-using DatasetStudio.APIBackend.DataAccess.LiteDB.Repositories;
+using DatasetStudio.APIBackend.DataAccess.Parquet;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.APIBackend.Services.Integration;
-using DatasetStudio.Core.Utilities;
-using LiteDB;
+using DatasetStudio.APIBackend.Services.Storage;
+using DatasetStudio.Core.Utilities.Logging;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace DatasetStudio.APIBackend.Extensions;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddDatasetServices(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddDatasetServices(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        IWebHostEnvironment environment)
     {
-        services.AddSingleton<IDatasetIngestionService, NoOpDatasetIngestionService>();
+        // ========================================
+        // PostgreSQL Database
+        // ========================================
 
-        // Register HuggingFace client with HttpClient
-        services.AddHttpClient<IHuggingFaceClient, HuggingFaceClient>();
-        services.AddHttpClient<IHuggingFaceDatasetServerClient, HuggingFaceDatasetServerClient>();
-
-        // Register HuggingFace discovery service
-        services.AddScoped<IHuggingFaceDiscoveryService, HuggingFaceDiscoveryService>();
-
-        // Configure LiteDB for persistence
-        string dbPath = configuration["Database:LiteDbPath"]
-            ?? Path.Combine(AppContext.BaseDirectory, "data", "hartsy.db");
-
-        string? dbDirectory = Path.GetDirectoryName(dbPath);
-        if (!string.IsNullOrEmpty(dbDirectory))
+        string? connectionString = configuration.GetConnectionString("DatasetStudio");
+        if (string.IsNullOrWhiteSpace(connectionString))
         {
-            Directory.CreateDirectory(dbDirectory);
+            throw new InvalidOperationException(
+                "PostgreSQL connection string 'DatasetStudio' is not configured in appsettings.json");
         }
 
-        // Register shared LiteDatabase instance (critical: only one instance per file)
-        services.AddSingleton<LiteDatabase>(sp =>
+        services.AddDbContext<DatasetStudioDbContext>(options =>
         {
-            LiteDatabase db = new LiteDatabase(dbPath);
-            Logs.Info($"LiteDB initialized at: {dbPath}");
-            return db;
+            options.UseNpgsql(connectionString, npgsqlOptions =>
+            {
+                npgsqlOptions.EnableRetryOnFailure(
+                    maxRetryCount: 3,
+                    maxRetryDelay: TimeSpan.FromSeconds(5),
+                    errorCodesToAdd: null);
+
+                npgsqlOptions.MigrationsAssembly(typeof(DatasetStudioDbContext).Assembly.GetName().Name);
+            });
+
+            if (environment.IsDevelopment())
+            {
+                options.EnableSensitiveDataLogging();
+                options.EnableDetailedErrors();
+            }
+
+            options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
         });
 
-        // Register API persistence repositories
-        services.AddSingleton<IDatasetRepository, DatasetRepository>();
-        services.AddSingleton<IDatasetItemRepository, ItemRepository>();
+        Logs.Info($"PostgreSQL configured with connection: {MaskConnectionString(connectionString)}");
 
-        // Create storage directories
+        // ========================================
+        // Storage Services
+        // ========================================
+
+        // Parquet service for dataset item storage
+        services.AddSingleton<IParquetDataService, ParquetDataService>();
+
+        // ========================================
+        // Repositories
+        // ========================================
+
+        services.AddScoped<IDatasetRepository, DatasetRepository>();
+
+        // ========================================
+        // Dataset Management Services
+        // ========================================
+
+        services.AddSingleton<IDatasetIngestionService, NoOpDatasetIngestionService>();
+
+        // ========================================
+        // HuggingFace Integration
+        // ========================================
+
+        services.AddHttpClient<IHuggingFaceClient, HuggingFaceClient>();
+        services.AddHttpClient<IHuggingFaceDatasetServerClient, HuggingFaceDatasetServerClient>();
+        services.AddScoped<IHuggingFaceDiscoveryService, HuggingFaceDiscoveryService>();
+
+        // ========================================
+        // Storage Directories
+        // ========================================
+
+        string parquetPath = configuration["Storage:ParquetPath"] ?? "./data/parquet";
         string blobPath = configuration["Storage:BlobPath"] ?? "./blobs";
         string thumbnailPath = configuration["Storage:ThumbnailPath"] ?? "./blobs/thumbnails";
         string uploadPath = configuration["Storage:UploadPath"] ?? "./uploads";
         string datasetRootPath = configuration["Storage:DatasetRootPath"] ?? "./data/datasets";
 
+        services.AddSingleton<IDatasetItemRepository>(serviceProvider =>
+        {
+            ILogger<ParquetItemRepository> logger = serviceProvider.GetRequiredService<ILogger<ParquetItemRepository>>();
+            return new ParquetItemRepository(parquetPath, logger);
+        });
+
+        Directory.CreateDirectory(parquetPath);
         Directory.CreateDirectory(blobPath);
         Directory.CreateDirectory(thumbnailPath);
         Directory.CreateDirectory(uploadPath);
         Directory.CreateDirectory(datasetRootPath);
 
-        Logs.Info($"Storage directories created: {blobPath}, {thumbnailPath}, {uploadPath}, {datasetRootPath}");
-
-        // Register background service that can scan dataset folders on disk at startup
-        services.AddHostedService<DatasetDiskImportService>();
+        Logs.Info($"Storage directories created:");
+        Logs.Info($"  Parquet: {parquetPath}");
+        Logs.Info($"  Blobs: {blobPath}");
+        Logs.Info($"  Thumbnails: {thumbnailPath}");
+        Logs.Info($"  Uploads: {uploadPath}");
+        Logs.Info($"  Datasets: {datasetRootPath}");
 
         return services;
+    }
+
+    private static string MaskConnectionString(string connectionString)
+    {
+        // Mask sensitive parts of connection string for logging
+        var parts = connectionString.Split(';');
+        var masked = parts.Select(part =>
+        {
+            if (part.Contains("Password=", StringComparison.OrdinalIgnoreCase) ||
+                part.Contains("Pwd=", StringComparison.OrdinalIgnoreCase))
+            {
+                return part.Split('=')[0] + "=***";
+            }
+            return part;
+        });
+        return string.Join(';', masked);
     }
 }

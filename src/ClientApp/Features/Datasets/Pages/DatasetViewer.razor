@@ -156,7 +156,10 @@
             @if (_viewState.ShowDetailPanel)
             {
                 <MudItem Xs="12" Md="3" Lg="3" Class="dataset-viewer-detail">
-                    <ImageDetailPanel Item="@(_datasetState.SelectedItem as ImageItem)" />
+                    @if (_datasetState.SelectedItem is DatasetItemDto selectedDto)
+                    {
+                        <ImageDetailPanel Item="@selectedDto" />
+                    }
                 </MudItem>
             }
         </MudGrid>

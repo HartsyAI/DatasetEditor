@@ -1,6 +1,7 @@
 using Microsoft.JSInterop;
 using Microsoft.AspNetCore.Components;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
 
 namespace DatasetStudio.ClientApp.Services.Interop;
 

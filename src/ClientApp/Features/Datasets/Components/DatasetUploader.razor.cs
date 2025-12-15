@@ -7,10 +7,12 @@ using MudBlazor;
 using DatasetStudio.ClientApp.Features.Datasets.Services;
 using DatasetStudio.ClientApp.Services.ApiClients;
 using DatasetStudio.ClientApp.Services.StateManagement;
+using DatasetStudio.ClientApp.Shared.Services;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.Core.DomainModels;
 using DatasetStudio.Core.BusinessLogic;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
 
 namespace DatasetStudio.ClientApp.Features.Datasets.Components;
 
@@ -400,9 +402,10 @@ public partial class DatasetUploader
             }
             
             // Step 2: Handle multi-part files
+            // TODO: Implement ZipHelpers class for multi-part file handling
             UpdateProgress(20, "Detecting multi-part files...");
             List<string> fileNames = filesToUpload.Select(f => f.fileName).ToList();
-            Dictionary<string, List<string>> multiPartGroups = ZipHelpers.DetectMultiPartFiles(fileNames);
+            Dictionary<string, List<string>> multiPartGroups = new(); // ZipHelpers.DetectMultiPartFiles(fileNames);
             
             if (multiPartGroups.Any())
             {
@@ -435,7 +438,8 @@ public partial class DatasetUploader
                     }
                     
                     Logs.Info($"Merging {parts.Count} parts for {group.Key}");
-                    MemoryStream mergedStream = await ZipHelpers.MergePartFilesAsync(parts, skipHeadersAfterFirst: true);
+                    // TODO: Implement ZipHelpers.MergePartFilesAsync
+                    MemoryStream mergedStream = new(); // await ZipHelpers.MergePartFilesAsync(parts, skipHeadersAfterFirst: true);
                     merged.Add((group.Key, mergedStream));
                     
                     // Remove individual parts

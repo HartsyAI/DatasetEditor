@@ -22,7 +22,7 @@ builder.Services.Configure<FormOptions>(options =>
     options.MultipartHeadersLengthLimit = int.MaxValue;
 });
 
-builder.Services.AddDatasetServices(builder.Configuration);
+builder.Services.AddDatasetServices(builder.Configuration, builder.Environment);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 string corsPolicyName = "DatasetEditorClient";

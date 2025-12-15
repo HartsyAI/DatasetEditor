@@ -1,5 +1,6 @@
 using MudBlazor;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
 
 namespace DatasetStudio.ClientApp.Shared.Services;
 

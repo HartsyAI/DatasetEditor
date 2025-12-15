@@ -1,5 +1,6 @@
 @using DatasetStudio.Core.DomainModels
 @using DatasetStudio.Core.Utilities
+@using DatasetStudio.DTO.Datasets
 
 <div class="modern-image-card @(IsSelected ? "selected" : "")" 
      @onmouseenter="HandleMouseEnter"
@@ -51,7 +52,7 @@
     <div class="bottom-info">
         @if (_isEditingTitle)
         {
-            <MudTextField @bind-Value="_editTitle"
+            <MudTextField T="string" @@@bind-Value="_editTitle"
                           Variant="Variant.Outlined"
                           Dense="true"
                           Class="card-title-input"
@@ -74,9 +75,9 @@
             </div>
         }
 
-        @if (!string.IsNullOrEmpty(Item.Photographer))
+        @if (!string.IsNullOrEmpty(Item.Photographer()))
         {
-            <MudText Typo="Typo.caption" Class="card-subtitle">@Item.Photographer</MudText>
+            <MudText Typo="Typo.caption" Class="card-subtitle">@Item.Photographer()</MudText>
         }
     </div>
     
@@ -90,7 +91,8 @@
                     <span>@Item.GetFormattedDimensions()</span>
                 </div>
                 
-                @if (Item.FileSizeBytes > 0)
+                @* TODO: Add FileSizeBytes to DatasetItemDto *@
+                @if (!string.IsNullOrEmpty(Item.GetFormattedFileSize()))
                 {
                     <div class="details-section">
                         <MudIcon Icon="@Icons.Material.Outlined.Storage" Size="Size.Small" Class="detail-icon" />

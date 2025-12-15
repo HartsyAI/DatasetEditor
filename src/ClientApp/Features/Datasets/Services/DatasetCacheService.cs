@@ -4,8 +4,10 @@ using System.Threading;
 using System.Threading.Tasks;
 using DatasetStudio.ClientApp.Services.ApiClients;
 using DatasetStudio.ClientApp.Services.StateManagement;
+using DatasetStudio.ClientApp.Services.Caching;
 using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
+using DatasetStudio.DTO.Items;
 using DatasetStudio.Core.Enumerations;
 using DatasetStudio.Core.Abstractions;
 using DatasetStudio.Core.DomainModels;
@@ -21,7 +23,7 @@ public sealed class DatasetCacheService : IDisposable
 {
     private readonly DatasetApiClient _apiClient;
     private readonly DatasetState _datasetState;
-    private readonly DatasetIndexedDbCache _indexedDbCache;
+    private readonly IndexedDbCache _indexedDbCache;
     private readonly ApiKeyState _apiKeyState;
     private readonly ILogger<DatasetCacheService> _logger;
     private readonly SemaphoreSlim _pageLock = new(1, 1);
@@ -46,7 +48,7 @@ public sealed class DatasetCacheService : IDisposable
     public DatasetCacheService(
         DatasetApiClient apiClient,
         DatasetState datasetState,
-        DatasetIndexedDbCache indexedDbCache,
+        IndexedDbCache indexedDbCache,
         ApiKeyState apiKeyState,
         ILogger<DatasetCacheService> logger)
     {
@@ -82,8 +84,8 @@ public sealed class DatasetCacheService : IDisposable
 
             PageResponse<DatasetItemDto>? page = await FetchPageAsync(datasetId, pageSize: 100, cursor: null, dataset, cancellationToken).ConfigureAwait(false);
 
-            Dataset mappedDataset = MapDataset(dataset);
-            List<IDatasetItem> items = MapItems(dataset.Id, page?.Items ?? Array.Empty<DatasetItemDto>());
+            DatasetStudio.Core.DomainModels.Datasets.Dataset mappedDataset = MapDataset(dataset);
+            List<DatasetItemDto> items = MapItems(dataset.Id, page?.Items ?? Array.Empty<DatasetItemDto>());
 
             _datasetState.LoadDataset(mappedDataset, items);
             _windowStartIndex = 0;
@@ -128,10 +130,10 @@ public sealed class DatasetCacheService : IDisposable
                 return false;
             }
 
-            List<IDatasetItem> newItems = MapItems(CurrentDatasetId.Value, page.Items);
+            List<DatasetItemDto> newItems = MapItems(CurrentDatasetId.Value, page.Items);
 
-            List<IDatasetItem> currentWindow = _datasetState.Items;
-            List<IDatasetItem> combined = new(currentWindow.Count + newItems.Count);
+            List<DatasetItemDto> currentWindow = _datasetState.Items;
+            List<DatasetItemDto> combined = new(currentWindow.Count + newItems.Count);
             combined.AddRange(currentWindow);
             combined.AddRange(newItems);
 
@@ -204,10 +206,10 @@ public sealed class DatasetCacheService : IDisposable
                 return false;
             }
 
-            List<IDatasetItem> newItems = MapItems(CurrentDatasetId.Value, page.Items);
+            List<DatasetItemDto> newItems = MapItems(CurrentDatasetId.Value, page.Items);
 
-            List<IDatasetItem> currentWindow = _datasetState.Items;
-            List<IDatasetItem> combined = new(newItems.Count + currentWindow.Count);
+            List<DatasetItemDto> currentWindow = _datasetState.Items;
+            List<DatasetItemDto> combined = new(newItems.Count + currentWindow.Count);
             combined.AddRange(newItems);
             combined.AddRange(currentWindow);
 
@@ -345,7 +347,7 @@ public sealed class DatasetCacheService : IDisposable
         return page;
     }
 
-    private static Dataset MapDataset(DatasetDetailDto dto) => new()
+    private static DatasetStudio.Core.DomainModels.Datasets.Dataset MapDataset(DatasetDetailDto dto) => new()
     {
         Id = dto.Id.ToString(),
         Name = dto.Name,
@@ -356,10 +358,9 @@ public sealed class DatasetCacheService : IDisposable
         TotalItems = dto.TotalItems > int.MaxValue ? int.MaxValue : (int)dto.TotalItems
     };
 
-    private static List<IDatasetItem> MapItems(Guid datasetId, IReadOnlyList<DatasetItemDto> items)
+    private static List<DatasetItemDto> MapItems(Guid datasetId, IReadOnlyList<DatasetItemDto> items)
     {
-        string datasetIdString = datasetId.ToString();
-        List<IDatasetItem> mapped = new(items.Count);
+        List<DatasetItemDto> mapped = new(items.Count);
 
         foreach (DatasetItemDto item in items)
         {
@@ -369,25 +370,8 @@ public sealed class DatasetCacheService : IDisposable
                 continue;
             }
 
-            ImageItem imageItem = new()
-            {
-                Id = item.Id.ToString(),
-                DatasetId = datasetIdString,
-                Title = string.IsNullOrWhiteSpace(item.Title) ? item.ExternalId : item.Title,
-                Description = item.Description ?? string.Empty,
-                SourcePath = primaryImage,
-                ImageUrl = item.ImageUrl ?? primaryImage,
-                ThumbnailUrl = item.ThumbnailUrl ?? item.ImageUrl ?? primaryImage,
-                Width = item.Width,
-                Height = item.Height,
-                Tags = new List<string>(item.Tags),
-                IsFavorite = item.IsFavorite,
-                Metadata = new Dictionary<string, string>(item.Metadata),
-                CreatedAt = item.CreatedAt,
-                UpdatedAt = item.UpdatedAt
-            };
-
-            mapped.Add(imageItem);
+            // Items are already DatasetItemDto, just add them
+            mapped.Add(item);
         }
 
         return mapped;

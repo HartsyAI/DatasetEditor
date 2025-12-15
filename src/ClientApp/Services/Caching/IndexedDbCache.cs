@@ -1,6 +1,7 @@
 using DatasetStudio.ClientApp.Services.Interop;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
 using Microsoft.Extensions.Logging;
 
 namespace DatasetStudio.ClientApp.Services.Caching;

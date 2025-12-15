@@ -1,15 +1,17 @@
 @using DatasetStudio.Core.DomainModels
 @using DatasetStudio.Core.Abstractions
 @using DatasetStudio.Core.Utilities
+@using DatasetStudio.DTO.Datasets
+@using Microsoft.JSInterop
 @inject IJSRuntime JSRuntime
 @implements IAsyncDisposable
 
 <div class="image-grid-container" @ref="_scrollContainer">
     <div id="@_topSentinelId" class="top-sentinel"></div>
     <div class="image-grid columns-@_gridColumns">
-        @foreach (IDatasetItem item in _visibleItems)
+        @foreach (DatasetItemDto item in _visibleItems)
         {
-            <ImageCard Item="@((ImageItem)item)" 
+            <ImageCard Item="@item"
                       IsSelected="@IsItemSelected(item)"
                       OnClick="@(() => HandleItemClick(item))"
                       OnToggleSelect="@(() => HandleToggleSelection(item))"

@@ -2,8 +2,10 @@ using System.Text;
 using System.Text.Json;
 using System.IO.Compression;
 using DatasetStudio.APIBackend.Models;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.VisualBasic.FileIO;
 using Parquet;
@@ -110,7 +112,7 @@ internal sealed class NoOpDatasetIngestionService(
                     dataset.HuggingFaceSplit = request.Split ?? "train";
 
                     // Try to get row count for this specific config/split
-                    HuggingFaceDatasetSizeInfo? sizeInfo = await huggingFaceDatasetServerClient.GetDatasetSizeAsync(
+                    Integration.HuggingFaceDatasetSizeInfo? sizeInfo = await huggingFaceDatasetServerClient.GetDatasetSizeAsync(
                         request.Repository,
                         request.Config,
                         request.Split,
@@ -339,7 +341,8 @@ internal sealed class NoOpDatasetIngestionService(
 
         string dummyUpload = Path.Combine(Path.GetTempPath(), $"hf-images-{dataset.Id}.tmp");
         string datasetFolder = GetDatasetFolderPath(dataset, dummyUpload);
-        await WriteDatasetMetadataFileAsync(dataset, datasetFolder, null, new List<string>(), cancellationToken);
+        // TODO: Re-enable when DatasetDiskMetadata is implemented
+        // await WriteDatasetMetadataFileAsync(dataset, datasetFolder, null, new List<string>(), cancellationToken);
 
         Logs.Info($"[HF IMPORT] Final status: {dataset.Status}, TotalItems: {dataset.TotalItems}");
         Logs.Info("========== [HF IMPORT COMPLETE - IMAGE-ONLY] ==========");
@@ -665,7 +668,8 @@ internal sealed class NoOpDatasetIngestionService(
             Logs.Info($"[HF IMPORT] ✓ Dataset status updated to: {dataset.Status}");
 
             Logs.Info($"[HF IMPORT] Writing dataset metadata file...");
-            await WriteDatasetMetadataFileAsync(dataset, datasetFolder, null, new List<string>(), cancellationToken);
+            // TODO: Re-enable when DatasetDiskMetadata is implemented
+            // await WriteDatasetMetadataFileAsync(dataset, datasetFolder, null, new List<string>(), cancellationToken);
 
             Logs.Info($"[HF IMPORT] ========== IMPORT COMPLETE ==========");
             Logs.Info($"[HF IMPORT] Dataset ID: {dataset.Id}");
@@ -838,7 +842,8 @@ internal sealed class NoOpDatasetIngestionService(
             await datasetRepository.UpdateAsync(dataset, cancellationToken);
             Logs.Info($"Ingestion completed for dataset {datasetId} with {parsedItems.Count} items");
 
-            await WriteDatasetMetadataFileAsync(dataset, datasetFolder, primaryFileForMetadata, auxiliaryFilesForMetadata, cancellationToken);
+            // TODO: Re-enable when DatasetDiskMetadata is implemented
+            // await WriteDatasetMetadataFileAsync(dataset, datasetFolder, primaryFileForMetadata, auxiliaryFilesForMetadata, cancellationToken);
             
             // Cleanup extracted files
             if (tempExtractedPath != null && Directory.Exists(tempExtractedPath))
@@ -1408,6 +1413,8 @@ internal sealed class NoOpDatasetIngestionService(
         return sb.ToString();
     }
 
+    // TODO: Re-enable when DatasetDiskMetadata is implemented
+    /*
     private static async Task WriteDatasetMetadataFileAsync(
         DatasetEntity dataset,
         string datasetFolder,
@@ -1438,6 +1445,7 @@ internal sealed class NoOpDatasetIngestionService(
             Logs.Warning($"Failed to write dataset metadata file for {dataset.Id}: {ex.GetType().Name}: {ex.Message}");
         }
     }
+    */
 
     public async Task<Dictionary<string, Dictionary<string, string>>> LoadAuxiliaryMetadataAsync(IEnumerable<string> files, CancellationToken cancellationToken)
     {

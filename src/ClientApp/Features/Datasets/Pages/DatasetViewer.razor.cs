@@ -7,12 +7,14 @@ using MudBlazor;
 using DatasetStudio.ClientApp.Features.Datasets.Components;
 using DatasetStudio.ClientApp.Features.Datasets.Services;
 using DatasetStudio.ClientApp.Services.StateManagement;
+using DatasetStudio.ClientApp.Shared.Services;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.Core.Abstractions;
 using DatasetStudio.Core.DomainModels;
 using DatasetStudio.Core.BusinessLogic;
 using DatasetStudio.Core.Enumerations;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
 
 namespace DatasetStudio.ClientApp.Features.Datasets.Pages;
 
@@ -31,7 +33,7 @@ public partial class DatasetViewer : IDisposable
 
     public bool _isLoading = false;
     public string? _errorMessage = null;
-    public List<IDatasetItem> _filteredItems = new();
+    public List<DatasetItemDto> _filteredItems = new();
     public int _filteredCount = 0;
     private int _lastFilteredSourceCount = 0;
     public ViewMode _viewMode = ViewMode.Grid;
@@ -169,7 +171,9 @@ public partial class DatasetViewer : IDisposable
         {
             // Filters active: need to re-filter the new items
             Logs.Info("[APPLY FILTERS QUIET] Filters active, re-filtering items");
-            _filteredItems = _filterService.ApplyFilters(_datasetState.Items, _filterState.Criteria);
+            // TODO: Implement client-side filtering logic for DatasetItemDto
+            // FilterService.ApplyFilters requires IDatasetItem which DatasetItemDto doesn't implement
+            _filteredItems = _datasetState.Items; // Temporarily bypass filtering
         }
 
         _filteredCount = _filteredItems.Count;
@@ -196,7 +200,7 @@ public partial class DatasetViewer : IDisposable
 
     /// <summary>Handles item selection from the viewer.</summary>
     /// <param name="item">Selected dataset item.</param>
-    public Task HandleItemSelected(IDatasetItem item)
+    public Task HandleItemSelected(DatasetItemDto item)
     {
         _datasetState.SelectItem(item);
 

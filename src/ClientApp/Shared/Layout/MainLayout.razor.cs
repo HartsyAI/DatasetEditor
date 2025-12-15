@@ -2,8 +2,10 @@ using Microsoft.AspNetCore.Components;
 using MudBlazor;
 using DatasetStudio.ClientApp.Features.Datasets.Services;
 using DatasetStudio.ClientApp.Services.StateManagement;
+using DatasetStudio.ClientApp.Shared.Services;
 using DatasetStudio.Core.Enumerations;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
 
 namespace DatasetStudio.ClientApp.Shared.Layout;
 

@@ -228,8 +228,8 @@ public class DatasetStudioDbContext : DbContext
             if (entry.State == EntityState.Added)
             {
                 // Set CreatedAt for new entities
-                if (entry.Property("CreatedAt").CurrentValue == null ||
-                    (DateTime)entry.Property("CreatedAt").CurrentValue == default)
+                object? createdAtValue = entry.Property("CreatedAt").CurrentValue;
+                if (createdAtValue is not DateTime existingCreatedAt || existingCreatedAt == default)
                 {
                     entry.Property("CreatedAt").CurrentValue = DateTime.UtcNow;
                 }

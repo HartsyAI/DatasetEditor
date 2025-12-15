@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using MudBlazor.Services;
 using Blazored.LocalStorage;
 using DatasetStudio.ClientApp;
+using DatasetStudio.ClientApp.Configuration;
 using DatasetStudio.ClientApp.Services.ApiClients;
 using DatasetStudio.ClientApp.Services.Caching;
 using DatasetStudio.ClientApp.Services.Interop;
@@ -12,8 +13,9 @@ using DatasetStudio.ClientApp.Features.Datasets.Services;
 using DatasetStudio.Core.BusinessLogic;
 using DatasetStudio.Core.BusinessLogic.Layouts;
 using DatasetStudio.Core.BusinessLogic.Parsers;
-using DatasetStudio.Core.BusinessLogic.Modality;
+using DatasetStudio.Core.BusinessLogic.ModalityProviders;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
 using Microsoft.Extensions.Options;
 using System.Threading.Tasks;
 

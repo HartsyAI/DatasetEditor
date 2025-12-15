@@ -3,6 +3,8 @@ using DatasetStudio.ClientApp.Services.StateManagement;
 using DatasetStudio.Core.Abstractions;
 using DatasetStudio.Core.DomainModels;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
+using DatasetStudio.DTO.Datasets;
 using System.Threading.Tasks;
 
 namespace DatasetStudio.ClientApp.Features.Datasets.Components;
@@ -20,7 +22,7 @@ public partial class FilterPanel : IDisposable
     public int? _maxHeight = null;
     public DateTime? _dateFrom = null;
     public DateTime? _dateTo = null;
-    
+
     public List<string> _availableTags = [];
     public Dictionary<string, bool> _selectedTags = [];
 
@@ -43,7 +45,7 @@ public partial class FilterPanel : IDisposable
 
         // Extract unique tags from all items
         HashSet<string> tags = [];
-        foreach (IDatasetItem item in DatasetState.Items)
+        foreach (DatasetItemDto item in DatasetState.Items)
         {
             foreach (string tag in item.Tags)
             {

@@ -1,8 +1,6 @@
 @page "/my-datasets"
 @using DatasetStudio.DTO.Datasets
-@inject DatasetStudio.ClientApp.Services.ApiClients.DatasetApiClient DatasetApiClient
-@inject NavigationManager Navigation
-@inject ISnackbar Snackbar
+@using MudBlazor
 
 <PageTitle>My Datasets - DatasetStudio</PageTitle>
 
@@ -12,7 +10,8 @@
     <MudPaper Class="pa-4 mb-4" Elevation="1">
         <MudStack Spacing="2">
             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
-                <MudTextField @bind-Value="@_searchQuery"
+                <MudTextField T="string"
+                             @@@bind-Value="@_searchQuery"
                              Label="Search datasets"
                              Variant="Variant.Outlined"
                              Adornment="Adornment.Start"
@@ -45,7 +44,7 @@
                     <MudSelectItem T="DatasetSourceType?" Value="DatasetSourceType.ExternalS3Streaming">External S3 streaming</MudSelectItem>
                 </MudSelect>
 
-                <MudSwitch T="bool" @bind-Value="_onlyReady" Color="Color.Primary" Class="ml-2" DisableRipple="true">
+                <MudSwitch T="bool" @@@bind-Value="_onlyReady" Color="Color.Primary" Class="ml-2" DisableRipple="true">
                     <MudText Typo="Typo.caption">Only ready datasets</MudText>
                 </MudSwitch>
             </MudStack>

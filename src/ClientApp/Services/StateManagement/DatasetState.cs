@@ -1,6 +1,9 @@
 using DatasetStudio.Core.DomainModels;
+using DatasetStudio.Core.DomainModels.Datasets;
 using DatasetStudio.Core.Abstractions;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
+using DatasetStudio.DTO.Datasets;
 
 namespace DatasetStudio.ClientApp.Services.StateManagement;
 
@@ -11,13 +14,13 @@ public class DatasetState
     public Dataset? CurrentDataset { get; private set; }
     
     /// <summary>All items in the current dataset.</summary>
-    public List<IDatasetItem> Items { get; private set; } = new();
-    
+    public List<DatasetItemDto> Items { get; private set; } = new();
+
     /// <summary>The currently selected single item for detail view.</summary>
-    public IDatasetItem? SelectedItem { get; private set; }
-    
+    public DatasetItemDto? SelectedItem { get; private set; }
+
     /// <summary>Multiple selected items for bulk operations.</summary>
-    public List<IDatasetItem> SelectedItems { get; private set; } = new();
+    public List<DatasetItemDto> SelectedItems { get; private set; } = new();
     
     /// <summary>Indicates whether a dataset is currently being loaded.</summary>
     public bool IsLoading { get; private set; }
@@ -40,7 +43,7 @@ public class DatasetState
     /// <summary>Loads a new dataset and its items, replacing any existing dataset.</summary>
     /// <param name="dataset">Dataset metadata to load.</param>
     /// <param name="items">List of dataset items.</param>
-    public void LoadDataset(Dataset dataset, List<IDatasetItem> items)
+    public void LoadDataset(Dataset dataset, List<DatasetItemDto> items)
     {
         CurrentDataset = dataset;
         Items = items;
@@ -54,7 +57,7 @@ public class DatasetState
 
     /// <summary>Appends additional items to the current dataset (e.g., next API page).</summary>
     /// <param name="items">Items to append.</param>
-    public void AppendItems(IEnumerable<IDatasetItem> items)
+    public void AppendItems(IEnumerable<DatasetItemDto> items)
     {
         if (items == null)
         {
@@ -70,7 +73,7 @@ public class DatasetState
         }
     }
     
-    public void SetItemsWindow(List<IDatasetItem> items)
+    public void SetItemsWindow(List<DatasetItemDto> items)
     {
         if (items is null)
         {
@@ -110,7 +113,7 @@ public class DatasetState
     
     /// <summary>Selects a single item for detail view, replacing any previous selection.</summary>
     /// <param name="item">Item to select.</param>
-    public void SelectItem(IDatasetItem item)
+    public void SelectItem(DatasetItemDto item)
     {
         SelectedItem = item;
         NotifyStateChanged();
@@ -126,7 +129,7 @@ public class DatasetState
     
     /// <summary>Toggles an item in the multi-selection list.</summary>
     /// <param name="item">Item to toggle selection for.</param>
-    public void ToggleSelection(IDatasetItem item)
+    public void ToggleSelection(DatasetItemDto item)
     {
         if (SelectedItems.Contains(item))
         {
@@ -143,7 +146,7 @@ public class DatasetState
     
     /// <summary>Adds an item to the multi-selection list if not already selected.</summary>
     /// <param name="item">Item to add to selection.</param>
-    public void AddToSelection(IDatasetItem item)
+    public void AddToSelection(DatasetItemDto item)
     {
         if (!SelectedItems.Contains(item))
         {
@@ -155,7 +158,7 @@ public class DatasetState
     
     /// <summary>Removes an item from the multi-selection list.</summary>
     /// <param name="item">Item to remove from selection.</param>
-    public void RemoveFromSelection(IDatasetItem item)
+    public void RemoveFromSelection(DatasetItemDto item)
     {
         if (SelectedItems.Remove(item))
         {
@@ -175,7 +178,7 @@ public class DatasetState
     /// <summary>Selects all items in the current dataset.</summary>
     public void SelectAll()
     {
-        SelectedItems = new List<IDatasetItem>(Items);
+        SelectedItems = new List<DatasetItemDto>(Items);
         NotifyStateChanged();
         Logs.Info($"All {Items.Count} items selected");
     }
@@ -183,14 +186,14 @@ public class DatasetState
     /// <summary>Checks if a specific item is currently selected.</summary>
     /// <param name="item">Item to check.</param>
     /// <returns>True if item is in the selection list.</returns>
-    public bool IsSelected(IDatasetItem item)
+    public bool IsSelected(DatasetItemDto item)
     {
         return SelectedItems.Contains(item);
     }
     
     /// <summary>Updates an item in the dataset.</summary>
     /// <param name="item">Item to update.</param>
-    public void UpdateItem(IDatasetItem item)
+    public void UpdateItem(DatasetItemDto item)
     {
         int index = Items.FindIndex(i => i.Id == item.Id);
         if (index >= 0)

@@ -4,6 +4,8 @@ using DatasetStudio.ClientApp.Services.StateManagement;
 using DatasetStudio.Core.Abstractions;
 using DatasetStudio.Core.Enumerations;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
+using DatasetStudio.DTO.Datasets;
 
 namespace DatasetStudio.ClientApp.Features.Datasets.Components;
 
@@ -14,7 +16,7 @@ public partial class ViewerContainer : IDisposable
     [Inject] public ViewState ViewState { get; set; } = default!;
 
     /// <summary>Event callback when an item is selected.</summary>
-    [Parameter] public EventCallback<IDatasetItem> OnItemSelected { get; set; }
+    [Parameter] public EventCallback<DatasetItemDto> OnItemSelected { get; set; }
 
     /// <summary>Event callback when more items need to be loaded (for infinite scroll).</summary>
     [Parameter] public EventCallback OnLoadMore { get; set; }
@@ -45,8 +47,8 @@ public partial class ViewerContainer : IDisposable
         else if (DatasetState.Items.Count > 0)
         {
             // Infer modality from first item in DatasetState
-            IDatasetItem firstItem = DatasetState.Items[0];
-            _modality = firstItem.Modality;
+            // DatasetItemDto doesn't have Modality property, default to Image
+            _modality = Modality.Image;
             Logs.Info($"Modality inferred from items: {_modality}");
         }
         else

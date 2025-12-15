@@ -4,6 +4,8 @@ using DatasetStudio.ClientApp.Features.Datasets.Services;
 using DatasetStudio.ClientApp.Services.StateManagement;
 using DatasetStudio.Core.Abstractions;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
+using DatasetStudio.DTO.Datasets;
 
 namespace DatasetStudio.ClientApp.Features.Datasets.Components;
 
@@ -20,14 +22,14 @@ public partial class ImageGrid : IAsyncDisposable
     [Inject] public DatasetCacheService DatasetCache { get; set; } = default!;
 
     /// <summary>Event callback when an item is selected for detail view.</summary>
-    [Parameter] public EventCallback<IDatasetItem> OnItemSelected { get; set; }
+    [Parameter] public EventCallback<DatasetItemDto> OnItemSelected { get; set; }
 
     /// <summary>Event callback when more items need to be loaded from API.</summary>
     [Parameter] public EventCallback OnLoadMore { get; set; }
 
     public int _gridColumns = 4;
-    public List<IDatasetItem> _allItems = new(); // Reference to DatasetState.Items
-    public List<IDatasetItem> _visibleItems = new(); // Currently rendered items
+    public List<DatasetItemDto> _allItems = new(); // Reference to DatasetState.Items
+    public List<DatasetItemDto> _visibleItems = new(); // Currently rendered items
     public int _currentIndex = 0; // Current position in _allItems
     public bool _isLoadingMore = false;
     public bool _hasMore = true;
@@ -148,7 +150,7 @@ public partial class ImageGrid : IAsyncDisposable
     public void LoadNextBatch(int batchSize, bool triggerRender)
     {
         int itemsToAdd = Math.Min(batchSize, _allItems.Count - _currentIndex);
-        
+
         if (itemsToAdd <= 0)
         {
             _hasMore = false;
@@ -158,21 +160,21 @@ public partial class ImageGrid : IAsyncDisposable
         }
 
         // Add items from _allItems to _visibleItems
-        List<IDatasetItem> newItems = _allItems.GetRange(_currentIndex, itemsToAdd);
+        List<DatasetItemDto> newItems = _allItems.GetRange(_currentIndex, itemsToAdd);
         _visibleItems.AddRange(newItems);
         _currentIndex += itemsToAdd;
         _totalItemCount = _allItems.Count;
         UpdateHasMoreFlag();
 
         Logs.Info($"[ImageGrid] Loaded batch: {itemsToAdd} items. Visible: {_visibleItems.Count}/{_allItems.Count}. HasMore: {_hasMore}");
-        
+
         if (triggerRender) StateHasChanged();
     }
 
     /// <summary>Handles dataset state changes when items are added or filters applied.</summary>
     public void HandleDatasetStateChanged()
     {
-        List<IDatasetItem> previousItems = _allItems;
+        List<DatasetItemDto> previousItems = _allItems;
         _allItems = DatasetState.Items;
 
         // Check if this is a filter change (list reference changed) vs items appended (same reference)
@@ -218,21 +220,21 @@ public partial class ImageGrid : IAsyncDisposable
     }
 
     /// <summary>Handles click event on an image card.</summary>
-    public async Task HandleItemClick(IDatasetItem item)
+    public async Task HandleItemClick(DatasetItemDto item)
     {
         await OnItemSelected.InvokeAsync(item);
         Logs.Info($"[ImageGrid] Image clicked: {item.Id}");
     }
 
     /// <summary>Handles selection toggle for an item (checkbox click).</summary>
-    public void HandleToggleSelection(IDatasetItem item)
+    public void HandleToggleSelection(DatasetItemDto item)
     {
         DatasetState.ToggleSelection(item);
         StateHasChanged();
     }
 
     /// <summary>Checks if a specific item is currently selected.</summary>
-    public bool IsItemSelected(IDatasetItem item)
+    public bool IsItemSelected(DatasetItemDto item)
     {
         return DatasetState.IsSelected(item);
     }

@@ -2,6 +2,7 @@ using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.DTO.Items;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DatasetStudio.APIBackend.Endpoints;

@@ -6,7 +6,10 @@ using DatasetStudio.ClientApp.Features.Datasets.Components;
 using DatasetStudio.ClientApp.Features.Datasets.Services;
 using DatasetStudio.ClientApp.Services.StateManagement;
 using DatasetStudio.Core.DomainModels;
+using DatasetStudio.Core.DomainModels.Items;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.DTO.Items;
+using DatasetStudio.DTO.Datasets;
 
 namespace DatasetStudio.ClientApp.Features.Datasets.Components;
 
@@ -19,7 +22,7 @@ public partial class ImageDetailPanel
     [Inject] public ISnackbar Snackbar { get; set; } = default!;
     [Inject] public ImageUrlHelper ImageUrlHelper { get; set; } = default!;
 
-    [Parameter] public ImageItem? Item { get; set; }
+    [Parameter] public DatasetItemDto? Item { get; set; }
 
     private string ResolvedImageUrl => Item != null ? ImageUrlHelper.ResolveImageUrl(Item.ImageUrl) : string.Empty;
 

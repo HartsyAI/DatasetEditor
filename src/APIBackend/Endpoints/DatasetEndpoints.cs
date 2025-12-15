@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Primitives;
 using DatasetStudio.APIBackend.Extensions;
 using DatasetStudio.APIBackend.Models;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities;
 using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.APIBackend.Services.DatasetManagement.Dtos;
 using DatasetStudio.APIBackend.Services.Integration;
@@ -20,7 +21,7 @@ internal static class DatasetEndpoints
 
         group.MapPost("/huggingface/discover", DiscoverHuggingFaceDataset)
             .WithName("DiscoverHuggingFaceDataset")
-            .Produces<Integration.HuggingFaceDiscoveryResponse>()
+            .Produces<HuggingFaceDiscoveryResponse>()
             .Produces(StatusCodes.Status400BadRequest);
 
         group.MapGet("/", GetAllDatasets)
@@ -74,13 +75,13 @@ internal static class DatasetEndpoints
     {
         // Get paginated datasets
         IReadOnlyList<DatasetEntity> allDatasets = await datasetRepository.ListAsync(cancellationToken);
-        
+
         // Apply pagination
         List<DatasetEntity> pagedDatasets = allDatasets
             .Skip(page * pageSize)
             .Take(pageSize)
             .ToList();
-        
+
         // Map to DTOs
         List<DatasetSummaryDto> dtos = pagedDatasets.Select(d => new DatasetSummaryDto
         {
@@ -94,7 +95,7 @@ internal static class DatasetEndpoints
             Format = "CSV", // Default format
             Modality = "Image" // Default modality
         }).ToList();
-        
+
         return Results.Ok(new
         {
             datasets = dtos,
@@ -111,12 +112,12 @@ internal static class DatasetEndpoints
         CancellationToken cancellationToken)
     {
         DatasetEntity? dataset = await repository.GetAsync(datasetId, cancellationToken);
-        
+
         if (dataset is null)
         {
             return Results.NotFound();
         }
-        
+
         return Results.Ok(dataset.ToDetailDto());
     }
 
@@ -134,10 +135,10 @@ internal static class DatasetEndpoints
             Description = request.Description,
             Status = IngestionStatusDto.Pending,
         };
-        
+
         await repository.CreateAsync(entity, cancellationToken);
         await ingestionService.StartIngestionAsync(entity.Id, uploadLocation: null, cancellationToken);
-        
+
         return Results.Created($"/api/datasets/{entity.Id}", entity.ToDetailDto());
     }
 
@@ -169,41 +170,41 @@ internal static class DatasetEndpoints
         CancellationToken cancellationToken)
     {
         DatasetEntity? dataset = await repository.GetAsync(datasetId, cancellationToken);
-        
+
         if (dataset is null)
         {
             return Results.NotFound();
         }
-        
+
         if (file is null || file.Length == 0)
         {
             return Results.BadRequest("No file uploaded or file is empty.");
         }
-        
+
         string tempFilePath = Path.Combine(
             Path.GetTempPath(),
             $"dataset-{datasetId}-{Guid.NewGuid()}{Path.GetExtension(file.FileName)}");
-        
+
         await using (FileStream stream = File.Create(tempFilePath))
         {
             await file.CopyToAsync(stream, cancellationToken);
         }
-        
+
         dataset.SourceFileName = file.FileName;
         await repository.UpdateAsync(dataset, cancellationToken);
         await ingestionService.StartIngestionAsync(datasetId, tempFilePath, cancellationToken);
-        
+
         return Results.Accepted($"/api/datasets/{datasetId}", new { datasetId, fileName = file.FileName });
     }
 
-    /// <summary>Gets items for a dataset with pagination</summary>
+    /// <summary>Gets items for a dataset with pagination (supports both streaming and local)</summary>
     public static async Task<IResult> GetDatasetItems(
         Guid datasetId,
         int? pageSize,
         string? cursor,
         IDatasetRepository datasetRepository,
         IDatasetItemRepository itemRepository,
-        Integration.IHuggingFaceDatasetServerClient huggingFaceDatasetServerClient,
+        IHuggingFaceDatasetServerClient huggingFaceDatasetServerClient,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
@@ -215,6 +216,7 @@ internal static class DatasetEndpoints
 
         int size = pageSize.GetValueOrDefault(100);
 
+        // Handle HuggingFace streaming datasets
         if (dataset.SourceType == DatasetSourceType.HuggingFaceStreaming || dataset.IsStreaming)
         {
             string? repository = dataset.HuggingFaceRepository;
@@ -226,9 +228,10 @@ internal static class DatasetEndpoints
             string? config = dataset.HuggingFaceConfig;
             string? split = dataset.HuggingFaceSplit;
 
+            // Auto-discover config/split if not set
             if (string.IsNullOrWhiteSpace(split))
             {
-                Integration.HuggingFaceDatasetSizeInfo? sizeInfo = await huggingFaceDatasetServerClient.GetDatasetSizeAsync(
+                HuggingFaceDatasetSizeInfo? sizeInfo = await huggingFaceDatasetServerClient.GetDatasetSizeAsync(
                     repository,
                     config,
                     split,
@@ -254,20 +257,19 @@ internal static class DatasetEndpoints
                 }
             }
 
+            // Parse cursor as offset
             int offset = 0;
-            if (!string.IsNullOrWhiteSpace(cursor))
+            if (!string.IsNullOrWhiteSpace(cursor) && int.TryParse(cursor, out int parsedCursor) && parsedCursor >= 0)
             {
-                int parsedCursor;
-                if (int.TryParse(cursor, out parsedCursor) && parsedCursor >= 0)
-                {
-                    offset = parsedCursor;
-                }
+                offset = parsedCursor;
             }
 
+            // Get access token from header
             StringValues headerValues = httpContext.Request.Headers["X-HF-Access-Token"];
             string? accessToken = headerValues.Count > 0 ? headerValues[0] : null;
 
-            Integration.Integration.HuggingFaceRowsPage? page = await huggingFaceDatasetServerClient.GetRowsAsync(
+            // Fetch rows from HuggingFace datasets-server
+            HuggingFaceRowsPage? page = await huggingFaceDatasetServerClient.GetRowsAsync(
                 repository,
                 config,
                 split!,
@@ -278,18 +280,17 @@ internal static class DatasetEndpoints
 
             if (page == null)
             {
-                PageResponse<DatasetItemDto> emptyResponse = new PageResponse<DatasetItemDto>
+                return Results.Ok(new PageResponse<DatasetItemDto>
                 {
                     Items = Array.Empty<DatasetItemDto>(),
                     NextCursor = null,
                     TotalCount = 0
-                };
-
-                return Results.Ok(emptyResponse);
+                });
             }
 
+            // Map HuggingFace rows to DatasetItemDto
             List<DatasetItemDto> mappedItems = new List<DatasetItemDto>(page.Rows.Count);
-            foreach (Integration.HuggingFaceRow row in page.Rows)
+            foreach (HuggingFaceRow row in page.Rows)
             {
                 DatasetItemDto item = MapStreamingRowToDatasetItem(datasetId, row, repository, config, split);
                 mappedItems.Add(item);
@@ -303,16 +304,15 @@ internal static class DatasetEndpoints
                 nextCursor = nextOffset.ToString(System.Globalization.CultureInfo.InvariantCulture);
             }
 
-            PageResponse<DatasetItemDto> streamingResponse = new PageResponse<DatasetItemDto>
+            return Results.Ok(new PageResponse<DatasetItemDto>
             {
                 Items = mappedItems,
                 NextCursor = nextCursor,
                 TotalCount = totalRows
-            };
-
-            return Results.Ok(streamingResponse);
+            });
         }
 
+        // Handle local datasets (uploaded files)
         (IReadOnlyList<DatasetItemDto> items, string? repositoryNextCursor) = await itemRepository.GetPageAsync(
             datasetId,
             null,
@@ -320,17 +320,16 @@ internal static class DatasetEndpoints
             size,
             cancellationToken);
 
-        PageResponse<DatasetItemDto> response = new PageResponse<DatasetItemDto>
+        return Results.Ok(new PageResponse<DatasetItemDto>
         {
             Items = items,
             NextCursor = repositoryNextCursor,
             TotalCount = null
-        };
-
-        return Results.Ok(response);
+        });
     }
 
-    private static DatasetItemDto MapStreamingRowToDatasetItem(Guid datasetId, Integration.HuggingFaceRow row, string repository, string? config, string? split)
+    /// <summary>Maps a streaming HuggingFace row to DatasetItemDto</summary>
+    private static DatasetItemDto MapStreamingRowToDatasetItem(Guid datasetId, HuggingFaceRow row, string repository, string? config, string? split)
     {
         Dictionary<string, object?> values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
 
@@ -370,7 +369,7 @@ internal static class DatasetEndpoints
         string? tagsValue = GetFirstNonEmptyString(values, "tags", "labels");
         if (!string.IsNullOrWhiteSpace(tagsValue))
         {
-            string[] parts = tagsValue.Split(new string[] { ",", ";" }, StringSplitOptions.RemoveEmptyEntries);
+            string[] parts = tagsValue.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries);
             foreach (string part in parts)
             {
                 string trimmed = part.Trim();
@@ -405,10 +404,9 @@ internal static class DatasetEndpoints
 
         DateTime now = DateTime.UtcNow;
 
-        DatasetItemDto dto = new DatasetItemDto
+        return new DatasetItemDto
         {
             Id = Guid.NewGuid(),
-            DatasetId = datasetId,
             ExternalId = externalId,
             Title = string.IsNullOrWhiteSpace(title) ? externalId : title,
             Description = description,
@@ -422,10 +420,9 @@ internal static class DatasetEndpoints
             CreatedAt = now,
             UpdatedAt = now
         };
-
-        return dto;
     }
 
+    /// <summary>Converts JsonElement to object</summary>
     private static object? ConvertJsonElementToObject(System.Text.Json.JsonElement element)
     {
         switch (element.ValueKind)
@@ -433,26 +430,22 @@ internal static class DatasetEndpoints
             case System.Text.Json.JsonValueKind.String:
                 return element.GetString();
             case System.Text.Json.JsonValueKind.Object:
+                // Handle image objects with {src: "url"} format
                 if (element.TryGetProperty("src", out System.Text.Json.JsonElement srcProperty) &&
                     srcProperty.ValueKind == System.Text.Json.JsonValueKind.String)
                 {
                     return srcProperty.GetString();
                 }
-
                 return element.ToString();
             case System.Text.Json.JsonValueKind.Number:
-                long longValue;
-                if (element.TryGetInt64(out longValue))
+                if (element.TryGetInt64(out long longValue))
                 {
                     return longValue;
                 }
-
-                double doubleValue;
-                if (element.TryGetDouble(out doubleValue))
+                if (element.TryGetDouble(out double doubleValue))
                 {
                     return doubleValue;
                 }
-
                 return element.ToString();
             case System.Text.Json.JsonValueKind.True:
             case System.Text.Json.JsonValueKind.False:
@@ -465,12 +458,12 @@ internal static class DatasetEndpoints
         }
     }
 
+    /// <summary>Gets first non-empty string from dictionary</summary>
     private static string? GetFirstNonEmptyString(IReadOnlyDictionary<string, object?> values, params string[] keys)
     {
         foreach (string key in keys)
         {
-            object? value;
-            if (values.TryGetValue(key, out value) && value != null)
+            if (values.TryGetValue(key, out object? value) && value != null)
             {
                 string stringValue = value.ToString() ?? string.Empty;
                 if (!string.IsNullOrWhiteSpace(stringValue))
@@ -479,34 +472,31 @@ internal static class DatasetEndpoints
                 }
             }
         }
-
         return null;
     }
 
+    /// <summary>Gets int value from dictionary</summary>
     private static int GetIntValue(IReadOnlyDictionary<string, object?> values, params string[] keys)
     {
         foreach (string key in keys)
         {
-            object? value;
-            if (values.TryGetValue(key, out value) && value != null)
+            if (values.TryGetValue(key, out object? value) && value != null)
             {
-                int intValue;
-                if (value is int)
+                if (value is int intValue)
                 {
-                    intValue = (int)value;
                     return intValue;
                 }
 
-                if (int.TryParse(value.ToString(), out intValue))
+                if (int.TryParse(value.ToString(), out int parsed))
                 {
-                    return intValue;
+                    return parsed;
                 }
             }
         }
-
         return 0;
     }
 
+    /// <summary>Checks if string is likely an image URL</summary>
     private static bool IsLikelyImageUrl(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -635,6 +625,7 @@ internal static class DatasetEndpoints
         return Results.File(fileStream, contentType, enableRangeProcessing: true);
     }
 
+    /// <summary>Gets dataset folder path for file serving</summary>
     private static string GetDatasetFolderPathForFile(DatasetEntity dataset, string datasetRootPath)
     {
         string root = Path.GetFullPath(datasetRootPath);
@@ -648,6 +639,7 @@ internal static class DatasetEndpoints
         return datasetFolder;
     }
 
+    /// <summary>Converts a name to a URL-friendly slug</summary>
     private static string Slugify(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -691,8 +683,8 @@ internal static class DatasetEndpoints
 
     /// <summary>Discovers available configs, splits, and files for a HuggingFace dataset</summary>
     public static async Task<IResult> DiscoverHuggingFaceDataset(
-        [FromBody] Integration.HuggingFaceDiscoveryRequest request,
-        Integration.IHuggingFaceDiscoveryService discoveryService,
+        [FromBody] HuggingFaceDiscoveryRequest request,
+        IHuggingFaceDiscoveryService discoveryService,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(request.Repository))
@@ -700,11 +692,10 @@ internal static class DatasetEndpoints
             return Results.BadRequest(new { error = "Repository name is required" });
         }
 
-        Integration.HuggingFaceDiscoveryResponse response = await discoveryService.DiscoverDatasetAsync(
+        HuggingFaceDiscoveryResponse response = await discoveryService.DiscoverDatasetAsync(
             request,
             cancellationToken);
 
         return Results.Ok(response);
     }
 }
-

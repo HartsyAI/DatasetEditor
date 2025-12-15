@@ -1,3 +1,7 @@
+@using MudBlazor
+@using DatasetStudio.ClientApp.Features.Datasets.Services
+@using DatasetStudio.DTO.Datasets
+
 @* Full-screen lightbox overlay for high-resolution image preview with detailed metadata. *@
 <MudDialog MaxWidth="MaxWidth.ExtraLarge" FullWidth="true">
     <DialogContent>
@@ -179,12 +183,12 @@
     [Inject] public ImageUrlHelper ImageUrlHelper { get; set; } = default!;
 
     [Parameter] public string? ImageUrl { get; set; }
-    [Parameter] public ImageItem? Item { get; set; }
+    [Parameter] public DatasetItemDto? Item { get; set; }
 
     private string _imageUrl => ImageUrlHelper.ResolveImageUrl(ImageUrl ?? Item?.ImageUrl);
 
     private string DisplayTitle => string.IsNullOrWhiteSpace(Item?.Title)
-        ? (Item?.Id ?? "Image")
+        ? (Item?.Id.ToString() ?? "Image")
         : Item!.Title;
 
     private string PrimaryInfoLine => Item == null
@@ -198,7 +202,7 @@
 
     private string? AverageColorHex => GetMetadataValue("color_hex")
         ?? GetMetadataValue("average_color")
-        ?? Item?.AverageColor;
+        ?? (Item != null ? Item.AverageColor() : null);
 
     private readonly List<(string Key, string Value)> _highlightedMetadata = new();
     private readonly List<(string Key, string Value)> _additionalMetadata = new();
@@ -305,14 +309,14 @@
 
     private string? GetPhotographerLabel()
     {
-        string? photographer = Item?.Photographer;
+        string? photographer = Item?.Photographer();
         photographer ??= GetMetadataValue("photographer_name") ?? GetMetadataValue("photographer_username");
         return photographer is null ? null : $"By {photographer}";
     }
 
     private string? GetLocationLabel()
     {
-        string? location = Item?.Location ?? GetMetadataValue("photo_location_name") ?? GetMetadataValue("location");
+        string? location = (Item != null ? Item.Location() : null) ?? GetMetadataValue("photo_location_name") ?? GetMetadataValue("location");
         if (string.IsNullOrWhiteSpace(location))
         {
             return null;

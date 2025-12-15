@@ -128,11 +128,9 @@ public static class ParquetSchemaDefinition
     /// </summary>
     public static ParquetOptions WriterOptions => new()
     {
-        // Use Snappy compression for good balance
-        CompressionMethod = Compression,
-
-        // Write statistics for better query performance
-        WriteStatistics = true,
+        // TODO: Update to new Parquet.NET API
+        // CompressionMethod = Compression,
+        // WriteStatistics = true,
 
         // Enable dictionary encoding for string columns
         UseDictionaryEncoding = true

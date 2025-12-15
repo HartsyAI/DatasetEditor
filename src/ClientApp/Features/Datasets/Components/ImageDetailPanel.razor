@@ -1,5 +1,6 @@
 @using DatasetStudio.Core.DomainModels
 @using DatasetStudio.ClientApp.Services.StateManagement
+@using DatasetStudio.DTO.Datasets
 
 @if (Item != null)
 {
@@ -17,7 +18,7 @@
             <MudStack Spacing="1">
                 @if (_isEditingTitle)
                 {
-                    <MudTextField @bind-Value="_editTitle"
+                    <MudTextField T="string" @@@bind-Value="_editTitle"
                                  Label="Title"
                                  Variant="Variant.Outlined"
                                  Immediate="true"
@@ -41,7 +42,7 @@
                 <MudText Typo="Typo.subtitle2">Description</MudText>
                 @if (_isEditingDescription)
                 {
-                    <MudTextField @bind-Value="_editDescription"
+                    <MudTextField T="string" @@@bind-Value="_editDescription"
                                  Lines="3"
                                  Variant="Variant.Outlined"
                                  Immediate="true"
@@ -113,13 +114,13 @@
                         </tr>
                         <tr>
                             <td><strong>Format</strong></td>
-                            <td>@Item.Format</td>
+                            <td>@Item.Format()</td>
                         </tr>
-                        @if (!string.IsNullOrEmpty(Item.Photographer))
+                        @if (!string.IsNullOrEmpty(Item.Photographer()))
                         {
                             <tr>
                                 <td><strong>Photographer</strong></td>
-                                <td>@Item.Photographer</td>
+                                <td>@Item.Photographer()</td>
                             </tr>
                         }
                         <tr>
@@ -145,31 +146,31 @@
             </MudStack>
 
             @* Engagement Stats *@
-            @if (Item.Views > 0 || Item.Likes > 0 || Item.Downloads > 0)
+            @if (Item.Views() > 0 || Item.Likes() > 0 || Item.Downloads() > 0)
             {
                 <MudDivider />
                 <MudStack Spacing="2">
                     <MudText Typo="Typo.subtitle2">Engagement</MudText>
                     <div class="d-flex gap-4">
-                        @if (Item.Views > 0)
+                        @if (Item.Views() > 0)
                         {
                             <div class="d-flex align-center gap-1">
                                 <MudIcon Icon="@Icons.Material.Filled.Visibility" Size="Size.Small" />
-                                <MudText Typo="Typo.body2">@Item.Views.ToString("N0")</MudText>
+                                <MudText Typo="Typo.body2">@Item.Views().ToString("N0")</MudText>
                             </div>
                         }
-                        @if (Item.Likes > 0)
+                        @if (Item.Likes() > 0)
                         {
                             <div class="d-flex align-center gap-1">
                                 <MudIcon Icon="@Icons.Material.Filled.Favorite" Size="Size.Small" />
-                                <MudText Typo="Typo.body2">@Item.Likes.ToString("N0")</MudText>
+                                <MudText Typo="Typo.body2">@Item.Likes().ToString("N0")</MudText>
                             </div>
                         }
-                        @if (Item.Downloads > 0)
+                        @if (Item.Downloads() > 0)
                         {
                             <div class="d-flex align-center gap-1">
                                 <MudIcon Icon="@Icons.Material.Filled.Download" Size="Size.Small" />
-                                <MudText Typo="Typo.body2">@Item.Downloads.ToString("N0")</MudText>
+                                <MudText Typo="Typo.body2">@Item.Downloads().ToString("N0")</MudText>
                             </div>
                         }
                     </div>
@@ -177,13 +178,13 @@
             }
 
             @* Color Palette *@
-            @if (Item.DominantColors.Any())
+            @if (Item.DominantColors().Any())
             {
                 <MudDivider />
                 <MudStack Spacing="2">
                     <MudText Typo="Typo.subtitle2">Color Palette</MudText>
                     <div class="d-flex gap-2">
-                        @foreach (string color in Item.DominantColors.Take(8))
+                        @foreach (string color in Item.DominantColors().Take(8))
                         {
                             <div class="color-swatch" style="background-color: @color;" title="@color"></div>
                         }

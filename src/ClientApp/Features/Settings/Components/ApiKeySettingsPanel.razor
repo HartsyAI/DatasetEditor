@@ -1,5 +1,6 @@
 @using Blazored.LocalStorage
 @using DatasetStudio.ClientApp.Services.StateManagement
+@using Microsoft.AspNetCore.Components.Web
 
 <MudStack Spacing="3">
     <MudText Typo="Typo.subtitle1">API keys</MudText>
@@ -10,7 +11,7 @@
 
     <MudPaper Class="pa-3" Elevation="0">
         <MudText Typo="Typo.subtitle2">Hugging Face</MudText>
-        <MudTextField @bind-Value="_huggingFaceToken"
+        <MudTextField T="string" @@@bind-Value="_huggingFaceToken"
                       Label="Access token"
                       InputType="InputType.Password"
                       Adornment="Adornment.End"
@@ -20,7 +21,7 @@
 
     <MudPaper Class="pa-3 mt-2" Elevation="0">
         <MudText Typo="Typo.subtitle2">Hartsy</MudText>
-        <MudTextField @bind-Value="_hartsyApiKey"
+        <MudTextField T="string" @@@bind-Value="_hartsyApiKey"
                       Label="API key"
                       InputType="InputType.Password"
                       Adornment="Adornment.End"

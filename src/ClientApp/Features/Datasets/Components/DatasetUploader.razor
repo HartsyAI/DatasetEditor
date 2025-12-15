@@ -6,7 +6,7 @@
         <MudText Typo="Typo.h6">Upload Dataset</MudText>
 
         @* Tab Selection *@
-        <MudTabs Elevation="0" @bind-ActivePanelIndex="_activeTabIndex" ApplyEffectsToContainer="true">
+        <MudTabs Elevation="0" @@bind-ActivePanelIndex="_activeTabIndex" ApplyEffectsToContainer="true">
             <MudTabPanel Text="Upload Files" Icon="@Icons.Material.Filled.CloudUpload">
                 @* File Upload Content *@
                 <MudStack Spacing="3" Class="mt-4">
@@ -186,7 +186,7 @@
                         Import datasets directly from HuggingFace Hub. Supports CSV, TSV, JSON, and Parquet formats.
                     </MudAlert>
 
-                    <MudTextField @bind-Value="_hfRepository"
+                    <MudTextField T="string" @@@bind-Value="_hfRepository"
                                  Label="Repository"
                                  Placeholder="username/dataset-name"
                                  HelperText="Enter HuggingFace dataset repository (e.g., 'imdb', 'squad', 'username/my-dataset')"
@@ -194,32 +194,32 @@
                                  Immediate="true"
                                  Required="true" />
 
-                    <MudTextField @bind-Value="_hfDatasetName"
+                    <MudTextField T="string" @@@bind-Value="_hfDatasetName"
                                  Label="Dataset Name (Optional)"
                                  Placeholder="My Dataset"
                                  HelperText="Override the default dataset name"
                                  Variant="Variant.Outlined" />
 
-                    <MudTextField @bind-Value="_hfDescription"
+                    <MudTextField T="string" @@@bind-Value="_hfDescription"
                                  Label="Description (Optional)"
                                  Placeholder="Dataset description"
                                  Lines="3"
                                  Variant="Variant.Outlined" />
 
-                    <MudTextField @bind-Value="_hfRevision"
+                    <MudTextField T="string" @@@bind-Value="_hfRevision"
                                  Label="Revision (Optional)"
                                  Placeholder="main"
                                  HelperText="Branch, tag, or commit (defaults to 'main')"
                                  Variant="Variant.Outlined" />
 
-                    <MudTextField @bind-Value="_hfAccessToken"
+                    <MudTextField T="string" @@@bind-Value="_hfAccessToken"
                                  Label="Access Token (Optional)"
                                  Placeholder="hf_..."
                                  HelperText="Required for private datasets"
                                  Variant="Variant.Outlined"
                                  InputType="InputType.Password" />
 
-                    <MudSwitch @bind-Value="_hfIsStreaming"
+                    <MudSwitch T="bool" @@@bind-Value="_hfIsStreaming"
                               Label="Streaming Mode"
                               Color="Color.Primary">
                         <MudText Typo="Typo.caption" Class="mud-text-secondary">

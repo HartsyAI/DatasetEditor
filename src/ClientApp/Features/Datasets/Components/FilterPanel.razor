@@ -5,7 +5,7 @@
         <MudText Typo="Typo.h6">Filters</MudText>
         
         @* Search Bar *@
-        <MudTextField @bind-Value="@_searchQuery"
+        <MudTextField T="string" @@@bind-Value="@_searchQuery"
                      Label="Search"
                      Placeholder="Search images..."
                      Variant="Variant.Outlined"
@@ -62,7 +62,7 @@
             @* Dimensions Filter *@
             <MudExpansionPanel Text="Dimensions">
                 <MudStack Spacing="2">
-                    <MudTextField @bind-Value="@_minWidth"
+                    <MudTextField T="int?" @@@bind-Value="@_minWidth"
                                  Label="Min Width"
                                  Variant="Variant.Outlined"
                                  InputType="InputType.Number"
@@ -70,8 +70,8 @@
                                  AdornmentText="px"
                                  OnDebounceIntervalElapsed="@HandleDimensionsChanged"
                                  DebounceInterval="500" />
-                    
-                    <MudTextField @bind-Value="@_maxWidth"
+
+                    <MudTextField T="int?" @@@bind-Value="@_maxWidth"
                                  Label="Max Width"
                                  Variant="Variant.Outlined"
                                  InputType="InputType.Number"
@@ -79,8 +79,8 @@
                                  AdornmentText="px"
                                  OnDebounceIntervalElapsed="@HandleDimensionsChanged"
                                  DebounceInterval="500" />
-                    
-                    <MudTextField @bind-Value="@_minHeight"
+
+                    <MudTextField T="int?" @@@bind-Value="@_minHeight"
                                  Label="Min Height"
                                  Variant="Variant.Outlined"
                                  InputType="InputType.Number"
@@ -88,8 +88,8 @@
                                  AdornmentText="px"
                                  OnDebounceIntervalElapsed="@HandleDimensionsChanged"
                                  DebounceInterval="500" />
-                    
-                    <MudTextField @bind-Value="@_maxHeight"
+
+                    <MudTextField T="int?" @@@bind-Value="@_maxHeight"
                                  Label="Max Height"
                                  Variant="Variant.Outlined"
                                  InputType="InputType.Number"

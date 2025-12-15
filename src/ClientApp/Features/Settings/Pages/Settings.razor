@@ -1,4 +1,5 @@
 @page "/settings"
+@using DatasetStudio.Core.Enumerations
 
 @* High-level settings surface for theme, language, and view preferences. *@
 <MudContainer MaxWidth="MaxWidth.False" Class="pa-6">
@@ -15,6 +16,7 @@
                                    OnThemeChanged="@OnThemeChangedAsync" />
                 </MudPaper>
             </MudItem>
+            @* TODO: Uncomment when LanguageSelector is implemented
             <MudItem xs="12" md="4">
                 <MudPaper Class="pa-4 h-100" Elevation="1">
                     <LanguageSelector SelectedLanguage="@_language"
@@ -22,6 +24,7 @@
                                       OnLanguageChanged="@OnLanguageChangedAsync" />
                 </MudPaper>
             </MudItem>
+            *@
             <MudItem xs="12" md="4">
                 <MudPaper Class="pa-4 h-100" Elevation="1">
                     <ViewPreferences SelectedViewMode="@_viewMode"
@@ -49,19 +52,22 @@
     // TODO: Inject ViewState to hydrate defaults and dispatch updates to application state.
     // TODO: Persist settings via LocalStorageInterop once implemented.
 
-    private string _language = "en";
+    // TODO: Re-enable language support when LanguageSelector is implemented
+    // private string _language = "en";
     private ViewMode _viewMode = ViewMode.Grid;
     private int _gridColumns = 4;
     private bool _showMetadataOverlay = true;
 
-    private readonly IReadOnlyList<LanguageSelector.LanguageOption> _languages = new List<LanguageSelector.LanguageOption>
-    {
-        new("en", "English"),
-        new("es", "Español")
-    };
+    // TODO: Re-enable language support when LanguageSelector is implemented
+    // private readonly IReadOnlyList<LanguageSelector.LanguageOption> _languages = new List<LanguageSelector.LanguageOption>
+    // {
+    //     new("en", "English"),
+    //     new("es", "Español")
+    // };
 
     private Task OnThemeChangedAsync(bool _) => Task.CompletedTask;
-    private Task OnLanguageChangedAsync(string _) => Task.CompletedTask;
+    // TODO: Re-enable language support when LanguageSelector is implemented
+    // private Task OnLanguageChangedAsync(string _) => Task.CompletedTask;
     private Task OnViewModeChangedAsync(ViewMode _) => Task.CompletedTask;
     private Task OnGridColumnsChangedAsync(int _) => Task.CompletedTask;
     private Task OnShowMetadataOverlayChangedAsync(bool _) => Task.CompletedTask;

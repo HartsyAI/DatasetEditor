@@ -3,7 +3,12 @@ using Microsoft.AspNetCore.Components.Web;
 using DatasetStudio.ClientApp.Features.Datasets.Services;
 using DatasetStudio.ClientApp.Services.StateManagement;
 using DatasetStudio.Core.DomainModels;
+using DatasetStudio.Core.DomainModels.Items;
 using DatasetStudio.Core.Utilities;
+using DatasetStudio.Core.Utilities.Logging;
+using DatasetStudio.DTO.Items;
+using DatasetStudio.DTO.Datasets;
+using MudBlazor;
 
 namespace DatasetStudio.ClientApp.Features.Datasets.Components;
 
@@ -16,19 +21,19 @@ public partial class ImageCard
     [Inject] public ImageUrlHelper ImageUrlHelper { get; set; } = default!;
 
     /// <summary>The image item to display.</summary>
-    [Parameter] public ImageItem Item { get; set; } = default!;
+    [Parameter] public DatasetItemDto Item { get; set; } = default!;
 
     /// <summary>Indicates whether this item is currently selected.</summary>
     [Parameter] public bool IsSelected { get; set; }
 
     /// <summary>Event callback when the card is clicked.</summary>
-    [Parameter] public EventCallback<ImageItem> OnClick { get; set; }
+    [Parameter] public EventCallback<DatasetItemDto> OnClick { get; set; }
 
     /// <summary>Event callback when the selection checkbox is toggled.</summary>
-    [Parameter] public EventCallback<ImageItem> OnToggleSelect { get; set; }
+    [Parameter] public EventCallback<DatasetItemDto> OnToggleSelect { get; set; }
     
     /// <summary>Event callback when edit is clicked.</summary>
-    [Parameter] public EventCallback<ImageItem> OnEdit { get; set; }
+    [Parameter] public EventCallback<DatasetItemDto> OnEdit { get; set; }
 
     private bool _isHovered = false;
     private bool _imageLoaded = false;
@@ -101,7 +106,7 @@ public partial class ImageCard
     /// <summary>Toggles favorite status.</summary>
     public void HandleToggleFavorite()
     {
-        Item.IsFavorite = !Item.IsFavorite;
+        Item = Item with { IsFavorite = !Item.IsFavorite };
         DatasetState.UpdateItem(Item);
         StateHasChanged();
     }
