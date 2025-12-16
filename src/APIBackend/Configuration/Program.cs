@@ -5,8 +5,15 @@ using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Configuration;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
+
+// Ensure configuration also loads from the Configuration/appsettings*.json files
+// where connection strings and storage settings are defined.
+builder.Configuration
+    .AddJsonFile("Configuration/appsettings.json", optional: true, reloadOnChange: true)
+    .AddJsonFile("Configuration/appsettings.Development.json", optional: true, reloadOnChange: true);
 
 // Configure Kestrel to allow large file uploads (5GB)
 builder.WebHost.ConfigureKestrel(serverOptions =>

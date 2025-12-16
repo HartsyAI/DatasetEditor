@@ -89,6 +89,9 @@ public static class ServiceCollectionExtensions
         string uploadPath = configuration["Storage:UploadPath"] ?? "./uploads";
         string datasetRootPath = configuration["Storage:DatasetRootPath"] ?? "./data/datasets";
 
+        // TODO Phase 2: Consider adding an alternative pure-PostgreSQL implementation of
+        // IDatasetItemRepository in the future if Parquet-backed storage is not sufficient
+        // for specific workloads. For Phase 2, Parquet remains the primary item store.
         services.AddSingleton<IDatasetItemRepository>(serviceProvider =>
         {
             ILogger<ParquetItemRepository> logger = serviceProvider.GetRequiredService<ILogger<ParquetItemRepository>>();
