@@ -63,13 +63,13 @@ public static class ServiceCollectionExtensions
         // Repositories
         // ========================================
 
-        services.AddScoped<IDatasetRepository, DatasetRepository>();
+        services.AddScoped<Core.Abstractions.Repositories.IDatasetRepository, DatasetRepository>();
 
         // ========================================
         // Dataset Management Services
         // ========================================
 
-        services.AddSingleton<IDatasetIngestionService, NoOpDatasetIngestionService>();
+        services.AddScoped<IDatasetIngestionService, DatasetIngestionService>();
 
         // ========================================
         // HuggingFace Integration
@@ -89,14 +89,15 @@ public static class ServiceCollectionExtensions
         string uploadPath = configuration["Storage:UploadPath"] ?? "./uploads";
         string datasetRootPath = configuration["Storage:DatasetRootPath"] ?? "./data/datasets";
 
-        // TODO Phase 2: Consider adding an alternative pure-PostgreSQL implementation of
-        // IDatasetItemRepository in the future if Parquet-backed storage is not sufficient
-        // for specific workloads. For Phase 2, Parquet remains the primary item store.
-        services.AddSingleton<IDatasetItemRepository>(serviceProvider =>
+        // Register ParquetItemRepository as singleton (handles Parquet I/O)
+        services.AddSingleton(serviceProvider =>
         {
             ILogger<ParquetItemRepository> logger = serviceProvider.GetRequiredService<ILogger<ParquetItemRepository>>();
             return new ParquetItemRepository(parquetPath, logger);
         });
+
+        // Register ItemRepository as scoped adapter that wraps ParquetItemRepository
+        services.AddScoped<Core.Abstractions.Repositories.IDatasetItemRepository, ItemRepository>();
 
         Directory.CreateDirectory(parquetPath);
         Directory.CreateDirectory(blobPath);

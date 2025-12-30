@@ -1,4 +1,3 @@
-using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.Core.DomainModels;
 
@@ -11,7 +10,7 @@ public interface IDatasetItemRepository
     Task InsertItemsAsync(Guid datasetId, IEnumerable<DatasetItemDto> items, CancellationToken cancellationToken = default);
 
     /// <summary>Gets items for a dataset with pagination from Parquet</summary>
-    Task<PagedResult<DatasetItemDto>> GetItemsAsync(Guid datasetId, int offset, int limit, CancellationToken cancellationToken = default);
+    Task<DomainModels.PagedResult<DatasetItemDto>> GetItemsAsync(Guid datasetId, int offset, int limit, CancellationToken cancellationToken = default);
 
     /// <summary>Gets a single item by ID from Parquet</summary>
     Task<DatasetItemDto?> GetItemAsync(Guid datasetId, string itemId, CancellationToken cancellationToken = default);
@@ -29,11 +28,11 @@ public interface IDatasetItemRepository
     Task<long> GetItemCountAsync(Guid datasetId, CancellationToken cancellationToken = default);
 
     /// <summary>Searches items by title, description, or tags</summary>
-    Task<PagedResult<DatasetItemDto>> SearchItemsAsync(Guid datasetId, string query, int offset, int limit, CancellationToken cancellationToken = default);
+    Task<DomainModels.PagedResult<DatasetItemDto>> SearchItemsAsync(Guid datasetId, string query, int offset, int limit, CancellationToken cancellationToken = default);
 
     /// <summary>Gets items by tag</summary>
-    Task<PagedResult<DatasetItemDto>> GetItemsByTagAsync(Guid datasetId, string tag, int offset, int limit, CancellationToken cancellationToken = default);
+    Task<DomainModels.PagedResult<DatasetItemDto>> GetItemsByTagAsync(Guid datasetId, string tag, int offset, int limit, CancellationToken cancellationToken = default);
 
     /// <summary>Gets favorite items</summary>
-    Task<PagedResult<DatasetItemDto>> GetFavoriteItemsAsync(Guid datasetId, int offset, int limit, CancellationToken cancellationToken = default);
+    Task<DomainModels.PagedResult<DatasetItemDto>> GetFavoriteItemsAsync(Guid datasetId, int offset, int limit, CancellationToken cancellationToken = default);
 }
