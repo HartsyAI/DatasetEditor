@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Text.Json;
 using CsvHelper;
 using CsvHelper.Configuration;
+using DatasetStudio.APIBackend.Services.Integration;
 using DatasetStudio.Core.Utilities.Logging;
 using DatasetStudio.DTO.Datasets;
 using Microsoft.Extensions.Configuration;
@@ -11,24 +12,29 @@ namespace DatasetStudio.APIBackend.Services.DatasetManagement;
 
 /// <summary>
 /// Production-ready service for ingesting datasets from multiple file formats.
-/// Supports: CSV, TSV, JSON, JSONL, ZIP archives, and image folders.
+/// Supports: CSV, TSV, JSON, JSONL, ZIP archives, image folders, and HuggingFace.
 /// </summary>
 public class DatasetIngestionService : IDatasetIngestionService
 {
     private readonly Core.Abstractions.Repositories.IDatasetRepository _datasetRepository;
     private readonly Core.Abstractions.Repositories.IDatasetItemRepository _itemRepository;
+    private readonly IHuggingFaceClient _huggingFaceClient;
     private readonly IConfiguration _configuration;
     private readonly string _uploadPath;
+    private readonly string _datasetRootPath;
 
     public DatasetIngestionService(
         Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         Core.Abstractions.Repositories.IDatasetItemRepository itemRepository,
+        IHuggingFaceClient huggingFaceClient,
         IConfiguration configuration)
     {
         _datasetRepository = datasetRepository ?? throw new ArgumentNullException(nameof(datasetRepository));
         _itemRepository = itemRepository ?? throw new ArgumentNullException(nameof(itemRepository));
+        _huggingFaceClient = huggingFaceClient ?? throw new ArgumentNullException(nameof(huggingFaceClient));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _uploadPath = configuration["Storage:UploadPath"] ?? "./uploads";
+        _datasetRootPath = configuration["Storage:DatasetRootPath"] ?? "./data/datasets";
     }
 
     public async Task StartIngestionAsync(Guid datasetId, string? uploadLocation, CancellationToken cancellationToken = default)
@@ -46,9 +52,86 @@ public class DatasetIngestionService : IDatasetIngestionService
 
     public async Task ImportFromHuggingFaceAsync(Guid datasetId, ImportHuggingFaceDatasetRequest request, CancellationToken cancellationToken = default)
     {
-        // TODO: Implement HuggingFace import in next phase
-        await Task.CompletedTask;
-        throw new NotImplementedException("HuggingFace import will be implemented in Phase 3");
+        try
+        {
+            await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Processing, cancellationToken: cancellationToken);
+            Logs.Info($"[HF Import] Starting import for dataset {datasetId} from {request.Repository}");
+
+            // If streaming mode, just update metadata - no download needed
+            if (request.IsStreaming)
+            {
+                Logs.Info($"[HF Import] Streaming mode enabled for {request.Repository}");
+                // Dataset metadata is already saved by the endpoint
+                // Items will be fetched on-demand from HuggingFace Datasets Server API
+                await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Completed, cancellationToken: cancellationToken);
+                Logs.Info($"[HF Import] Streaming dataset configured successfully");
+                return;
+            }
+
+            // Non-streaming mode: Download and parse the dataset
+            Logs.Info($"[HF Import] Download mode - fetching dataset info");
+            var datasetInfo = await _huggingFaceClient.GetDatasetInfoAsync(
+                request.Repository,
+                request.Revision,
+                request.AccessToken,
+                cancellationToken);
+
+            if (datasetInfo == null)
+            {
+                throw new InvalidOperationException($"Dataset {request.Repository} not found on HuggingFace Hub");
+            }
+
+            // Determine which file to download
+            string? fileToDownload = request.DataFilePath;
+            if (string.IsNullOrEmpty(fileToDownload))
+            {
+                // Try to find a parquet or CSV file automatically
+                fileToDownload = datasetInfo.Files
+                    .FirstOrDefault(f => f.Path.EndsWith(".parquet", StringComparison.OrdinalIgnoreCase) ||
+                                        f.Path.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+                    ?.Path;
+
+                if (string.IsNullOrEmpty(fileToDownload))
+                {
+                    throw new InvalidOperationException($"No suitable data file found in {request.Repository}. Please specify DataFilePath.");
+                }
+            }
+
+            // Download the file
+            var downloadPath = Path.Combine(_uploadPath, $"hf_{datasetId}_{Path.GetFileName(fileToDownload)}");
+            Directory.CreateDirectory(_uploadPath);
+
+            Logs.Info($"[HF Import] Downloading {fileToDownload} to {downloadPath}");
+            await _huggingFaceClient.DownloadFileAsync(
+                request.Repository,
+                fileToDownload,
+                downloadPath,
+                request.Revision,
+                request.AccessToken,
+                cancellationToken);
+
+            // Parse the downloaded file
+            using var fileStream = File.OpenRead(downloadPath);
+            await IngestAsync(datasetId, fileStream, Path.GetFileName(fileToDownload), cancellationToken);
+
+            // Cleanup
+            try
+            {
+                File.Delete(downloadPath);
+            }
+            catch (Exception ex)
+            {
+                Logs.Warning($"[HF Import] Failed to cleanup download file {downloadPath}: {ex.Message}");
+            }
+
+            Logs.Info($"[HF Import] Successfully imported dataset from {request.Repository}");
+        }
+        catch (Exception ex)
+        {
+            Logs.Error($"[HF Import] Failed to import from HuggingFace: {ex.Message}");
+            await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Failed, ex.Message, cancellationToken);
+            throw;
+        }
     }
 
     private async Task IngestAsync(Guid datasetId, Stream fileStream, string fileName, CancellationToken cancellationToken = default)
