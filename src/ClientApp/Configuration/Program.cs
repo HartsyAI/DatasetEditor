@@ -6,6 +6,7 @@ using DatasetStudio.ClientApp;
 using DatasetStudio.ClientApp.Configuration;
 using DatasetStudio.ClientApp.Services.ApiClients;
 using DatasetStudio.ClientApp.Services.Caching;
+using DatasetStudio.ClientApp.Services.Extensions;
 using DatasetStudio.ClientApp.Services.Interop;
 using DatasetStudio.ClientApp.Services.StateManagement;
 using DatasetStudio.ClientApp.Shared.Services;
@@ -16,6 +17,7 @@ using DatasetStudio.Core.BusinessLogic.Parsers;
 using DatasetStudio.Core.BusinessLogic.ModalityProviders;
 using DatasetStudio.Core.Utilities;
 using DatasetStudio.Core.Utilities.Logging;
+using DatasetStudio.Extensions.SDK;
 using Microsoft.Extensions.Options;
 using System.Threading.Tasks;
 

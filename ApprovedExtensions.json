@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "lastUpdated": "2025-01-15T00:00:00Z",
+  "description": "Curated list of verified Dataset Studio extensions",
+  "extensions": [
+    {
+      "id": "CoreViewer",
+      "name": "Core Viewer",
+      "author": "Hartsy AI",
+      "description": "Essential dataset viewing with grid, list, and masonry layouts. Provides foundational viewing capabilities for all dataset types.",
+      "repositoryUrl": "https://github.com/hartsy-ai/ds-ext-coreviewer",
+      "category": "BuiltIn",
+      "verified": true,
+      "isOfficial": true,
+      "minCoreVersion": "1.0.0",
+      "latestVersion": "1.0.0",
+      "downloadCount": 0,
+      "rating": 5.0,
+      "tags": ["viewer", "grid", "list", "masonry", "official", "essential"],
+      "permissions": [
+        "datasets.read"
+      ],
+      "screenshots": [],
+      "documentation": "https://github.com/hartsy-ai/ds-ext-coreviewer/blob/main/README.md"
+    },
+    {
+      "id": "Creator",
+      "name": "Dataset Creator",
+      "author": "Hartsy AI",
+      "description": "Create datasets from multiple sources: CSV, TSV, JSON, JSONL, ZIP archives, folders, and HuggingFace. Supports both streaming and download modes for HuggingFace datasets.",
+      "repositoryUrl": "https://github.com/hartsy-ai/ds-ext-creator",
+      "category": "BuiltIn",
+      "verified": true,
+      "isOfficial": true,
+      "minCoreVersion": "1.0.0",
+      "latestVersion": "1.0.0",
+      "downloadCount": 0,
+      "rating": 5.0,
+      "tags": ["creator", "upload", "import", "huggingface", "official", "essential"],
+      "permissions": [
+        "datasets.write",
+        "filesystem.read",
+        "network.external"
+      ],
+      "screenshots": [],
+      "documentation": "https://github.com/hartsy-ai/ds-ext-creator/blob/main/README.md"
+    },
+    {
+      "id": "Editor",
+      "name": "Advanced Editor",
+      "author": "Hartsy AI",
+      "description": "Advanced dataset editing with bulk operations, batch tagging, metadata editor, and powerful search/filter capabilities. Perfect for dataset curation and refinement.",
+      "repositoryUrl": "https://github.com/hartsy-ai/ds-ext-editor",
+      "category": "BuiltIn",
+      "verified": true,
+      "isOfficial": true,
+      "minCoreVersion": "1.0.0",
+      "latestVersion": "1.0.0",
+      "downloadCount": 0,
+      "rating": 5.0,
+      "tags": ["editor", "bulk-edit", "curation", "official"],
+      "permissions": [
+        "datasets.read",
+        "datasets.write",
+        "items.edit",
+        "items.bulk_edit",
+        "items.delete"
+      ],
+      "screenshots": [],
+      "documentation": "https://github.com/hartsy-ai/ds-ext-editor/blob/main/README.md"
+    },
+    {
+      "id": "AITools",
+      "name": "AI Tools",
+      "author": "Hartsy AI",
+      "description": "AI-powered caption generation, image tagging, and quality scoring using BLIP, CLIP, and other vision models. Supports OpenAI and Anthropic API integration.",
+      "repositoryUrl": "https://github.com/hartsy-ai/ds-ext-aitools",
+      "category": "BuiltIn",
+      "verified": true,
+      "isOfficial": true,
+      "minCoreVersion": "1.0.0",
+      "latestVersion": "1.0.0",
+      "downloadCount": 0,
+      "rating": 5.0,
+      "tags": ["ai", "caption", "tagging", "machine-learning", "official"],
+      "permissions": [
+        "datasets.read",
+        "datasets.write",
+        "items.edit",
+        "network.external",
+        "ai.inference"
+      ],
+      "screenshots": [],
+      "documentation": "https://github.com/hartsy-ai/ds-ext-aitools/blob/main/README.md"
+    }
+  ],
+  "categories": [
+    {
+      "id": "BuiltIn",
+      "name": "Built-In",
+      "description": "Official extensions maintained by the Dataset Studio team"
+    },
+    {
+      "id": "Community",
+      "name": "Community",
+      "description": "Third-party extensions developed by the community"
+    },
+    {
+      "id": "Tools",
+      "name": "Tools",
+      "description": "Utility extensions for dataset manipulation and analysis"
+    },
+    {
+      "id": "Integrations",
+      "name": "Integrations",
+      "description": "Extensions that integrate with external services"
+    },
+    {
+      "id": "Visualization",
+      "name": "Visualization",
+      "description": "Extensions for advanced dataset visualization"
+    }
+  ],
+  "permissionDescriptions": {
+    "datasets.read": "View datasets and items",
+    "datasets.write": "Create and update datasets",
+    "datasets.delete": "Delete datasets",
+    "items.edit": "Edit individual items",
+    "items.bulk_edit": "Bulk edit multiple items",
+    "items.delete": "Delete items",
+    "filesystem.read": "Read files from local filesystem",
+    "filesystem.write": "Write files to local filesystem",
+    "network.external": "Make requests to external APIs",
+    "ai.inference": "Run AI model inference",
+    "extensions.manage": "Install and uninstall extensions",
+    "users.manage": "Manage users and permissions"
+  }
+}

@@ -2,8 +2,10 @@ using DatasetStudio.APIBackend.Endpoints;
 using DatasetStudio.APIBackend.Extensions;
 using DatasetStudio.APIBackend.Models;
 using DatasetStudio.APIBackend.Services.DatasetManagement;
+using DatasetStudio.APIBackend.Services.Extensions;
 using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
+using DatasetStudio.Extensions.SDK;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Configuration;
 
@@ -32,6 +34,33 @@ builder.Services.Configure<FormOptions>(options =>
 builder.Services.AddDatasetServices(builder.Configuration, builder.Environment);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Register extension registry as singleton
+builder.Services.AddSingleton<ApiExtensionRegistry>();
+
+// Discover extensions (before building the app)
+var extensionRegistry = new ApiExtensionRegistry(
+    builder.Services.BuildServiceProvider().GetRequiredService<ILogger<ApiExtensionRegistry>>(),
+    builder.Configuration,
+    builder.Services.BuildServiceProvider());
+
+var extensions = await extensionRegistry.DiscoverAndLoadAsync();
+
+// Configure services for each extension
+foreach (var extension in extensions)
+{
+    try
+    {
+        extension.ConfigureServices(builder.Services);
+    }
+    catch (Exception ex)
+    {
+        var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Failed to configure services for extension: {ExtensionId}",
+            extension.GetManifest().Metadata.Id);
+    }
+}
+
 string corsPolicyName = "DatasetEditorClient";
 string[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 builder.Services.AddCors(options =>
@@ -59,6 +88,50 @@ app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 app.UseRouting();
 app.UseCors(corsPolicyName);
+
+// Configure and initialize extensions
+var logger = app.Services.GetRequiredService<ILogger<Program>>();
+foreach (var extension in extensions)
+{
+    try
+    {
+        var extensionId = extension.GetManifest().Metadata.Id;
+        logger.LogInformation("Configuring extension: {ExtensionId}", extensionId);
+
+        // Configure app pipeline
+        extension.ConfigureApp(app);
+
+        // Create extension context
+        var context = new ExtensionContextBuilder()
+            .WithManifest(extension.GetManifest())
+            .WithServices(app.Services)
+            .WithConfiguration(builder.Configuration.GetSection($"Extensions:{extensionId}"))
+            .WithLogger(app.Services.GetRequiredService<ILoggerFactory>()
+                .CreateLogger($"Extension.{extensionId}"))
+            .WithEnvironment(ExtensionEnvironment.Api)
+            .WithExtensionDirectory(extensionRegistry.GetExtension(extensionId)?.Directory ?? "")
+            .Build();
+
+        // Initialize extension
+        await extension.InitializeAsync(context);
+
+        // Validate extension
+        var isValid = await extension.ValidateAsync();
+        if (!isValid)
+        {
+            logger.LogWarning("Extension validation failed: {ExtensionId}", extensionId);
+        }
+        else
+        {
+            logger.LogInformation("Extension ready: {ExtensionId}", extensionId);
+        }
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to initialize extension: {ExtensionId}",
+            extension.GetManifest().Metadata.Id);
+    }
+}
 
 // Map all endpoints
 app.MapDatasetEndpoints();
