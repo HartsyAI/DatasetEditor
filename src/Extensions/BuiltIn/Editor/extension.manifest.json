@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "metadata": {
+    "id": "Editor",
+    "name": "Dataset Editor",
+    "version": "1.0.0",
+    "description": "Edit dataset items and metadata"
+  },
+  "deploymentTarget": "Both"
+}

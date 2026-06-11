@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "metadata": {
+    "id": "CoreViewer",
+    "name": "Core Dataset Viewer",
+    "version": "1.0.0",
+    "description": "Basic dataset viewing capabilities including grid view, list view, and detail view",
+    "author": "Dataset Studio Team",
+    "license": "MIT",
+    "tags": ["viewer", "grid", "list", "core"],
+    "categories": ["Viewing"]
+  },
+  "deploymentTarget": "Both",
+  "dependencies": {},
+  "requiredPermissions": [
+    "datasets.read",
+    "items.read"
+  ]
+}

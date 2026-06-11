@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>DatasetStudio.Extensions.CoreViewer.Api</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Reference Extension SDK -->
+    <ProjectReference Include="../../../../Extensions/SDK/Extensions.SDK.csproj" />
+
+    <!-- Reference Core libraries -->
+    <ProjectReference Include="../../../../Core/Core.csproj" />
+    <ProjectReference Include="../../../../DTO/DTO.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- ASP.NET Core for API endpoints -->
+    <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.2.0" />
+  </ItemGroup>
+
+</Project>

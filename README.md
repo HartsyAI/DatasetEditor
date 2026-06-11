@@ -251,3 +251,342 @@ The detailed architecture, phased roadmap, and task checklist live in [docs/arch
 **Status**: API-first migration in progress  
 **Last Updated**: 2025
 
+
+
+
+DatasetStudio/
+├── Docs/
+│   ├── Installation/
+│   │   ├── QuickStart.md
+│   │   ├── SingleUserSetup.md
+│   │   └── MultiUserSetup.md
+│   ├── UserGuides/
+│   │   ├── ViewingDatasets.md
+│   │   ├── CreatingDatasets.md
+│   │   └── EditingDatasets.md
+│   ├── API/
+│   │   └── APIReference.md
+│   └── Development/
+│       ├── ExtensionDevelopment.md
+│       └── Contributing.md
+│
+├── Core/                                    # Shared domain logic
+│   ├── DomainModels/
+│   │   ├── Datasets/
+│   │   │   ├── Dataset.cs
+│   │   │   └── DatasetMetadata.cs
+│   │   ├── Items/
+│   │   │   ├── DatasetItem.cs
+│   │   │   ├── ImageItem.cs
+│   │   │   └── Caption.cs
+│   │   └── Users/
+│   │       ├── User.cs
+│   │       └── UserSettings.cs
+│   ├── Enumerations/
+│   │   ├── DatasetFormat.cs
+│   │   ├── Modality.cs
+│   │   ├── UserRole.cs
+│   │   └── ExtensionType.cs
+│   ├── Abstractions/
+│   │   ├── Parsers/
+│   │   │   └── IDatasetParser.cs
+│   │   ├── Storage/
+│   │   │   └── IStorageProvider.cs
+│   │   ├── Extensions/
+│   │   │   ├── IExtension.cs
+│   │   │   └── IExtensionRegistry.cs
+│   │   └── Repositories/
+│   │       └── IDatasetRepository.cs
+│   ├── BusinessLogic/
+│   │   ├── Parsers/
+│   │   │   ├── ParserRegistry.cs
+│   │   │   ├── UnsplashTsvParser.cs
+│   │   │   └── ParquetParser.cs
+│   │   ├── Storage/
+│   │   │   ├── LocalStorageProvider.cs
+│   │   │   └── S3StorageProvider.cs
+│   │   └── Extensions/
+│   │       ├── ExtensionRegistry.cs
+│   │       └── ExtensionLoader.cs
+│   ├── Utilities/
+│   │   ├── Logging/
+│   │   │   └── Logs.cs
+│   │   ├── Helpers/
+│   │   │   ├── ImageHelper.cs
+│   │   │   └── ParquetHelper.cs
+│   │   └── Encryption/
+│   │       └── ApiKeyEncryption.cs
+│   └── Constants/
+│       ├── DatasetFormats.cs
+│       └── Modalities.cs
+│
+├── Contracts/                               # DTOs shared between API & Client
+│   ├── Common/
+│   │   ├── PagedResponse.cs
+│   │   └── FilterRequest.cs
+│   ├── Datasets/
+│   │   ├── DatasetDto.cs
+│   │   └── CreateDatasetRequest.cs
+│   ├── Users/
+│   │   ├── UserDto.cs
+│   │   └── LoginRequest.cs
+│   └── Extensions/
+│       └── ExtensionInfoDto.cs
+│
+├── APIBackend/
+│   ├── Configuration/
+│   │   ├── Program.cs
+│   │   ├── appsettings.json
+│   │   └── appsettings.Development.json
+│   ├── Controllers/
+│   │   ├── DatasetsController.cs
+│   │   ├── ItemsController.cs
+│   │   ├── UsersController.cs
+│   │   └── ExtensionsController.cs
+│   ├── Services/
+│   │   ├── DatasetManagement/
+│   │   │   ├── DatasetService.cs
+│   │   │   └── IngestionService.cs
+│   │   ├── Authentication/
+│   │   │   ├── UserService.cs
+│   │   │   └── AuthService.cs
+│   │   └── Extensions/
+│   │       └── ExtensionLoaderService.cs
+│   ├── DataAccess/
+│   │   ├── PostgreSQL/
+│   │   │   ├── Repositories/
+│   │   │   │   ├── DatasetRepository.cs
+│   │   │   │   └── UserRepository.cs
+│   │   │   ├── DbContext.cs
+│   │   │   └── Migrations/
+│   │   └── Parquet/
+│   │       ├── ParquetItemRepository.cs
+│   │       └── ParquetWriter.cs
+│   ├── Middleware/
+│   │   ├── AuthenticationMiddleware.cs
+│   │   └── ErrorHandlingMiddleware.cs
+│   └── BackgroundWorkers/
+│       ├── IngestionWorker.cs
+│       └── ThumbnailGenerationWorker.cs
+│
+├── ClientApp/                               # Blazor WASM Frontend
+│   ├── Configuration/
+│   │   ├── Program.cs
+│   │   ├── App.razor
+│   │   └── _Imports.razor
+│   │
+│   ├── wwwroot/                             # ✅ Standard Blazor static files folder
+│   │   ├── index.html
+│   │   ├── Themes/
+│   │   │   ├── LightTheme.css
+│   │   │   ├── DarkTheme.css
+│   │   │   └── CustomTheme.css
+│   │   ├── css/
+│   │   │   └── app.css
+│   │   └── js/
+│   │       ├── Interop.js
+│   │       ├── IndexedDB.js
+│   │       ├── InfiniteScroll.js
+│   │       └── Installer.js
+│   │
+│   ├── Features/
+│   │   ├── Home/
+│   │   │   ├── Pages/
+│   │   │   │   └── Index.razor
+│   │   │   └── Components/
+│   │   │       └── WelcomeCard.razor
+│   │   │
+│   │   ├── Installation/
+│   │   │   ├── Pages/
+│   │   │   │   └── Install.razor
+│   │   │   ├── Components/
+│   │   │   │   ├── WelcomeStep.razor
+│   │   │   │   ├── DeploymentModeStep.razor
+│   │   │   │   ├── AdminAccountStep.razor
+│   │   │   │   ├── ExtensionSelectionStep.razor
+│   │   │   │   ├── StorageConfigStep.razor
+│   │   │   │   └── CompletionStep.razor
+│   │   │   └── Services/
+│   │   │       └── InstallationService.cs
+│   │   │
+│   │   ├── Datasets/
+│   │   │   ├── Pages/
+│   │   │   │   ├── DatasetLibrary.razor
+│   │   │   │   └── DatasetViewer.razor
+│   │   │   ├── Components/
+│   │   │   │   ├── DatasetCard.razor
+│   │   │   │   ├── DatasetUploader.razor
+│   │   │   │   ├── DatasetStats.razor
+│   │   │   │   ├── ImageGrid.razor
+│   │   │   │   ├── ImageCard.razor
+│   │   │   │   ├── ImageGallery.razor
+│   │   │   │   ├── ImageDetail.razor
+│   │   │   │   ├── InlineEditor.razor
+│   │   │   │   ├── FilterPanel.razor
+│   │   │   │   └── AdvancedSearch.razor
+│   │   │   └── Services/
+│   │   │       └── DatasetCacheService.cs
+│   │   │
+│   │   ├── Authentication/
+│   │   │   ├── Pages/
+│   │   │   │   └── Login.razor
+│   │   │   └── Components/
+│   │   │       ├── LoginForm.razor
+│   │   │       └── RegisterForm.razor
+│   │   │
+│   │   ├── Administration/
+│   │   │   ├── Pages/
+│   │   │   │   └── Admin.razor
+│   │   │   └── Components/
+│   │   │       ├── UserManagement.razor
+│   │   │       ├── ExtensionManager.razor
+│   │   │       ├── SystemSettings.razor
+│   │   │       └── Analytics.razor
+│   │   │
+│   │   └── Settings/
+│   │       ├── Pages/
+│   │       │   └── Settings.razor
+│   │       └── Components/
+│   │           ├── AppearanceSettings.razor
+│   │           ├── AccountSettings.razor
+│   │           └── PrivacySettings.razor
+│   │
+│   ├── Shared/                              # Components/layouts used across ALL features
+│   │   ├── Layout/
+│   │   │   ├── MainLayout.razor
+│   │   │   ├── NavMenu.razor
+│   │   │   └── AdminLayout.razor
+│   │   ├── Components/
+│   │   │   ├── LoadingSpinner.razor
+│   │   │   ├── EmptyState.razor
+│   │   │   ├── ErrorBoundary.razor
+│   │   │   ├── ConfirmDialog.razor
+│   │   │   └── Toast.razor
+│   │   └── Services/
+│   │       ├── NotificationService.cs
+│   │       └── ThemeService.cs
+│   │
+│   ├── Services/                            # Global app-wide services
+│   │   ├── StateManagement/
+│   │   │   ├── AppState.cs
+│   │   │   ├── UserState.cs
+│   │   │   └── ExtensionState.cs
+│   │   ├── ApiClients/
+│   │   │   ├── DatasetApiClient.cs
+│   │   │   ├── UserApiClient.cs
+│   │   │   ├── ExtensionApiClient.cs
+│   │   │   └── AIApiClient.cs
+│   │   ├── Caching/
+│   │   │   ├── IndexedDbCache.cs
+│   │   │   └── ThumbnailCache.cs
+│   │   └── Interop/
+│   │       ├── IndexedDbInterop.cs
+│   │       └── InstallerInterop.cs
+│   │
+│   └── ExtensionComponents/                 # UI components from loaded extensions
+│
+├── Extensions/
+│   ├── SDK/
+│   │   ├── BaseExtension.cs
+│   │   ├── ExtensionMetadata.cs
+│   │   ├── ExtensionManifest.cs
+│   │   └── DevelopmentGuide.md
+│   │
+│   ├── BuiltIn/
+│   │   ├── CoreViewer/
+│   │   │   ├── extension.manifest.json
+│   │   │   ├── CoreViewerExtension.cs
+│   │   │   ├── Components/
+│   │   │   ├── Services/
+│   │   │   └── Assets/
+│   │   │
+│   │   ├── Creator/
+│   │   │   ├── extension.manifest.json
+│   │   │   ├── CreatorExtension.cs
+│   │   │   ├── Components/
+│   │   │   │   ├── Upload/
+│   │   │   │   ├── Import/
+│   │   │   │   └── Configuration/
+│   │   │   ├── Services/
+│   │   │   │   ├── ZipExtractor.cs
+│   │   │   │   ├── RarExtractor.cs
+│   │   │   │   └── HuggingFaceImporter.cs
+│   │   │   └── Assets/
+│   │   │
+│   │   ├── Editor/
+│   │   │   ├── extension.manifest.json
+│   │   │   ├── EditorExtension.cs
+│   │   │   ├── Components/
+│   │   │   │   ├── Inline/
+│   │   │   │   ├── Bulk/
+│   │   │   │   ├── Captions/
+│   │   │   │   └── Metadata/
+│   │   │   ├── Services/
+│   │   │   │   ├── EditService.cs
+│   │   │   │   ├── BulkOperationService.cs
+│   │   │   │   └── CaptionService.cs
+│   │   │   └── Assets/
+│   │   │
+│   │   ├── AITools/
+│   │   │   ├── extension.manifest.json
+│   │   │   ├── AIToolsExtension.cs
+│   │   │   ├── Components/
+│   │   │   │   ├── Captioning/
+│   │   │   │   ├── ModelSelection/
+│   │   │   │   ├── Scoring/
+│   │   │   │   └── BatchProcessing/
+│   │   │   ├── Services/
+│   │   │   │   ├── Engines/
+│   │   │   │   │   ├── BlipEngine.cs
+│   │   │   │   │   ├── ClipEngine.cs
+│   │   │   │   │   ├── OpenAIEngine.cs
+│   │   │   │   │   ├── AnthropicEngine.cs
+│   │   │   │   │   └── LocalLLMEngine.cs
+│   │   │   │   ├── ScoringService.cs
+│   │   │   │   └── BatchProcessor.cs
+│   │   │   ├── Models/
+│   │   │   │   ├── Florence2/
+│   │   │   │   ├── ONNX/
+│   │   │   │   ├── CLIP/
+│   │   │   │   └── LocalLLM/
+│   │   │   └── Assets/
+│   │   │
+│   │   └── AdvancedTools/
+│   │       ├── extension.manifest.json
+│   │       ├── AdvancedToolsExtension.cs
+│   │       ├── Components/
+│   │       │   ├── Conversion/
+│   │       │   ├── Merging/
+│   │       │   ├── Deduplication/
+│   │       │   └── Analysis/
+│   │       ├── Services/
+│   │       │   ├── FormatConverter.cs
+│   │       │   ├── DatasetMerger.cs
+│   │       │   ├── Deduplicator.cs
+│   │       │   └── QualityAnalyzer.cs
+│   │       └── Assets/
+│   │
+│   └── UserExtensions/                      # Third-party extensions
+│       ├── README.md                        # How to add user extensions
+│       └── ExampleExtension/
+│           ├── extension.manifest.json
+│           ├── ExampleExtension.cs
+│           ├── Components/
+│           ├── Services/
+│           └── Assets/
+│
+├── Tests/
+│   ├── CoreTests/
+│   ├── APIBackendTests/
+│   ├── ClientAppTests/
+│   └── IntegrationTests/
+│
+├── Scripts/
+│   ├── Setup.sh
+│   ├── Setup.ps1
+│   └── MigrateDatabase.sh
+│
+├── README.md
+├── ARCHITECTURE.md
+├── LICENSE
+└── .gitignore

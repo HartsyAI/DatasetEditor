@@ -1,0 +1,222 @@
+{
+  "schemaVersion": 1,
+  "id": "advanced-tools",
+  "name": "Advanced Tools",
+  "version": "1.0.0",
+  "description": "Built-in extension providing advanced dataset operations including transformations, aggregations, complex queries, and performance optimization",
+  "author": {
+    "name": "Dataset Studio Team",
+    "email": "team@datasetstudio.dev"
+  },
+  "license": "MIT",
+  "homepage": "https://datasetstudio.dev",
+  "repository": "https://github.com/datasetstudio/advanced-tools",
+  "tags": [
+    "advanced",
+    "transformation",
+    "aggregation",
+    "query",
+    "optimization"
+  ],
+  "categories": [
+    "advanced",
+    "professional"
+  ],
+  "entryPoint": "DatasetStudio.Extensions.BuiltIn.AdvancedTools.AdvancedToolsExtension",
+  "capabilities": {
+    "data-transformation": {
+      "displayName": "Data Transformation",
+      "description": "Transform dataset using expressions, mappings, and complex operations",
+      "category": "advanced",
+      "parameters": [
+        "datasetId",
+        "transformationRules",
+        "sourceFields",
+        "targetFields"
+      ]
+    },
+    "aggregation-engine": {
+      "displayName": "Aggregation Engine",
+      "description": "Perform complex aggregations and grouping operations on datasets",
+      "category": "advanced",
+      "parameters": [
+        "datasetId",
+        "groupByFields",
+        "aggregationFunctions",
+        "havingClause"
+      ]
+    },
+    "query-builder": {
+      "displayName": "Query Builder",
+      "description": "Build complex queries with filtering, sorting, and projection",
+      "category": "advanced",
+      "parameters": [
+        "datasetId",
+        "whereExpression",
+        "orderByExpression",
+        "selectExpression"
+      ]
+    },
+    "data-deduplication": {
+      "displayName": "Data Deduplication",
+      "description": "Identify and remove duplicate records with various matching strategies",
+      "category": "advanced",
+      "parameters": [
+        "datasetId",
+        "matchingStrategy",
+        "similarity_threshold",
+        "keepMode"
+      ]
+    },
+    "data-merging": {
+      "displayName": "Data Merging",
+      "description": "Merge multiple datasets using various join operations",
+      "category": "advanced",
+      "parameters": [
+        "leftDatasetId",
+        "rightDatasetId",
+        "joinType",
+        "onCondition"
+      ]
+    },
+    "performance-tuning": {
+      "displayName": "Performance Tuning",
+      "description": "Analyze and optimize dataset storage and query performance",
+      "category": "advanced",
+      "parameters": [
+        "datasetId",
+        "analysisLevel"
+      ]
+    },
+    "data-profiling": {
+      "displayName": "Data Profiling",
+      "description": "Comprehensive analysis of data quality, patterns, and statistics",
+      "category": "advanced",
+      "parameters": [
+        "datasetId",
+        "profileDepth"
+      ]
+    },
+    "export-advanced": {
+      "displayName": "Advanced Export",
+      "description": "Export with advanced formatting, compression, and filtering options",
+      "category": "advanced",
+      "parameters": [
+        "datasetId",
+        "exportFormat",
+        "compression",
+        "customizations"
+      ]
+    }
+  },
+  "configuration": {
+    "schema": {
+      "type": "object",
+      "title": "Advanced Tools Configuration",
+      "properties": {
+        "enableQueryOptimization": {
+          "type": "boolean",
+          "title": "Enable Query Optimization",
+          "description": "Automatically optimize queries for better performance",
+          "default": true
+        },
+        "enableCaching": {
+          "type": "boolean",
+          "title": "Enable Result Caching",
+          "description": "Cache query results for faster repeated execution",
+          "default": true
+        },
+        "cacheTTL": {
+          "type": "integer",
+          "title": "Cache TTL (seconds)",
+          "description": "Time-to-live for cached results",
+          "default": 3600,
+          "minimum": 60,
+          "maximum": 86400
+        },
+        "maxTransformationSize": {
+          "type": "integer",
+          "title": "Max Transformation Size (MB)",
+          "description": "Maximum dataset size for transformation operations",
+          "default": 1024,
+          "minimum": 100,
+          "maximum": 10240
+        },
+        "enableParallelProcessing": {
+          "type": "boolean",
+          "title": "Enable Parallel Processing",
+          "description": "Use parallel processing for large operations",
+          "default": true
+        },
+        "maxThreads": {
+          "type": "integer",
+          "title": "Max Threads",
+          "description": "Maximum threads for parallel operations",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 128
+        },
+        "enableExpressionCompilation": {
+          "type": "boolean",
+          "title": "Enable Expression Compilation",
+          "description": "Compile transformation expressions for better performance",
+          "default": true
+        },
+        "deduplicationStrategy": {
+          "type": "string",
+          "title": "Default Deduplication Strategy",
+          "description": "Default strategy for duplicate detection",
+          "default": "exact",
+          "enum": [
+            "exact",
+            "fuzzy",
+            "semantic",
+            "custom"
+          ]
+        },
+        "profilingDepthDefault": {
+          "type": "string",
+          "title": "Default Profiling Depth",
+          "description": "Default depth level for data profiling",
+          "default": "medium",
+          "enum": [
+            "quick",
+            "medium",
+            "comprehensive"
+          ]
+        }
+      }
+    }
+  },
+  "requiredPermissions": [
+    "dataset.read",
+    "dataset.write",
+    "dataset.delete",
+    "storage.read",
+    "storage.write",
+    "query.execute"
+  ],
+  "dependencies": {
+    "core": ">=1.0.0"
+  },
+  "minimumCoreVersion": "1.0.0",
+  "maximumCoreVersion": null,
+  "activationEvents": [
+    "onCommand:advanced.transform",
+    "onCommand:advanced.aggregate",
+    "onCommand:advanced.query",
+    "onCommand:advanced.deduplicate",
+    "onCommand:advanced.merge",
+    "onCommand:advanced.tune",
+    "onCommand:advanced.profile",
+    "onCommand:advanced.export"
+  ],
+  "platforms": [
+    "Windows",
+    "Linux",
+    "macOS"
+  ],
+  "loadOrder": 5,
+  "isEnabled": true,
+  "_comment": "TODO: Phase 7 - Advanced Tools Extension\n\nPurpose: Provide advanced dataset operations for power users including transformations, aggregations, complex queries, deduplication, merging, and performance optimization.\n\nImplementation Plan:\n1. Implement AdvancedToolsExtension class\n2. Create DataTransformationEngine with expression evaluation\n3. Implement AggregationEngine for grouping and calculations\n4. Create QueryBuilder and executor for complex queries\n5. Implement DataDeduplicationEngine with multiple strategies\n6. Create DataMergingEngine with join operations\n7. Implement PerformanceTuner with analysis and recommendations\n8. Create DataProfilingEngine for comprehensive analysis\n9. Implement advanced export formats (Parquet, HDF5, etc.)\n10. Add expression compilation and caching\n11. Implement parallel processing for large datasets\n12. Add performance monitoring and logging\n\nDependencies:\n- BaseExtension (src/Extensions/SDK/BaseExtension.cs)\n- IDatasetService\n- IStorageService\n- INotificationService\n- ILoggingService\n- ICachingService\n- Expression evaluation library (System.Linq.Dynamic or similar)\n- Columnar data format libraries (Parquet, HDF5)\n- Performance monitoring utilities\n\nReferences:\n- See REFACTOR_PLAN.md Phase 7 for Advanced Tools implementation details\n- See src/Extensions/SDK/DevelopmentGuide.md for extension development instructions\n- See src/Core/BusinessLogic for existing transformation logic\n- See src/APIBackend/Services for service integration patterns\n\nPhases:\n- Phase 3: Extension system infrastructure\n- Phase 7: Basic transformations and aggregations\n- Phase 7: Query builder and complex operations\n- Phase 7: Deduplication and merging\n- Phase 7: Performance tuning and optimization\n- Phase 7: Comprehensive data profiling\n- Phase 7: Advanced export formats"
+}

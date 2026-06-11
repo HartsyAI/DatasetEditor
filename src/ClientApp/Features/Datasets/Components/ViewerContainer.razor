@@ -1,0 +1,45 @@
+@using DatasetStudio.Core.Abstractions
+@using DatasetStudio.Core.Enumerations
+@using DatasetStudio.Core.Utilities
+
+@* Dynamically render the appropriate viewer based on modality and view mode *@
+@if (_modality == Modality.Image)
+{
+    <ImageGrid OnItemSelected="@OnItemSelected"
+               OnLoadMore="@OnLoadMore" />
+}
+else if (_modality == Modality.Text)
+{
+    <TextGrid OnItemSelected="@OnItemSelected" />
+}
+else if (_modality == Modality.Video)
+{
+    <!-- TODO: Implement VideoViewer component -->
+    <MudAlert Severity="Severity.Info">
+        Video viewer coming soon!
+    </MudAlert>
+}
+else if (_modality == Modality.ThreeD)
+{
+    <!-- TODO: Implement ThreeDViewer component -->
+    <MudAlert Severity="Severity.Info">
+        3D viewer coming soon!
+    </MudAlert>
+}
+else if (_modality == Modality.Audio)
+{
+    <!-- TODO: Implement AudioViewer component -->
+    <MudAlert Severity="Severity.Info">
+        Audio viewer coming soon!
+    </MudAlert>
+}
+else
+{
+    <MudAlert Severity="Severity.Warning">
+        Unknown modality: @_modality
+    </MudAlert>
+}
+
+@code {
+    // TODO: Move to separate .razor.cs file following component pattern
+}

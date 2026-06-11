@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "metadata": {
+    "id": "AITools",
+    "name": "AI Tools Integration",
+    "version": "1.0.0",
+    "description": "AI-powered dataset tools"
+  },
+  "deploymentTarget": "Both"
+}
