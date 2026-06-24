@@ -11,7 +11,8 @@
     <div class="image-grid columns-@_gridColumns">
         @foreach (DatasetItemDto item in _visibleItems)
         {
-            <ImageCard Item="@item"
+            <ImageCard @key="item.Id"
+                      Item="@item"
                       IsSelected="@IsItemSelected(item)"
                       OnClick="@(() => HandleItemClick(item))"
                       OnToggleSelect="@(() => HandleToggleSelection(item))"
@@ -25,7 +26,7 @@
         {
             <MudProgressCircular Color="Color.Primary" Size="Size.Small" Indeterminate="true" />
             <MudText Typo="Typo.body2" Class="mud-text-secondary ml-3">
-                @_isLoadingMore ? "Loading more images..." : "Scroll to load more"
+                @(_isLoadingMore ? "Loading more images..." : "Scroll to load more")
             </MudText>
         }
         else

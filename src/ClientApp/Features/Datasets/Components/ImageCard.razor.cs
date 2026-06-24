@@ -71,12 +71,26 @@ public partial class ImageCard
             : Item.ThumbnailUrl;
 
         // Resolve to full URL (prepends API base address if relative)
-        _imageUrl = ImageUrlHelper.ResolveImageUrl(baseUrl);
-        _imageLoaded = true;
-        _imageError = false;
+        string resolvedUrl = ImageUrlHelper.ResolveImageUrl(baseUrl);
+
+        // Only reset the load state when the source actually changes, so unrelated
+        // parameter updates (selection, hover) don't re-trigger the skeleton.
+        if (resolvedUrl != _imageUrl)
+        {
+            _imageUrl = resolvedUrl;
+            _imageLoaded = false;
+            _imageError = false;
+        }
 
         // TODO: Add image transformation parameters (resize, quality) using ImageHelper
         // Example: _imageUrl = ImageHelper.AddResizeParams(_imageUrl, width: 400, height: 400);
+    }
+
+    /// <summary>Marks the image as fully loaded once the browser fires onload.</summary>
+    public void HandleImageLoaded()
+    {
+        _imageLoaded = true;
+        _imageError = false;
     }
 
     /// <summary>Handles mouse enter event.</summary>

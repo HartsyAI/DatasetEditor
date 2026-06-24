@@ -27,13 +27,21 @@
     
     @* Image *@
     <div class="image-container">
-        @if (_imageLoaded && !_imageError)
+        @if (!string.IsNullOrEmpty(_imageUrl) && !_imageError)
         {
-            <img src="@_imageUrl" 
+            <img src="@_imageUrl"
                  alt="@Item.Title"
                  loading="lazy"
+                 decoding="async"
+                 @onload="HandleImageLoaded"
                  @onerror="HandleImageError"
-                 class="card-image" />
+                 class="card-image @(_imageLoaded ? "loaded" : "loading")" />
+            @if (!_imageLoaded)
+            {
+                <div class="image-skeleton">
+                    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="100%" Width="100%" Animation="Animation.Wave" />
+                </div>
+            }
         }
         else if (_imageError)
         {
@@ -184,17 +192,33 @@
     }
     
     .image-container {
+        position: relative;
         width: 100%;
         aspect-ratio: 1 / 1;
         overflow: hidden;
         background: var(--mud-palette-background-grey);
     }
-    
+
     .card-image {
         width: 100%;
         height: 100%;
         object-fit: cover;
-        transition: transform 0.3s ease;
+        transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+
+    .card-image.loading {
+        opacity: 0;
+    }
+
+    .card-image.loaded {
+        opacity: 1;
+    }
+
+    .image-skeleton {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
     }
     
     .modern-image-card:hover .card-image {

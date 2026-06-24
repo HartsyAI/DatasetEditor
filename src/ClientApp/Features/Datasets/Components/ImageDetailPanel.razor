@@ -8,7 +8,11 @@
         <MudStack Spacing="3">
             @* Image Preview *@
             <div class="detail-image-container" @onclick="OpenLightboxAsync">
-                <img src="@ResolvedImageUrl" alt="@Item.Title" class="detail-image" />
+                <img src="@ResolvedImageUrl"
+                     alt="@Item.Title"
+                     loading="lazy"
+                     decoding="async"
+                     class="detail-image" />
                 <div class="detail-image-overlay">
                     <MudIcon Icon="@Icons.Material.Filled.OpenInFull" Size="Size.Small" />
                 </div>
