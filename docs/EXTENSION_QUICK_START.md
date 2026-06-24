@@ -495,7 +495,7 @@ Look for these log messages:
 
 ## Next Steps
 
-1. Review `PHASE_3.1_EXTENSION_LOADING_COMPLETE.md` for complete architecture
+1. Review `EXTENSION_ARCHITECTURE.md` for complete architecture
 2. Review `EXTENSION_ARCHITECTURE.md` for system diagrams
 3. Look at built-in extensions for examples:
    - CoreViewer: Basic dataset viewing
@@ -504,14 +504,18 @@ Look for these log messages:
 
 ## API Reference
 
-### IExtension Methods
+### IExtension Methods (Extensions.SDK — client-safe)
 - `GetManifest()` - Return extension manifest
 - `InitializeAsync(context)` - Initialize extension
 - `ConfigureServices(services)` - Register DI services
-- `ConfigureApp(app)` - Configure middleware (API only)
 - `ValidateAsync()` - Validate configuration
 - `GetHealthAsync()` - Return health status
 - `Dispose()` - Clean up resources
+
+### IApiExtension Methods (Extensions.SDK.Api — API only)
+- `ConfigureApp(app)` - Configure middleware / register endpoints. Lives on
+  `IApiExtension` (not `IExtension`) so the WASM client need not reference ASP.NET Core.
+  `BaseApiExtension` implements this for you.
 
 ### BaseApiExtension Helpers
 - `AddBackgroundService<T>(services)` - Register background worker

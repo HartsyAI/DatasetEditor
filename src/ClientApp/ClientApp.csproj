@@ -25,6 +25,8 @@
     <!-- Reference to Core and DTO libraries -->
     <ProjectReference Include="..\Core\Core.csproj" />
     <ProjectReference Include="..\DTO\DTO.csproj" />
+    <!-- Extension SDK (IExtension, ExtensionManifest) used by ClientExtensionRegistry -->
+    <ProjectReference Include="..\Extensions\SDK\Extensions.SDK.csproj" />
   </ItemGroup>
 
 </Project>

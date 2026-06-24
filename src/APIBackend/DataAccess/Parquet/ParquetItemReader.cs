@@ -163,6 +163,41 @@ public class ParquetItemReader
     }
 
     /// <summary>
+    /// Gets the shard indices that currently exist for a dataset, in order.
+    /// Used for shard-scoped updates so only affected shards are rewritten.
+    /// </summary>
+    public IReadOnlyList<int> GetShardIndices(Guid datasetId)
+    {
+        var files = GetShardFiles(datasetId);
+        var indices = new List<int>(files.Length);
+        foreach (var file in files)
+        {
+            if (ParquetSchemaDefinition.TryParseFileName(Path.GetFileName(file), out _, out var shardIndex))
+            {
+                indices.Add(shardIndex);
+            }
+        }
+        return indices;
+    }
+
+    /// <summary>
+    /// Reads every item from a single shard (used to rewrite that shard in place).
+    /// </summary>
+    public async Task<List<DatasetItemDto>> ReadShardAsync(
+        Guid datasetId,
+        int shardIndex,
+        CancellationToken cancellationToken = default)
+    {
+        var fileName = ParquetSchemaDefinition.GetShardFileName(datasetId, shardIndex);
+        var filePath = Path.Combine(_dataDirectory, fileName);
+        if (!File.Exists(filePath))
+        {
+            return new List<DatasetItemDto>();
+        }
+        return await ReadFromShardAsync(filePath, null, 0, int.MaxValue, cancellationToken);
+    }
+
+    /// <summary>
     /// Gets all shard files for a dataset, sorted by shard index.
     /// </summary>
     private string[] GetShardFiles(Guid datasetId)

@@ -8,8 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Reference Extension SDK -->
-    <ProjectReference Include="../../../../Extensions/SDK/Extensions.SDK.csproj" />
+    <!-- Reference API Extension SDK (brings in the WASM-safe SDK transitively) -->
+    <ProjectReference Include="../../../../Extensions/SDK.Api/Extensions.SDK.Api.csproj" />
 
     <!-- Reference Core libraries -->
     <ProjectReference Include="../../../../Core/Core.csproj" />

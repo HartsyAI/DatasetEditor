@@ -8,11 +8,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- ASP.NET Core for extension SDK -->
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
-
-    <!-- Blazor Components -->
+    <!-- WASM-safe abstractions only (no full ASP.NET shared framework) so the Blazor
+         WebAssembly client can reference this SDK. API-only hosting types live in
+         Extensions.SDK.Api. -->
     <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="8.0.*" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.*" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="8.0.*" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.*" />
   </ItemGroup>
 
 </Project>

@@ -315,7 +315,7 @@ public partial class DatasetUploader
         if (ex is HttpRequestException || ex.Message.Contains("TypeError: Failed to fetch", StringComparison.OrdinalIgnoreCase))
         {
             string baseAddress = DatasetApiOptions.Value.BaseAddress ?? "the configured Dataset API";
-            return $"Upload failed: cannot reach Dataset API at {baseAddress}. Ensure the API is running (dotnet watch run --project src/HartsysDatasetEditor.Api) and that CORS allows https://localhost:7221.";
+            return $"Upload failed: cannot reach Dataset API at {baseAddress}. Ensure the API is running (dotnet run --project src/APIBackend) and that CORS allows https://localhost:7221.";
         }
 
         return $"Upload failed: {ex.Message}";

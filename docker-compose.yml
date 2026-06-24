@@ -1,0 +1,30 @@
+# Local development database for DatasetStudio.
+# Matches ConnectionStrings:DatasetStudio in src/APIBackend/Configuration/appsettings.Development.json
+# (Host=localhost;Port=5432;Database=dataset_studio_dev;Username=postgres;Password=postgres).
+#
+# Usage:
+#   docker compose up -d        # start Postgres
+#   dotnet run --project src/APIBackend   # API auto-applies EF migrations on startup
+#   docker compose down         # stop (keeps data in the named volume)
+#   docker compose down -v      # stop and wipe data
+services:
+  postgres:
+    image: postgres:16
+    container_name: datasetstudio-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: dataset_studio_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - datasetstudio_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d dataset_studio_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  datasetstudio_pgdata:

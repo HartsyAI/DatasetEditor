@@ -46,4 +46,30 @@ public sealed class ImageUrlHelper
         string path = url.TrimStart('/');
         return $"{_apiBaseAddress}/{path}";
     }
+
+    /// <summary>
+    /// Requests a width-bounded variant for CDNs that support it (currently Unsplash),
+    /// so the grid renders small thumbnails instead of multi-megabyte originals.
+    /// Leaves unknown URLs untouched and never double-sizes an already-sized URL.
+    /// </summary>
+    /// <param name="url">Resolved image URL.</param>
+    /// <param name="width">Target width in pixels.</param>
+    public string WithWidth(string url, int width)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return url ?? string.Empty;
+        }
+
+        // Only rewrite CDNs known to honor width query params. Rewriting arbitrary
+        // (possibly signed) URLs could break them, so we stay conservative.
+        if (url.Contains("images.unsplash.com", StringComparison.OrdinalIgnoreCase)
+            && !url.Contains("w=", StringComparison.OrdinalIgnoreCase))
+        {
+            char separator = url.Contains('?') ? '&' : '?';
+            return $"{url}{separator}w={width}&q=80&fit=crop";
+        }
+
+        return url;
+    }
 }

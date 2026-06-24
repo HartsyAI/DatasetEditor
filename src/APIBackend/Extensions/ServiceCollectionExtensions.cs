@@ -71,6 +71,11 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IDatasetIngestionService, DatasetIngestionService>();
 
+        // Background ingestion: uploads enqueue a job and return immediately instead of
+        // blocking the request thread while a multi-GB file is parsed.
+        services.AddSingleton<IngestionQueue>();
+        services.AddHostedService<IngestionBackgroundService>();
+
         // ========================================
         // HuggingFace Integration
         // ========================================
@@ -96,7 +101,15 @@ public static class ServiceCollectionExtensions
             return new ParquetItemRepository(parquetPath, logger);
         });
 
+        // The dataset/item endpoints and ingestion service depend on the API-layer,
+        // cursor-based IDatasetItemRepository. Resolve it from the same Parquet singleton
+        // so they share its in-memory count cache and write lock. (Without this the item
+        // endpoints fail at runtime: the interface was never registered.)
+        services.AddSingleton<Services.DatasetManagement.IDatasetItemRepository>(
+            serviceProvider => serviceProvider.GetRequiredService<ParquetItemRepository>());
+
         // Register ItemRepository as scoped adapter that wraps ParquetItemRepository
+        // (Core abstraction used by non-endpoint callers).
         services.AddScoped<Core.Abstractions.Repositories.IDatasetItemRepository, ItemRepository>();
 
         Directory.CreateDirectory(parquetPath);

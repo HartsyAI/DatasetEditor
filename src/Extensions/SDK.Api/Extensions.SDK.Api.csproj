@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <!-- Same namespace as the core SDK so existing `using DatasetStudio.Extensions.SDK;` resolves these API-only types. -->
+    <RootNamespace>DatasetStudio.Extensions.SDK</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- API-only hosting types (IApplicationBuilder, endpoint routing) live here, NOT in the WASM-safe SDK. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SDK\Extensions.SDK.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -26,7 +26,7 @@
     }
     
     @* Image *@
-    <div class="image-container">
+    <div class="image-container" style="background-color:@PlaceholderColor">
         @if (!string.IsNullOrEmpty(_imageUrl) && !_imageError)
         {
             <img src="@_imageUrl"
@@ -60,7 +60,7 @@
     <div class="bottom-info">
         @if (_isEditingTitle)
         {
-            <MudTextField T="string" @@@bind-Value="_editTitle"
+            <MudTextField T="string" @bind-Value="_editTitle"
                           Variant="Variant.Outlined"
                           Dense="true"
                           Class="card-title-input"

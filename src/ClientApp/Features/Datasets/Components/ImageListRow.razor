@@ -1,0 +1,112 @@
+@using DatasetStudio.DTO.Datasets
+@using DatasetStudio.Core.Utilities
+
+@* A single list-view row. Rendered through VirtualizedItemView (Columns = 1) so the
+   list is virtualized just like the grid instead of materializing every item. *@
+<MudCard Class="@($"list-item {(IsSelected ? "selected" : string.Empty)}")" Elevation="1" @onclick="HandleClick">
+    <div class="list-item-content">
+        <div class="thumbnail-container">
+            <img src="@Item.ThumbnailUrl" alt="@Item.Title" loading="lazy" decoding="async" />
+        </div>
+
+        <div class="metadata-container">
+            <MudText Typo="Typo.h6">@Item.Title</MudText>
+            <MudText Typo="Typo.body2" Class="description">@Item.Description</MudText>
+
+            <MudStack Row="true" Spacing="2" Class="mt-2">
+                <MudChip T="string" Size="Size.Small">@Item.GetFormattedDimensions()</MudChip>
+                <MudChip T="string" Size="Size.Small">@Item.GetFormattedFileSize()</MudChip>
+                <MudChip T="string" Size="Size.Small">@Item.Format()</MudChip>
+            </MudStack>
+
+            @if (Item.Tags.Any())
+            {
+                <MudChipSet T="string" Class="mt-2">
+                    @foreach (string tag in Item.Tags.Take(5))
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default">@tag</MudChip>
+                    }
+                    @if (Item.Tags.Count > 5)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default">+@(Item.Tags.Count - 5) more</MudChip>
+                    }
+                </MudChipSet>
+            }
+        </div>
+
+        <div class="actions-container" @onclick:stopPropagation="true">
+            <MudIconButton Icon="@(Item.IsFavorite ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarBorder)"
+                           Color="@(Item.IsFavorite ? Color.Warning : Color.Default)"
+                           OnClick="HandleToggleSelect" />
+            <MudIconButton Icon="@Icons.Material.Outlined.Download" />
+            <MudIconButton Icon="@Icons.Material.Outlined.MoreVert" />
+        </div>
+    </div>
+</MudCard>
+
+<style>
+    .list-item {
+        cursor: pointer;
+        transition: box-shadow 0.2s ease;
+    }
+
+    .list-item.selected {
+        box-shadow: 0 0 0 2px var(--mud-palette-primary);
+    }
+
+    .list-item-content {
+        display: flex;
+        gap: 16px;
+        padding: 16px;
+        align-items: center;
+    }
+
+    .thumbnail-container {
+        width: 120px;
+        height: 120px;
+        flex-shrink: 0;
+    }
+
+    .thumbnail-container img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 4px;
+    }
+
+    .metadata-container {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .description {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .actions-container {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+</style>
+
+@code {
+    /// <summary>The item to render.</summary>
+    [Parameter] public DatasetItemDto Item { get; set; } = default!;
+
+    /// <summary>Whether this row is currently selected.</summary>
+    [Parameter] public bool IsSelected { get; set; }
+
+    /// <summary>Raised when the row is clicked.</summary>
+    [Parameter] public EventCallback<DatasetItemDto> OnClick { get; set; }
+
+    /// <summary>Raised when the favorite/select action is toggled.</summary>
+    [Parameter] public EventCallback<DatasetItemDto> OnToggleSelect { get; set; }
+
+    private Task HandleClick() => OnClick.InvokeAsync(Item);
+
+    private Task HandleToggleSelect() => OnToggleSelect.InvokeAsync(Item);
+}

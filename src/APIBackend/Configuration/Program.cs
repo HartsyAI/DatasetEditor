@@ -5,8 +5,10 @@ using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.APIBackend.Services.Extensions;
 using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL;
 using DatasetStudio.Extensions.SDK;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
@@ -55,8 +57,8 @@ foreach (var extension in extensions)
     }
     catch (Exception ex)
     {
-        var logger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "Failed to configure services for extension: {ExtensionId}",
+        var startupLogger = builder.Services.BuildServiceProvider().GetRequiredService<ILogger<Program>>();
+        startupLogger.LogError(ex, "Failed to configure services for extension: {ExtensionId}",
             extension.GetManifest().Metadata.Id);
     }
 }
@@ -79,6 +81,26 @@ builder.Services.AddCors(options =>
     });
 });
 WebApplication app = builder.Build();
+
+// Apply EF Core migrations on startup so the PostgreSQL schema exists. Requires the
+// database to be reachable (run `docker compose up -d` first).
+using (IServiceScope migrationScope = app.Services.CreateScope())
+{
+    ILogger<Program> startupLogger = migrationScope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    try
+    {
+        DatasetStudioDbContext db = migrationScope.ServiceProvider.GetRequiredService<DatasetStudioDbContext>();
+        db.Database.Migrate();
+        startupLogger.LogInformation("Database migrations applied successfully.");
+    }
+    catch (Exception ex)
+    {
+        startupLogger.LogError(ex,
+            "Failed to apply database migrations. Is PostgreSQL running? Try `docker compose up -d`.");
+        throw;
+    }
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -98,8 +120,11 @@ foreach (var extension in extensions)
         var extensionId = extension.GetManifest().Metadata.Id;
         logger.LogInformation("Configuring extension: {ExtensionId}", extensionId);
 
-        // Configure app pipeline
-        extension.ConfigureApp(app);
+        // Configure app pipeline (API-only hook; client extensions don't implement it)
+        if (extension is DatasetStudio.Extensions.SDK.IApiExtension apiExtension)
+        {
+            apiExtension.ConfigureApp(app);
+        }
 
         // Create extension context
         var context = new ExtensionContextBuilder()

@@ -298,6 +298,26 @@ public class ParquetItemWriter : IDisposable
         }
     }
 
+    /// <summary>
+    /// Deletes a single shard file (used for shard-scoped rewrites).
+    /// </summary>
+    public void DeleteShard(Guid datasetId, int shardIndex)
+    {
+        var fileName = ParquetSchemaDefinition.GetShardFileName(datasetId, shardIndex);
+        var filePath = Path.Combine(_dataDirectory, fileName);
+        try
+        {
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
+            }
+        }
+        catch (IOException)
+        {
+            // File might be in use, ignore
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)

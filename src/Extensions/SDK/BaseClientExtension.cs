@@ -28,7 +28,6 @@
 // Use Context.ApiClient to make HTTP calls to your extension's API endpoints.
 // The HttpClient is pre-configured with the API base URL from appsettings.
 
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -105,12 +104,8 @@ public abstract class BaseClientExtension : IExtension
         Logger?.LogDebug("Configuring services for {ExtensionId}", GetManifest().Metadata.Id);
     }
 
-    /// <inheritdoc/>
-    public virtual void ConfigureApp(IApplicationBuilder app)
-    {
-        // Not used in Blazor WASM (no middleware pipeline)
-        // Client extensions can leave this empty
-    }
+    // Client extensions have no ASP.NET middleware pipeline, so there is no
+    // ConfigureApp hook here (that lives on IApiExtension for API extensions).
 
     /// <summary>
     /// Registers Blazor components defined in the extension manifest.

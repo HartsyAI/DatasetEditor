@@ -315,20 +315,23 @@ public sealed class DatasetCacheService : IDisposable
             IReadOnlyList<DatasetItemDto>? cachedItems = await _indexedDbCache.TryLoadPageAsync(datasetId, cursor, cancellationToken).ConfigureAwait(false);
             if (cachedItems != null)
             {
-                // Cache hit - but we need to calculate the next cursor
-                // Cursor format is the starting index as a string (e.g., "100", "200")
-                int currentIndex = string.IsNullOrEmpty(cursor) ? 0 : int.Parse(cursor);
-                int nextIndex = currentIndex + cachedItems.Count;
-                
-                // We don't know the total count from cache alone, so assume there might be more
-                // The API will return null cursor when there's no more data
-                string? nextCursor = nextIndex.ToString();
-                
-                return new PageResponse<DatasetItemDto>
+                // We can only derive the next cursor arithmetically for the numeric
+                // (HuggingFace offset) scheme. Opaque cursors (e.g. Parquet "shard:row")
+                // can't be incremented here, so fall through to the API which returns
+                // the authoritative NextCursor. (Avoids int.Parse crashing on them.)
+                if (string.IsNullOrEmpty(cursor) || int.TryParse(cursor, out int currentIndex))
                 {
-                    Items = cachedItems,
-                    NextCursor = nextCursor
-                };
+                    int baseIndex = string.IsNullOrEmpty(cursor) ? 0 : int.Parse(cursor);
+                    int nextIndex = baseIndex + cachedItems.Count;
+
+                    // We don't know the total count from cache alone, so assume there
+                    // might be more; the API returns a null cursor when there's no more.
+                    return new PageResponse<DatasetItemDto>
+                    {
+                        Items = cachedItems,
+                        NextCursor = nextIndex.ToString()
+                    };
+                }
             }
         }
 

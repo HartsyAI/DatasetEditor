@@ -1,0 +1,50 @@
+@using DatasetStudio.DTO.Datasets
+@using Microsoft.AspNetCore.Components.Web.Virtualization
+@using Microsoft.JSInterop
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@* Reusable row-virtualized renderer. Each virtualized item is one row of N items,
+   so Blazor's <Virtualize> (which needs a fixed item height) can drive a responsive
+   N-column grid while keeping only a few screenfuls of cards in the DOM. *@
+<div class="viv-container" @ref="_container">
+    @if (Items.Count == 0)
+    {
+        @EmptyContent
+    }
+    else
+    {
+        <Virtualize TItem="int" Items="_rowIndices" ItemSize="_rowHeight" OverscanCount="OverscanRows" Context="rowIndex">
+            <div class="viv-row" style="grid-template-columns:repeat(@ColumnCount,minmax(0,1fr));">
+                @foreach (DatasetItemDto item in RowItems(rowIndex))
+                {
+                    <div class="viv-cell" @key="item.Id">
+                        @ItemTemplate(item)
+                    </div>
+                }
+            </div>
+            @{ MaybePrefetch(rowIndex); }
+        </Virtualize>
+    }
+</div>
+
+<style>
+    .viv-container {
+        width: 100%;
+        height: 100%;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    .viv-row {
+        display: grid;
+        gap: 16px;
+        padding: 0 16px 16px 16px;
+        align-content: start;
+        box-sizing: border-box;
+    }
+
+    .viv-cell {
+        min-width: 0;
+    }
+</style>

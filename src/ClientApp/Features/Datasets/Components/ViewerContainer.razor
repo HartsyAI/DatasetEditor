@@ -1,12 +1,43 @@
 @using DatasetStudio.Core.Abstractions
 @using DatasetStudio.Core.Enumerations
 @using DatasetStudio.Core.Utilities
+@using DatasetStudio.DTO.Datasets
 
-@* Dynamically render the appropriate viewer based on modality and view mode *@
+@* Dynamically render the appropriate viewer based on modality and view mode.
+   Image grid and list are both virtualized through VirtualizedItemView. *@
 @if (_modality == Modality.Image)
 {
-    <ImageGrid OnItemSelected="@OnItemSelected"
-               OnLoadMore="@OnLoadMore" />
+    <VirtualizedItemView Items="DatasetState.Items"
+                         Columns="@CurrentColumns"
+                         FixedRowHeight="@(_viewMode == ViewMode.List ? ListRowHeight : (double?)null)"
+                         OnNearEnd="OnLoadMore">
+        <ItemTemplate>
+            @if (_viewMode == ViewMode.List)
+            {
+                <ImageListRow Item="context"
+                              IsSelected="@IsItemSelected(context)"
+                              OnClick="@(item => HandleItemClick(item))"
+                              OnToggleSelect="@(item => HandleToggleSelection(item))" />
+            }
+            else
+            {
+                <ImageCard Item="context"
+                           IsSelected="@IsItemSelected(context)"
+                           OnClick="@(item => HandleItemClick(item))"
+                           OnToggleSelect="@(item => HandleToggleSelection(item))"
+                           OnEdit="@(item => HandleItemClick(item))" />
+            }
+        </ItemTemplate>
+        <EmptyContent>
+            <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Class="pa-8">
+                <MudIcon Icon="@Icons.Material.Filled.ImageNotSupported" Size="Size.Large" Color="Color.Secondary" />
+                <MudText Typo="Typo.h6" Class="mud-text-secondary">No images to display</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    Try adjusting your filters or upload a dataset
+                </MudText>
+            </MudStack>
+        </EmptyContent>
+    </VirtualizedItemView>
 }
 else if (_modality == Modality.Text)
 {
@@ -38,8 +69,4 @@ else
     <MudAlert Severity="Severity.Warning">
         Unknown modality: @_modality
     </MudAlert>
-}
-
-@code {
-    // TODO: Move to separate .razor.cs file following component pattern
 }

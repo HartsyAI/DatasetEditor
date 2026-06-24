@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
@@ -15,9 +16,14 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
     private readonly ParquetItemWriter _writer;
     private readonly ILogger<ParquetItemRepository> _logger;
     private readonly string _dataDirectory;
-    private readonly SemaphoreSlim _writeLock = new(1, 1);
-    private readonly Dictionary<Guid, long> _datasetItemCounts = new();
+    // Per-dataset write locks so ingesting/updating one dataset never blocks another.
+    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _datasetLocks = new();
+    private readonly ConcurrentDictionary<Guid, long> _datasetItemCounts = new();
     private bool _disposed;
+
+    /// <summary>Gets (or creates) the write lock for a single dataset.</summary>
+    private SemaphoreSlim GetDatasetLock(Guid datasetId)
+        => _datasetLocks.GetOrAdd(datasetId, _ => new SemaphoreSlim(1, 1));
 
     /// <summary>
     /// Initializes a new instance of the ParquetItemRepository.
@@ -51,7 +57,8 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
         if (itemList.Count == 0)
             return;
 
-        await _writeLock.WaitAsync(cancellationToken);
+        var datasetLock = GetDatasetLock(datasetId);
+        await datasetLock.WaitAsync(cancellationToken);
         try
         {
             // Get current count to determine starting index
@@ -87,7 +94,7 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
         }
         finally
         {
-            _writeLock.Release();
+            datasetLock.Release();
         }
     }
 
@@ -186,55 +193,59 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
         if (itemList.Count == 0)
             return;
 
-        await _writeLock.WaitAsync(cancellationToken);
-        try
+        // Update each dataset under its own lock, rewriting ONLY the shards that
+        // actually contain an updated item (instead of reading + rewriting the whole
+        // dataset). For a single-shard dataset this touches one shard; for a sharded
+        // multi-million-row dataset it leaves untouched shards alone.
+        foreach (var datasetGroup in itemList.GroupBy(i => i.DatasetId))
         {
-            // Group items by dataset
-            var itemsByDataset = itemList.GroupBy(i => i.DatasetId);
+            var datasetId = datasetGroup.Key;
+            var updateLookup = datasetGroup.ToDictionary(i => i.Id);
 
-            foreach (var datasetGroup in itemsByDataset)
+            var datasetLock = GetDatasetLock(datasetId);
+            await datasetLock.WaitAsync(cancellationToken);
+            try
             {
-                var datasetId = datasetGroup.Key;
-                var datasetItems = datasetGroup.ToList();
+                int rewrittenShards = 0;
 
-                _logger.LogInformation(
-                    "Updating {Count} items in dataset {DatasetId}",
-                    datasetItems.Count, datasetId);
-
-                // Read all items from the dataset
-                var allItems = await _reader.ReadAllAsync(datasetId, cancellationToken);
-
-                // Create a lookup for updates
-                var updateLookup = datasetItems.ToDictionary(i => i.Id);
-
-                // Apply updates
-                for (int i = 0; i < allItems.Count; i++)
+                foreach (var shardIndex in _reader.GetShardIndices(datasetId))
                 {
-                    if (updateLookup.TryGetValue(allItems[i].Id, out var updatedItem))
+                    var shardItems = await _reader.ReadShardAsync(datasetId, shardIndex, cancellationToken);
+
+                    bool shardChanged = false;
+                    for (int i = 0; i < shardItems.Count; i++)
                     {
-                        allItems[i] = updatedItem with { UpdatedAt = DateTime.UtcNow };
+                        if (updateLookup.TryGetValue(shardItems[i].Id, out var updatedItem))
+                        {
+                            shardItems[i] = updatedItem with { UpdatedAt = DateTime.UtcNow };
+                            shardChanged = true;
+                        }
+                    }
+
+                    if (shardChanged)
+                    {
+                        _writer.DeleteShard(datasetId, shardIndex);
+                        // Re-anchor to the same shard: every item index stays < ItemsPerShard,
+                        // so the whole list is written back into this shard only.
+                        long shardStartIndex = (long)shardIndex * ParquetSchemaDefinition.ItemsPerShard;
+                        await _writer.WriteBatchAsync(datasetId, shardItems, shardStartIndex, cancellationToken);
+                        rewrittenShards++;
                     }
                 }
 
-                // Delete old shards
-                _writer.DeleteDatasetShards(datasetId);
-
-                // Write updated data
-                await _writer.WriteBatchAsync(datasetId, allItems, 0, cancellationToken);
-
                 _logger.LogInformation(
-                    "Successfully updated {Count} items in dataset {DatasetId}",
-                    datasetItems.Count, datasetId);
+                    "Updated {Count} items in dataset {DatasetId} ({Shards} shard(s) rewritten)",
+                    updateLookup.Count, datasetId, rewrittenShards);
             }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to update items");
-            throw;
-        }
-        finally
-        {
-            _writeLock.Release();
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to update items in dataset {DatasetId}", datasetId);
+                throw;
+            }
+            finally
+            {
+                datasetLock.Release();
+            }
         }
     }
 
@@ -245,13 +256,14 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
         Guid datasetId,
         CancellationToken cancellationToken = default)
     {
-        await _writeLock.WaitAsync(cancellationToken);
+        var datasetLock = GetDatasetLock(datasetId);
+        await datasetLock.WaitAsync(cancellationToken);
         try
         {
             _logger.LogInformation("Deleting all items for dataset {DatasetId}", datasetId);
 
             _writer.DeleteDatasetShards(datasetId);
-            _datasetItemCounts.Remove(datasetId);
+            _datasetItemCounts.TryRemove(datasetId, out _);
 
             _logger.LogInformation("Successfully deleted all items for dataset {DatasetId}", datasetId);
         }
@@ -262,7 +274,7 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
         }
         finally
         {
-            _writeLock.Release();
+            datasetLock.Release();
         }
 
         await Task.CompletedTask;
@@ -419,7 +431,11 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
             return;
 
         _writer?.Dispose();
-        _writeLock?.Dispose();
+        foreach (var datasetLock in _datasetLocks.Values)
+        {
+            datasetLock.Dispose();
+        }
+        _datasetLocks.Clear();
 
         _disposed = true;
     }

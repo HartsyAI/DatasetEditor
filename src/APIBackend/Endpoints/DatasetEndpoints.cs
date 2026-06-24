@@ -166,7 +166,7 @@ internal static class DatasetEndpoints
         Guid datasetId,
         IFormFile file,
         IDatasetRepository repository,
-        IDatasetIngestionService ingestionService,
+        IngestionQueue ingestionQueue,
         CancellationToken cancellationToken)
     {
         DatasetEntity? dataset = await repository.GetAsync(datasetId, cancellationToken);
@@ -192,7 +192,10 @@ internal static class DatasetEndpoints
 
         dataset.SourceFileName = file.FileName;
         await repository.UpdateAsync(dataset, cancellationToken);
-        await ingestionService.StartIngestionAsync(datasetId, tempFilePath, cancellationToken);
+
+        // Queue ingestion to run in the background; return immediately so a large upload
+        // doesn't hold the request thread. The client polls dataset status for progress.
+        ingestionQueue.Enqueue(new IngestionJob(datasetId, tempFilePath));
 
         return Results.Accepted($"/api/datasets/{datasetId}", new { datasetId, fileName = file.FileName });
     }

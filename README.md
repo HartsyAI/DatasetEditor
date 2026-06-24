@@ -1,592 +1,168 @@
-# Hartsy's Dataset Editor
+# Dataset Studio
 
-An API-first platform for ingesting, browsing, and analysing billion-scale AI image datasets. Built with ASP.NET Core minimal APIs and a Blazor WebAssembly client.
+A desktop-grade web app for browsing, curating, and editing **billion-scale AI image datasets** — built with an ASP.NET Core API and a Blazor WebAssembly client.
 
-## 🚀 Features
+Dataset Studio has two data paths so you can work the way you need to:
 
-- **API-Driven Lifecycle**: Dataset creation, ingestion status, and item retrieval exposed via REST endpoints.
-- **Virtualized Viewing**: Only render what the user sees while prefetching nearby items for buttery scrolling.
-- **Sliding-Window Infinite Scroll**: Browse very large image datasets with a fixed-size in-memory window, loading pages ahead/behind as you scroll while evicting old items to avoid WebAssembly out-of-memory crashes.
-- **Streaming Ingestion (Roadmap)**: Designed for chunked uploads and background parsing to avoid memory spikes.
-- **Shared Contracts**: Typed DTOs shared between client and server for end-to-end consistency.
-- **Modular Extensibility**: Pluggable parsers, modalities, and viewers via dependency injection.
-- **Observability Ready**: Hooks for telemetry, structured logging, and health endpoints.
+- **Stream from HuggingFace** — paste a repo and browse millions of images in seconds; rows are fetched on demand and **nothing is downloaded**.
+- **Import locally** — upload CSV/TSV/Parquet/ZIP (or drop files in the data folder) and the items are ingested into **Apache Parquet** (sharded) with metadata in **PostgreSQL**, so they're fully searchable and editable.
 
-## 📋 Requirements
-
-- .NET 8.0 SDK or later
-- Modern web browser (Chrome, Firefox, Safari, Edge)
-- ~2GB RAM for development
-- ~100MB disk space
-
-## 🛠️ Getting Started
-
-### 1. Clone the Repository
-
-```bash
-git clone <your-repo-url>
-cd HartsysDatasetEditor
-```
-
-### 2. Restore Dependencies
-
-```bash
-dotnet restore
-```
-
-### 3. Build the Solution
-
-```bash
-dotnet build
-```
-
-### 4. Run the API and Client
-
-```bash
-# Terminal 1 - Minimal API (serves dataset lifecycle routes)
-dotnet run --project src/HartsysDatasetEditor.Api
-
-# Terminal 2 - Blazor WebAssembly client
-dotnet run --project src/HartsysDatasetEditor.Client
-```
-
-Both projects share contracts via `HartsysDatasetEditor.Contracts`. The API currently uses in-memory repositories for smoke testing.
-
-### 5. Open in Browser
-
-Navigate to: `https://localhost:5001` (client dev server). Ensure the API is running at `https://localhost:7085` (default Kestrel HTTPS port) or update the client's `appsettings.Development.json` accordingly.
-
-## 📊 Testing with Unsplash Dataset
-
-Support for uploading and ingesting datasets is being rebuilt for the API-first architecture. The previous client-only ingestion flow has been removed. Follow the roadmap below to help implement the new streaming ingestion pipeline. For now, smoke-test the API using the built-in in-memory dataset endpoints:
-
-```http
-POST /api/datasets      // create dataset stub
-GET  /api/datasets      // list datasets
-GET  /api/datasets/{id} // inspect dataset detail
-GET  /api/datasets/{id}/items?pageSize=100
-```
-
-## 🏗️ Project Structure
-
-```
-HartsysDatasetEditor/
-├── src/
-│   ├── HartsysDatasetEditor.Api/         # ASP.NET Core minimal APIs for dataset lifecycle + items
-│   │   ├── Extensions/                   # Service registration helpers
-│   │   ├── Models/                       # Internal persistence models
-│   │   └── Services/                     # In-memory repositories, ingestion stubs
-│   ├── HartsysDatasetEditor.Client/      # Blazor WASM UI
-│   │   ├── Components/                   # Viewer, Dataset, Filter, Common UI pieces
-│   │   ├── Services/                     # State management, caching, API clients (roadmap)
-│   │   └── wwwroot/                      # Static assets, CSS, JS
-│   └── HartsysDatasetEditor.Contracts/   # Shared DTOs (pagination, datasets, filters)
-│
-├── tests/                                # Unit tests
-└── README.md
-```
-
-## 🏛️ Architecture Summary
-
-The editor follows a strictly API-first workflow so that every client action flows through the HTTP layer before touching storage. High-level components:
-
-- **Blazor WebAssembly Client** – virtualized viewers, upload wizard, and caching services that call the API via typed `HttpClient` wrappers. Prefetch and IndexedDB caching are planned per [docs/architecture.md](docs/architecture.md).
-- **ASP.NET Core Minimal API** – orchestrates dataset lifecycle, ingestion coordination, and cursor-based item paging. Background hosted services handle ingestion and stub persistence today.
-- **Backing Services** – pluggable storage (blob), database (PostgreSQL/Dynamo), and search index (Elastic/OpenSearch) abstractions so we can swap implementations as we scale.
-
-See the detailed blueprint, data flows, and phased roadmap in `docs/architecture.md` for deeper dives.
-
-### Dataset Viewer Sliding-Window Cache
-
-- Uses cursor-based paging from the API to request small, contiguous chunks of items.
-- Keeps a fixed-size in-memory window (`DatasetState.Items`) instead of materializing all N items on the client.
-- Slides the window forward and backward as you scroll, evicting old items from memory to avoid WebAssembly out-of-memory crashes.
-- Rehydrates earlier or later regions of the dataset from IndexedDB (when enabled) or the API when you scroll back.
-
-## ▶️ Running the API + Client Together
-
-1. **Start the API**
-   ```bash
-   dotnet run --project src/HartsysDatasetEditor.Api
-   ```
-   By default this listens on `https://localhost:7085`. Trust the dev certificate the first time.
-
-2. **Start the Blazor WASM client**
-   ```bash
-   dotnet run --project src/HartsysDatasetEditor.Client
-   ```
-   The dev server hosts the static client at `https://localhost:5001`.
-
-3. **Configure the client-to-API base address**
-   - The client reads `DatasetApi:BaseAddress` from `wwwroot/appsettings.Development.json`. Leave it at the default `https://localhost:7085` or update it if the API port changes.
-
-4. **Browse the app**
-   - Navigate to `https://localhost:5001`. The client will call the API for dataset lists/items.
-   - Verify CORS is enabled for the WASM origin once the API CORS policy is implemented (see roadmap).
-
-When deploying as an ASP.NET Core hosted app, the API project can serve the WASM assets directly; until then, the two projects run side-by-side as above.
-
-## 🎯 Key Technologies
-
-- **ASP.NET Core 8.0**: Minimal API hosting and background services
-- **Blazor WebAssembly**: Client-side SPA targeting the API
-- **MudBlazor**: Material Design component library
-- **CsvHelper**: Planned streaming ingestion parsing
-- **IndexedDB / LocalStorage**: Client-side caching strategy (roadmap)
-- **Virtualization**: Blazor's built-in `<Virtualize>` component
-
-## 📦 NuGet Packages
-
-### Client Project
-- `Microsoft.AspNetCore.Components.WebAssembly`
-- `MudBlazor` - Material Design UI components
-- `Blazored.LocalStorage` - Browser storage
-- `CsvHelper` - CSV/TSV parsing
-
-### Core Project
-- No external dependencies (lightweight by design)
-
-## 🔧 Configuration
-
-- Client configuration lives in `wwwroot/appsettings*.json`. Update the `DatasetApi:BaseAddress` once the API host changes.
-- API configuration is stored in `appsettings*.json` under the `src/HartsysDatasetEditor.Api` project. Adjust logging and CORS settings here.
-
-## 🎨 Customization
-
-### Adding New Dataset Formats (Roadmap)
-
-1. Create a parser implementing `IDatasetParser` in the ingestion pipeline.
-2. Register it in DI through a parser registry service.
-3. Add format to `DatasetFormat` enum and expose via API capability endpoint.
-
-```csharp
-public class MyFormatParser : IDatasetParser
-{
-    public bool CanParse(string data) { /* ... */ }
-    public IAsyncEnumerable<IDatasetItem> ParseAsync(string data) { /* ... */ }
-}
-```
-
-### Adding New Modalities
-
-1. Create a provider implementing `IModalityProvider`
-2. Register in `ModalityProviderRegistry`
-3. Add modality to `Modality` enum
-4. Create viewer component
-
-## 🚀 Performance
-
-- Virtualized rendering via `<Virtualize>` keeps browser memory flat while streaming new pages.
-- API pagination uses cursor tokens and configurable page sizes to keep server memory bounded.
-- Future ingestion jobs will stream upload parsing to avoid buffering entire files.
-
-## 📝 Development
-
-### Building for Production
-
-```bash
-dotnet publish -c Release
-```
-
-Output in: `src/HartsysDatasetEditor.Client/bin/Release/net8.0/publish/`
-
-### Deployment
-
-#### GitHub Pages
-1. Build for production
-2. Copy `wwwroot` contents to `gh-pages` branch
-3. Enable GitHub Pages in repo settings
-
-#### Azure Static Web Apps
-1. Create Static Web App in Azure Portal
-2. Configure build:
-   - App location: `src/HartsysDatasetEditor.Client`
-   - Output location: `wwwroot`
-3. Deploy via GitHub Actions
-
-## 🐛 Troubleshooting
-
-- Ensure both API and client are running before testing. API defaults to HTTPS, so trust the development certificate when prompted.
-- Use Swagger/OpenAPI (coming soon) or tools like `curl`/`httpie`/Postman to verify endpoint availability.
-- When modifying contracts, update both server and client references to avoid serialization errors.
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🙏 Acknowledgments
-
-- [Unsplash](https://unsplash.com/data) - Dataset provider
-- [MudBlazor](https://mudblazor.com/) - UI component library
-- [Blazor](https://dotnet.microsoft.com/apps/aspnet/web-apps/blazor) - Framework
-
-## 📞 Support
-
-For issues, questions, or suggestions:
-- Open an issue on GitHub
-- Check existing documentation
-- Review the MVP completion status document
-
-## 🗺️ Roadmap
-
-The detailed architecture, phased roadmap, and task checklist live in [docs/architecture.md](docs/architecture.md). Highlights:
-
-1. **Infrastructure** – ✅ API and shared contracts scaffolded; configure hosted solution + README updates.
-2. **API Skeleton** – In progress; dataset CRUD endpoints implemented with in-memory storage, upload endpoint pending.
-3. **Client Refactor** – Pending; migrate viewer to API-backed pagination and caching services.
-4. **Ingestion & Persistence** – Pending; implement streaming ingestion worker and backing database.
-5. **Advanced Features** – Pending; CDN integration, SignalR notifications, plugin architecture.
+The client never holds the whole dataset in memory: a virtualized viewer keeps only a few screenfuls of cards in the DOM at any scroll depth, so memory stays flat even on million-image datasets.
 
 ---
 
-**Current Version**: 0.2.0-alpha  
-**Status**: API-first migration in progress  
-**Last Updated**: 2025
+## ✨ Features
 
+- **Virtualized grid & list** — row-virtualized rendering (`<Virtualize>`); flat memory, no freeze on huge datasets.
+- **Perceived-instant images** — dominant-color (LQIP) placeholders show immediately, thumbnails fade in over them (zero layout shift), lazy + async decoding, width-bounded thumbnails.
+- **HuggingFace streaming** — live, zero-download browsing via the HF datasets-server, with API-key/token support for gated datasets.
+- **Local ingestion** — CSV/TSV/Parquet/JSON/JSONL/ZIP and image folders, parsed into Parquet; runs in the **background** so uploads return immediately and report status.
+- **Cursor pagination** — O(1)/page over sharded Parquet (`shard:row` cursors) and over HF offsets.
+- **Editing & curation** — titles, descriptions, tags, favorites; single and bulk edits (shard-scoped writes).
+- **Extension system** — pluggable API + client extensions discovered from manifests (see `docs/`).
 
+---
 
+## 🧱 Architecture
 
+```
+┌────────────────────────┐      HTTP       ┌──────────────────────────┐
+│        ClientApp        │ <────────────>  │        APIBackend         │
+│  (Blazor WebAssembly)   │                 │   (ASP.NET Core, net10)   │
+│  virtualized viewer,    │                 │  dataset/item endpoints,  │
+│  sliding-window cache,   │                │  background ingestion     │
+│  IndexedDB cache         │                │                           │
+└────────────────────────┘                 └─────────────┬─────────────┘
+                                                          │
+                            ┌─────────────────────────────┼───────────────────────────┐
+                            │ PostgreSQL (EF Core/Npgsql)  │   Apache Parquet (sharded)  │
+                            │   dataset metadata, users     │  dataset items, 10M/shard   │
+                            └───────────────────────────────────────────────────────────┘
+                                                          │
+                                          HuggingFace datasets-server (streaming)
+```
+
+**Projects** (`DatasetStudio.sln`):
+
+| Project | Target | Role |
+|---|---|---|
+| `src/Core` | net8.0 | Domain models, parsers, business logic, abstractions |
+| `src/DTO` | net8.0 | Shared API contracts (`DatasetItemDto`, `PageResponse<T>`, …) |
+| `src/APIBackend` | net10.0 | ASP.NET Core API, EF Core/Postgres, Parquet storage, ingestion |
+| `src/ClientApp` | net8.0 | Blazor WASM UI (MudBlazor), caching, viewer |
+| `src/Extensions/SDK` | net8.0 | WASM-safe extension contracts (`IExtension`, manifest, context) |
+| `src/Extensions/SDK.Api` | net8.0 | API-only extension hooks (`IApiExtension`, `BaseApiExtension`) |
+| `src/Extensions/BuiltIn/*` | net8.0 | Built-in extensions (CoreViewer, Creator) |
+
+---
+
+## 🚀 Quick start
+
+### The easy way
+
+```bash
+./start.sh
+```
+
+This starts PostgreSQL (Docker), waits for it, runs the API (auto-applying EF migrations) and the client, then prints the URLs. **Ctrl+C** stops the apps; the database keeps running for fast restarts.
+
+- App:     http://localhost:5002
+- API:     http://localhost:5000  (Swagger at http://localhost:5000/swagger)
+
+Stop everything with `./stop.sh` (add `--wipe` to also delete the database volume).
+
+### Manual
+
+```bash
+# 1. Start PostgreSQL
+docker compose up -d
+
+# 2. Run the API (auto-applies migrations on startup)
+dotnet run --project src/APIBackend
+
+# 3. In another terminal, run the client
+dotnet run --project src/ClientApp
+```
+
+### Requirements
+
+- **.NET 10 SDK** (builds the net10 API and the net8 projects)
+- **Docker + Docker Compose** (for PostgreSQL) — or your own Postgres reachable at the connection string below
+- A modern browser (Chrome, Firefox, Edge, Safari)
+
+---
+
+## 🗂️ Project structure
+
+```
 DatasetStudio/
-├── Docs/
-│   ├── Installation/
-│   │   ├── QuickStart.md
-│   │   ├── SingleUserSetup.md
-│   │   └── MultiUserSetup.md
-│   ├── UserGuides/
-│   │   ├── ViewingDatasets.md
-│   │   ├── CreatingDatasets.md
-│   │   └── EditingDatasets.md
-│   ├── API/
-│   │   └── APIReference.md
-│   └── Development/
-│       ├── ExtensionDevelopment.md
-│       └── Contributing.md
-│
-├── Core/                                    # Shared domain logic
-│   ├── DomainModels/
-│   │   ├── Datasets/
-│   │   │   ├── Dataset.cs
-│   │   │   └── DatasetMetadata.cs
-│   │   ├── Items/
-│   │   │   ├── DatasetItem.cs
-│   │   │   ├── ImageItem.cs
-│   │   │   └── Caption.cs
-│   │   └── Users/
-│   │       ├── User.cs
-│   │       └── UserSettings.cs
-│   ├── Enumerations/
-│   │   ├── DatasetFormat.cs
-│   │   ├── Modality.cs
-│   │   ├── UserRole.cs
-│   │   └── ExtensionType.cs
-│   ├── Abstractions/
-│   │   ├── Parsers/
-│   │   │   └── IDatasetParser.cs
-│   │   ├── Storage/
-│   │   │   └── IStorageProvider.cs
-│   │   ├── Extensions/
-│   │   │   ├── IExtension.cs
-│   │   │   └── IExtensionRegistry.cs
-│   │   └── Repositories/
-│   │       └── IDatasetRepository.cs
-│   ├── BusinessLogic/
-│   │   ├── Parsers/
-│   │   │   ├── ParserRegistry.cs
-│   │   │   ├── UnsplashTsvParser.cs
-│   │   │   └── ParquetParser.cs
-│   │   ├── Storage/
-│   │   │   ├── LocalStorageProvider.cs
-│   │   │   └── S3StorageProvider.cs
-│   │   └── Extensions/
-│   │       ├── ExtensionRegistry.cs
-│   │       └── ExtensionLoader.cs
-│   ├── Utilities/
-│   │   ├── Logging/
-│   │   │   └── Logs.cs
-│   │   ├── Helpers/
-│   │   │   ├── ImageHelper.cs
-│   │   │   └── ParquetHelper.cs
-│   │   └── Encryption/
-│   │       └── ApiKeyEncryption.cs
-│   └── Constants/
-│       ├── DatasetFormats.cs
-│       └── Modalities.cs
-│
-├── Contracts/                               # DTOs shared between API & Client
-│   ├── Common/
-│   │   ├── PagedResponse.cs
-│   │   └── FilterRequest.cs
-│   ├── Datasets/
-│   │   ├── DatasetDto.cs
-│   │   └── CreateDatasetRequest.cs
-│   ├── Users/
-│   │   ├── UserDto.cs
-│   │   └── LoginRequest.cs
-│   └── Extensions/
-│       └── ExtensionInfoDto.cs
-│
-├── APIBackend/
-│   ├── Configuration/
-│   │   ├── Program.cs
-│   │   ├── appsettings.json
-│   │   └── appsettings.Development.json
-│   ├── Controllers/
-│   │   ├── DatasetsController.cs
-│   │   ├── ItemsController.cs
-│   │   ├── UsersController.cs
-│   │   └── ExtensionsController.cs
-│   ├── Services/
-│   │   ├── DatasetManagement/
-│   │   │   ├── DatasetService.cs
-│   │   │   └── IngestionService.cs
-│   │   ├── Authentication/
-│   │   │   ├── UserService.cs
-│   │   │   └── AuthService.cs
-│   │   └── Extensions/
-│   │       └── ExtensionLoaderService.cs
-│   ├── DataAccess/
-│   │   ├── PostgreSQL/
-│   │   │   ├── Repositories/
-│   │   │   │   ├── DatasetRepository.cs
-│   │   │   │   └── UserRepository.cs
-│   │   │   ├── DbContext.cs
-│   │   │   └── Migrations/
-│   │   └── Parquet/
-│   │       ├── ParquetItemRepository.cs
-│   │       └── ParquetWriter.cs
-│   ├── Middleware/
-│   │   ├── AuthenticationMiddleware.cs
-│   │   └── ErrorHandlingMiddleware.cs
-│   └── BackgroundWorkers/
-│       ├── IngestionWorker.cs
-│       └── ThumbnailGenerationWorker.cs
-│
-├── ClientApp/                               # Blazor WASM Frontend
-│   ├── Configuration/
-│   │   ├── Program.cs
-│   │   ├── App.razor
-│   │   └── _Imports.razor
-│   │
-│   ├── wwwroot/                             # ✅ Standard Blazor static files folder
-│   │   ├── index.html
-│   │   ├── Themes/
-│   │   │   ├── LightTheme.css
-│   │   │   ├── DarkTheme.css
-│   │   │   └── CustomTheme.css
-│   │   ├── css/
-│   │   │   └── app.css
-│   │   └── js/
-│   │       ├── Interop.js
-│   │       ├── IndexedDB.js
-│   │       ├── InfiniteScroll.js
-│   │       └── Installer.js
-│   │
-│   ├── Features/
-│   │   ├── Home/
-│   │   │   ├── Pages/
-│   │   │   │   └── Index.razor
-│   │   │   └── Components/
-│   │   │       └── WelcomeCard.razor
-│   │   │
-│   │   ├── Installation/
-│   │   │   ├── Pages/
-│   │   │   │   └── Install.razor
-│   │   │   ├── Components/
-│   │   │   │   ├── WelcomeStep.razor
-│   │   │   │   ├── DeploymentModeStep.razor
-│   │   │   │   ├── AdminAccountStep.razor
-│   │   │   │   ├── ExtensionSelectionStep.razor
-│   │   │   │   ├── StorageConfigStep.razor
-│   │   │   │   └── CompletionStep.razor
-│   │   │   └── Services/
-│   │   │       └── InstallationService.cs
-│   │   │
-│   │   ├── Datasets/
-│   │   │   ├── Pages/
-│   │   │   │   ├── DatasetLibrary.razor
-│   │   │   │   └── DatasetViewer.razor
-│   │   │   ├── Components/
-│   │   │   │   ├── DatasetCard.razor
-│   │   │   │   ├── DatasetUploader.razor
-│   │   │   │   ├── DatasetStats.razor
-│   │   │   │   ├── ImageGrid.razor
-│   │   │   │   ├── ImageCard.razor
-│   │   │   │   ├── ImageGallery.razor
-│   │   │   │   ├── ImageDetail.razor
-│   │   │   │   ├── InlineEditor.razor
-│   │   │   │   ├── FilterPanel.razor
-│   │   │   │   └── AdvancedSearch.razor
-│   │   │   └── Services/
-│   │   │       └── DatasetCacheService.cs
-│   │   │
-│   │   ├── Authentication/
-│   │   │   ├── Pages/
-│   │   │   │   └── Login.razor
-│   │   │   └── Components/
-│   │   │       ├── LoginForm.razor
-│   │   │       └── RegisterForm.razor
-│   │   │
-│   │   ├── Administration/
-│   │   │   ├── Pages/
-│   │   │   │   └── Admin.razor
-│   │   │   └── Components/
-│   │   │       ├── UserManagement.razor
-│   │   │       ├── ExtensionManager.razor
-│   │   │       ├── SystemSettings.razor
-│   │   │       └── Analytics.razor
-│   │   │
-│   │   └── Settings/
-│   │       ├── Pages/
-│   │       │   └── Settings.razor
-│   │       └── Components/
-│   │           ├── AppearanceSettings.razor
-│   │           ├── AccountSettings.razor
-│   │           └── PrivacySettings.razor
-│   │
-│   ├── Shared/                              # Components/layouts used across ALL features
-│   │   ├── Layout/
-│   │   │   ├── MainLayout.razor
-│   │   │   ├── NavMenu.razor
-│   │   │   └── AdminLayout.razor
-│   │   ├── Components/
-│   │   │   ├── LoadingSpinner.razor
-│   │   │   ├── EmptyState.razor
-│   │   │   ├── ErrorBoundary.razor
-│   │   │   ├── ConfirmDialog.razor
-│   │   │   └── Toast.razor
-│   │   └── Services/
-│   │       ├── NotificationService.cs
-│   │       └── ThemeService.cs
-│   │
-│   ├── Services/                            # Global app-wide services
-│   │   ├── StateManagement/
-│   │   │   ├── AppState.cs
-│   │   │   ├── UserState.cs
-│   │   │   └── ExtensionState.cs
-│   │   ├── ApiClients/
-│   │   │   ├── DatasetApiClient.cs
-│   │   │   ├── UserApiClient.cs
-│   │   │   ├── ExtensionApiClient.cs
-│   │   │   └── AIApiClient.cs
-│   │   ├── Caching/
-│   │   │   ├── IndexedDbCache.cs
-│   │   │   └── ThumbnailCache.cs
-│   │   └── Interop/
-│   │       ├── IndexedDbInterop.cs
-│   │       └── InstallerInterop.cs
-│   │
-│   └── ExtensionComponents/                 # UI components from loaded extensions
-│
-├── Extensions/
-│   ├── SDK/
-│   │   ├── BaseExtension.cs
-│   │   ├── ExtensionMetadata.cs
-│   │   ├── ExtensionManifest.cs
-│   │   └── DevelopmentGuide.md
-│   │
-│   ├── BuiltIn/
-│   │   ├── CoreViewer/
-│   │   │   ├── extension.manifest.json
-│   │   │   ├── CoreViewerExtension.cs
-│   │   │   ├── Components/
-│   │   │   ├── Services/
-│   │   │   └── Assets/
-│   │   │
-│   │   ├── Creator/
-│   │   │   ├── extension.manifest.json
-│   │   │   ├── CreatorExtension.cs
-│   │   │   ├── Components/
-│   │   │   │   ├── Upload/
-│   │   │   │   ├── Import/
-│   │   │   │   └── Configuration/
-│   │   │   ├── Services/
-│   │   │   │   ├── ZipExtractor.cs
-│   │   │   │   ├── RarExtractor.cs
-│   │   │   │   └── HuggingFaceImporter.cs
-│   │   │   └── Assets/
-│   │   │
-│   │   ├── Editor/
-│   │   │   ├── extension.manifest.json
-│   │   │   ├── EditorExtension.cs
-│   │   │   ├── Components/
-│   │   │   │   ├── Inline/
-│   │   │   │   ├── Bulk/
-│   │   │   │   ├── Captions/
-│   │   │   │   └── Metadata/
-│   │   │   ├── Services/
-│   │   │   │   ├── EditService.cs
-│   │   │   │   ├── BulkOperationService.cs
-│   │   │   │   └── CaptionService.cs
-│   │   │   └── Assets/
-│   │   │
-│   │   ├── AITools/
-│   │   │   ├── extension.manifest.json
-│   │   │   ├── AIToolsExtension.cs
-│   │   │   ├── Components/
-│   │   │   │   ├── Captioning/
-│   │   │   │   ├── ModelSelection/
-│   │   │   │   ├── Scoring/
-│   │   │   │   └── BatchProcessing/
-│   │   │   ├── Services/
-│   │   │   │   ├── Engines/
-│   │   │   │   │   ├── BlipEngine.cs
-│   │   │   │   │   ├── ClipEngine.cs
-│   │   │   │   │   ├── OpenAIEngine.cs
-│   │   │   │   │   ├── AnthropicEngine.cs
-│   │   │   │   │   └── LocalLLMEngine.cs
-│   │   │   │   ├── ScoringService.cs
-│   │   │   │   └── BatchProcessor.cs
-│   │   │   ├── Models/
-│   │   │   │   ├── Florence2/
-│   │   │   │   ├── ONNX/
-│   │   │   │   ├── CLIP/
-│   │   │   │   └── LocalLLM/
-│   │   │   └── Assets/
-│   │   │
-│   │   └── AdvancedTools/
-│   │       ├── extension.manifest.json
-│   │       ├── AdvancedToolsExtension.cs
-│   │       ├── Components/
-│   │       │   ├── Conversion/
-│   │       │   ├── Merging/
-│   │       │   ├── Deduplication/
-│   │       │   └── Analysis/
-│   │       ├── Services/
-│   │       │   ├── FormatConverter.cs
-│   │       │   ├── DatasetMerger.cs
-│   │       │   ├── Deduplicator.cs
-│   │       │   └── QualityAnalyzer.cs
-│   │       └── Assets/
-│   │
-│   └── UserExtensions/                      # Third-party extensions
-│       ├── README.md                        # How to add user extensions
-│       └── ExampleExtension/
-│           ├── extension.manifest.json
-│           ├── ExampleExtension.cs
-│           ├── Components/
-│           ├── Services/
-│           └── Assets/
-│
-├── Tests/
-│   ├── CoreTests/
-│   ├── APIBackendTests/
-│   ├── ClientAppTests/
-│   └── IntegrationTests/
-│
-├── Scripts/
-│   ├── Setup.sh
-│   ├── Setup.ps1
-│   └── MigrateDatabase.sh
-│
-├── README.md
-├── ARCHITECTURE.md
-├── LICENSE
-└── .gitignore
+├── src/
+│   ├── Core/                 # Domain models, parsers, business logic
+│   ├── DTO/                  # Shared contracts
+│   ├── APIBackend/           # ASP.NET Core API + data layer
+│   │   ├── DataAccess/
+│   │   │   ├── PostgreSQL/    # EF Core DbContext, repositories, migrations
+│   │   │   └── Parquet/       # Sharded Parquet reader/writer/repository
+│   │   ├── Endpoints/        # Minimal API endpoints
+│   │   ├── Services/         # Ingestion, HuggingFace integration, extensions
+│   │   └── Configuration/    # appsettings + Program.cs
+│   ├── ClientApp/            # Blazor WebAssembly UI
+│   │   ├── Features/Datasets/ # Viewer, cards, virtualization, pages
+│   │   └── Services/         # Caching, API clients, state, interop
+│   └── Extensions/           # SDK, SDK.Api, and built-in extensions
+├── tests/                    # APIBackend.Tests, ClientApp.Tests
+├── docs/                     # Architecture & extension docs
+├── docker-compose.yml        # Local PostgreSQL
+├── start.sh / stop.sh        # Dev launchers
+└── DatasetStudio.sln
+```
+
+---
+
+## ⚙️ Configuration
+
+API settings live in `src/APIBackend/Configuration/appsettings*.json`:
+
+- **`ConnectionStrings:DatasetStudio`** — PostgreSQL connection. The Development value matches `docker-compose.yml` (`Host=localhost;Port=5432;Database=dataset_studio_dev;Username=postgres;Password=postgres`).
+- **`Urls`** — API bind address (`http://localhost:5000`).
+- **`Cors:AllowedOrigins`** — must include the client origin (`http://localhost:5002`).
+- **`Storage:*`** — local paths for Parquet shards, blobs, thumbnails, uploads.
+
+The client reads its API base address from `src/ClientApp/wwwroot/appsettings.json` (`DatasetApi:BaseAddress`).
+
+---
+
+## 🧪 Testing
+
+```bash
+dotnet test                                   # all test projects
+dotnet test tests/ClientApp.Tests             # client unit tests
+```
+
+`tests/APIBackend.Tests` exercises the Postgres/Parquet data layer and may require a database.
+
+---
+
+## 📚 Documentation
+
+- [docs/architecture.md](docs/architecture.md) — system architecture & data flows
+- [docs/EXTENSION_ARCHITECTURE.md](docs/EXTENSION_ARCHITECTURE.md) — extension system design
+- [docs/EXTENSION_QUICK_START.md](docs/EXTENSION_QUICK_START.md) — build your first extension
+- [docs/EXTENSION_SYSTEM_IMPLEMENTATION_PLAN.md](docs/EXTENSION_SYSTEM_IMPLEMENTATION_PLAN.md) — extension roadmap (partly implemented)
+
+---
+
+## 🔌 Extensions (in progress)
+
+Extensions are self-describing plugins (a manifest + an assembly) discovered at startup on both the API and client. The contract is split so the Blazor client stays free of ASP.NET hosting types:
+
+- **`IExtension`** (in `Extensions.SDK`, WASM-safe) — lifecycle, `ConfigureServices`, health.
+- **`IApiExtension : IExtension`** (in `Extensions.SDK.Api`) — adds the API-only `ConfigureApp(IApplicationBuilder)` hook.
+
+Author API extensions by deriving from `BaseApiExtension`, and client extensions from `BaseClientExtension`. See the extension docs above. The loading infrastructure works; endpoint auto-registration and permission enforcement are still on the roadmap.
+
+---
+
+## 📄 License
+
+MIT — see [LICENSE](LICENSE).

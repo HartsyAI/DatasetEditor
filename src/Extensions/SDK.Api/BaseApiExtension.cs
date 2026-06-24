@@ -1,27 +1,15 @@
-// TODO: Phase 3 - API Extension Base Class
+// API Extension Base Class
 //
-// Called by: API-side extensions (CoreViewer.Api, AITools.Api, Editor.Api, etc.)
-// Calls: IExtension interface, ExtensionContext, IServiceCollection, IApplicationBuilder
+// Called by: API-side extensions (CoreViewer.Api, Creator.Api, etc.)
+// Calls: IApiExtension interface, ExtensionContext, IServiceCollection, IApplicationBuilder
 //
 // Purpose: Base implementation for API-side extensions
 // Provides common functionality for extensions that run on the API server.
 //
-// Key Features:
-// 1. Automatic API endpoint registration
-// 2. Background service registration helpers
-// 3. Database migration registration
-// 4. Configuration management
-// 5. Logging and health monitoring
-//
-// When to Use:
-// - Your extension needs to expose REST API endpoints
-// - Your extension performs server-side data processing
-// - Your extension needs background workers or scheduled tasks
-// - Your extension needs database access
-// - Your extension integrates with external APIs (HuggingFace, etc.)
-//
 // Deployment Note:
 // This class is ONLY used on the API server, never on the Client.
+// It lives in Extensions.SDK.Api (which references the ASP.NET Core shared
+// framework) so the WASM-safe Extensions.SDK assembly stays framework-free.
 // For Client UI, use BaseClientExtension. For both, create separate classes.
 
 using Microsoft.AspNetCore.Builder;
@@ -35,7 +23,7 @@ namespace DatasetStudio.Extensions.SDK;
 /// Base class for extensions that run on the API server.
 /// Provides helper methods for endpoint registration, background services, and configuration.
 /// </summary>
-public abstract class BaseApiExtension : IExtension
+public abstract class BaseApiExtension : IApiExtension
 {
     private IExtensionContext? _context;
     private bool _disposed;

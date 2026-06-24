@@ -1,28 +1,15 @@
-# DatasetEditor Documentation
+# Dataset Studio — Documentation
 
-## Overview
+Reference documentation for Dataset Studio. For setup and a quick start, see the
+[main README](../README.md) (requirements, `./start.sh`, configuration, and testing).
 
-This directory contains comprehensive documentation for the DatasetEditor project, covering installation, usage, API reference, and development guidelines.
+## Contents
 
-## Documentation Structure
+- **[architecture.md](architecture.md)** — system architecture, the data layer (PostgreSQL + Parquet), the streaming vs. local data paths, the virtualized client, and ingestion.
+- **[EXTENSION_ARCHITECTURE.md](EXTENSION_ARCHITECTURE.md)** — design of the extension system (discovery, loading, the SDK contract split across `Extensions.SDK` / `Extensions.SDK.Api`).
+- **[EXTENSION_QUICK_START.md](EXTENSION_QUICK_START.md)** — build your first extension, step by step.
+- **[EXTENSION_SYSTEM_IMPLEMENTATION_PLAN.md](EXTENSION_SYSTEM_IMPLEMENTATION_PLAN.md)** — roadmap for the extension system (partly implemented, partly planned).
 
-- **Installation/** - Setup and installation instructions (Phase 4)
-- **UserGuides/** - User guides and tutorials (Phase 4)
-- **API/** - API documentation and reference (Phase 6)
-- **Development/** - Development setup and contribution guidelines (Phase 3)
-
-## Implementation Roadmap
-
-For detailed information about the documentation roadmap and project phases, see [REFACTOR_PLAN.md](../REFACTOR_PLAN.md).
-
-## Quick Links
-
-- [Installation Guide](./Installation/README.md)
-- [User Guides](./UserGuides/README.md)
-- [API Documentation](./API/README.md)
-- [Development Guide](./Development/README.md)
-- [Architecture](./architecture.md)
-
----
-
-**Note:** This documentation is currently under development. Please refer to [REFACTOR_PLAN.md](../REFACTOR_PLAN.md) for phase-specific implementation details.
+> The extension system is partially implemented: discovery, manifest loading, and the
+> SDK contracts work; endpoint auto-registration and permission enforcement are still
+> on the roadmap.

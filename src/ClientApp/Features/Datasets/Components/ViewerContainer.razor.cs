@@ -23,6 +23,13 @@ public partial class ViewerContainer : IDisposable
 
     public Modality _modality = Modality.Image;
     public ViewMode _viewMode = ViewMode.Grid;
+    private int _lastItemCount = -1;
+
+    /// <summary>Fixed row height (px) used for the virtualized list view.</summary>
+    private const double ListRowHeight = 168;
+
+    /// <summary>Columns for the current view mode (single column in list view).</summary>
+    private int CurrentColumns => _viewMode == ViewMode.List ? 1 : ViewState.GridColumns;
 
     /// <summary>Initializes component and subscribes to state changes.</summary>
     protected override void OnInitialized()
@@ -31,8 +38,22 @@ public partial class ViewerContainer : IDisposable
         ViewState.OnChange += HandleViewStateChanged;
         DetermineModality();
         _viewMode = ViewState.ViewMode;
+        _lastItemCount = DatasetState.Items.Count;
         Logs.Info("ViewerContainer initialized");
     }
+
+    /// <summary>Raised when an item card/row is clicked.</summary>
+    public Task HandleItemClick(DatasetItemDto item) => OnItemSelected.InvokeAsync(item);
+
+    /// <summary>Toggles selection/favorite for an item and refreshes the view.</summary>
+    public void HandleToggleSelection(DatasetItemDto item)
+    {
+        DatasetState.ToggleSelection(item);
+        StateHasChanged();
+    }
+
+    /// <summary>Whether the given item is currently selected.</summary>
+    public bool IsItemSelected(DatasetItemDto item) => DatasetState.IsSelected(item);
 
     // OnParametersSet removed - modality determined from DatasetState only
 
@@ -69,16 +90,15 @@ public partial class ViewerContainer : IDisposable
         // We only need to re-render if the actual dataset or modality changes
         Modality previousModality = _modality;
         DetermineModality();
-        
-        // Only trigger re-render if modality actually changed (new dataset loaded)
-        if (_modality != previousModality)
+
+        // Re-render when the modality changes (new dataset) OR when the item count
+        // changes (page appended / filter applied) so <Virtualize> sees the new window.
+        // Virtualization keeps this cheap: only the visible rows actually re-render.
+        int currentCount = DatasetState.Items.Count;
+        if (_modality != previousModality || currentCount != _lastItemCount)
         {
-            Logs.Info($"[VIEWERCONTAINER] Modality changed from {previousModality} to {_modality}, triggering StateHasChanged");
+            _lastItemCount = currentCount;
             StateHasChanged();
-        }
-        else
-        {
-            Logs.Info($"[VIEWERCONTAINER] Modality unchanged ({_modality}), skipping StateHasChanged");
         }
     }
 

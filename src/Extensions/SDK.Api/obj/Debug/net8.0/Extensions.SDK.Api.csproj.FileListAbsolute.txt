@@ -1,0 +1,16 @@
+/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/bin/Debug/net8.0/Extensions.SDK.Api.deps.json
+/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/bin/Debug/net8.0/Extensions.SDK.Api.dll
+/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/bin/Debug/net8.0/Extensions.SDK.Api.pdb
+/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/bin/Debug/net8.0/Extensions.SDK.dll
+/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/bin/Debug/net8.0/Extensions.SDK.pdb
+/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/obj/Debug/net8.0/Extensions.SDK.Api.csproj.AssemblyReference.cache
+/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/obj/Debug/net8.0/Extensions.SDK.Api.GeneratedMSBuildEditorConfig.editorconfig
+/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/obj/Debug/net8.0/Extensions.SDK.Api.AssemblyInfoInputs.cache
+/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/obj/Debug/net8.0/Extensions.SDK.Api.AssemblyInfo.cs
+/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/obj/Debug/net8.0/Extensions.SDK.Api.csproj.CoreCompileInputs.cache
+/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/obj/Debug/net8.0/Extensions.SDK.Api.sourcelink.json
+/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/obj/Debug/net8.0/Extensio.7958B919.Up2Date
+/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/obj/Debug/net8.0/Extensions.SDK.Api.dll
+/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/obj/Debug/net8.0/refint/Extensions.SDK.Api.dll
+/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/obj/Debug/net8.0/Extensions.SDK.Api.pdb
+/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/obj/Debug/net8.0/ref/Extensions.SDK.Api.dll

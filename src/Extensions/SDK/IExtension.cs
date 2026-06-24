@@ -24,7 +24,6 @@
 // - GetManifest() should return a cached instance (called frequently)
 
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.AspNetCore.Builder;
 
 namespace DatasetStudio.Extensions.SDK;
 
@@ -66,20 +65,10 @@ public interface IExtension : IDisposable
     /// <param name="services">Service collection to register services into</param>
     void ConfigureServices(IServiceCollection services);
 
-    /// <summary>
-    /// Configures the application middleware pipeline (API extensions only).
-    /// Called after services are configured but before the app runs.
-    ///
-    /// USE CASES:
-    /// - Register minimal API endpoints
-    /// - Add custom middleware
-    /// - Configure request pipeline
-    /// - Register static file directories
-    ///
-    /// NOTE: Client extensions can leave this empty (not used in Blazor WASM).
-    /// </summary>
-    /// <param name="app">Application builder to configure middleware</param>
-    void ConfigureApp(IApplicationBuilder app);
+    // NOTE: The API-only middleware/endpoint hook ConfigureApp(IApplicationBuilder)
+    // lives on IApiExtension (in the Extensions.SDK.Api assembly). It is deliberately
+    // NOT on this interface so the core contract stays free of the ASP.NET Core shared
+    // framework and can be referenced by the Blazor WebAssembly client.
 
     /// <summary>
     /// Validates that the extension is properly configured and can run.

@@ -34,11 +34,11 @@ namespace DatasetStudio.Tests.ClientApp
             string datasetIdString = "11111111-2222-3333-4444-555555555555";
             Guid datasetId = Guid.Parse(datasetIdString);
 
-            string json = "{""datasets"":[{""id"":""" + datasetIdString + """,""name"":""Test dataset"",""description"":""Phase 2 validation"",""status"":0,""totalItems"":5,""createdAt"":""2025-01-01T00:00:00Z"",""updatedAt"":""2025-01-01T00:00:00Z""}],""totalCount"":1,""page"":0,""pageSize"":50}";
+            string json = @"{""datasets"":[{""id"":""" + datasetIdString + @""",""name"":""Test dataset"",""description"":""Phase 2 validation"",""status"":0,""totalItems"":5,""createdAt"":""2025-01-01T00:00:00Z"",""updatedAt"":""2025-01-01T00:00:00Z""}],""totalCount"":1,""page"":0,""pageSize"":50}";
 
             FakeHttpMessageHandler handler = new FakeHttpMessageHandler(request =>
             {
-                Assert.Equal("api/datasets?page=0&pageSize=50", request.RequestUri != null ? request.RequestUri.ToString() : string.Empty);
+                Assert.Equal("/api/datasets?page=0&pageSize=50", request.RequestUri != null ? request.RequestUri.PathAndQuery : string.Empty);
 
                 HttpResponseMessage response = new HttpResponseMessage(HttpStatusCode.OK)
                 {
@@ -70,7 +70,7 @@ namespace DatasetStudio.Tests.ClientApp
         [Fact]
         public async Task GetAllDatasetsAsync_HandlesMissingDatasetsProperty()
         {
-            string json = "{""totalCount"":0,""page"":0,""pageSize"":50}";
+            string json = @"{""totalCount"":0,""page"":0,""pageSize"":50}";
 
             FakeHttpMessageHandler handler = new FakeHttpMessageHandler(request =>
             {

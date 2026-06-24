@@ -180,18 +180,29 @@ Program.cs Startup
 
 ## Class Hierarchy
 
+The contract is split across two assemblies so the Blazor WebAssembly client can
+reference it without pulling in the ASP.NET Core shared framework:
+
+- **`Extensions.SDK`** (WASM-safe) — `IExtension`, manifest, context, `BaseClientExtension`.
+- **`Extensions.SDK.Api`** (references ASP.NET Core) — `IApiExtension`, `BaseApiExtension`.
+
+The API-only middleware hook `ConfigureApp(IApplicationBuilder)` therefore lives on
+`IApiExtension`, **not** on `IExtension`.
+
 ```
-IExtension (interface)
+IExtension (interface — Extensions.SDK, WASM-safe)
     ├─> GetManifest()
     ├─> InitializeAsync(IExtensionContext)
     ├─> ConfigureServices(IServiceCollection)
-    ├─> ConfigureApp(IApplicationBuilder)
     ├─> ValidateAsync()
     ├─> GetHealthAsync()
     └─> Dispose()
 
-BaseApiExtension : IExtension
-    ├─> Implements IExtension
+IApiExtension : IExtension (interface — Extensions.SDK.Api)
+    └─> ConfigureApp(IApplicationBuilder)     // API-only middleware/endpoint hook
+
+BaseApiExtension : IApiExtension (Extensions.SDK.Api)
+    ├─> Implements IApiExtension
     ├─> Protected Context, Logger, Services
     ├─> Virtual OnInitializeAsync()
     ├─> Virtual OnConfigureApp()

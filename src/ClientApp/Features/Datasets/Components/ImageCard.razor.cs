@@ -70,8 +70,9 @@ public partial class ImageCard
             ? Item.ImageUrl
             : Item.ThumbnailUrl;
 
-        // Resolve to full URL (prepends API base address if relative)
-        string resolvedUrl = ImageUrlHelper.ResolveImageUrl(baseUrl);
+        // Resolve to full URL (prepends API base address if relative), then request a
+        // width-bounded thumbnail variant so the grid never pulls full-res originals.
+        string resolvedUrl = ImageUrlHelper.WithWidth(ImageUrlHelper.ResolveImageUrl(baseUrl), 400);
 
         // Only reset the load state when the source actually changes, so unrelated
         // parameter updates (selection, hover) don't re-trigger the skeleton.
@@ -91,6 +92,22 @@ public partial class ImageCard
     {
         _imageLoaded = true;
         _imageError = false;
+    }
+
+    /// <summary>
+    /// Dominant/average color shown instantly behind the image as an LQIP-style
+    /// placeholder, so the grid renders meaningful color blocks before thumbnails
+    /// decode (zero layout shift). Falls back to the neutral surface color.
+    /// </summary>
+    public string PlaceholderColor
+    {
+        get
+        {
+            string? color = Item.AverageColor();
+            return string.IsNullOrWhiteSpace(color)
+                ? "var(--mud-palette-background-grey)"
+                : color!;
+        }
     }
 
     /// <summary>Handles mouse enter event.</summary>

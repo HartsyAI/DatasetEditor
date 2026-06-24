@@ -1,0 +1,171 @@
+{
+  "format": 1,
+  "restore": {
+    "/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/Extensions.SDK.Api.csproj": {}
+  },
+  "projects": {
+    "/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/Extensions.SDK.Api.csproj": {
+      "version": "0.2.0-alpha",
+      "restore": {
+        "projectUniqueName": "/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/Extensions.SDK.Api.csproj",
+        "projectName": "Extensions.SDK.Api",
+        "projectPath": "/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/Extensions.SDK.Api.csproj",
+        "packagesPath": "/home/kalebbroo/.nuget/packages/",
+        "outputPath": "/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK.Api/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/home/kalebbroo/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {
+              "/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK/Extensions.SDK.csproj": {
+                "projectPath": "/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK/Extensions.SDK.csproj"
+              }
+            }
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.200"
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.AspNetCore.App.Ref",
+              "version": "[8.0.26, 8.0.26]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Ref",
+              "version": "[8.0.26, 8.0.26]"
+            }
+          ],
+          "frameworkReferences": {
+            "Microsoft.AspNetCore.App": {
+              "privateAssets": "none"
+            },
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/home/kalebbroo/.dotnet/sdk/10.0.203/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    },
+    "/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK/Extensions.SDK.csproj": {
+      "version": "0.2.0-alpha",
+      "restore": {
+        "projectUniqueName": "/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK/Extensions.SDK.csproj",
+        "projectName": "Extensions.SDK",
+        "projectPath": "/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK/Extensions.SDK.csproj",
+        "packagesPath": "/home/kalebbroo/.nuget/packages/",
+        "outputPath": "/home/kalebbroo/Desktop/Projects/DatasetEditor/src/Extensions/SDK/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/home/kalebbroo/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0": {
+            "targetAlias": "net8.0",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.200"
+      },
+      "frameworks": {
+        "net8.0": {
+          "targetAlias": "net8.0",
+          "dependencies": {
+            "Microsoft.AspNetCore.Components.Web": {
+              "target": "Package",
+              "version": "[8.0.*, )"
+            },
+            "Microsoft.Extensions.Configuration.Abstractions": {
+              "target": "Package",
+              "version": "[8.0.*, )"
+            },
+            "Microsoft.Extensions.DependencyInjection.Abstractions": {
+              "target": "Package",
+              "version": "[8.0.*, )"
+            },
+            "Microsoft.Extensions.Logging.Abstractions": {
+              "target": "Package",
+              "version": "[8.0.*, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.AspNetCore.App.Ref",
+              "version": "[8.0.26, 8.0.26]"
+            },
+            {
+              "name": "Microsoft.NETCore.App.Ref",
+              "version": "[8.0.26, 8.0.26]"
+            }
+          ],
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/home/kalebbroo/.dotnet/sdk/10.0.203/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

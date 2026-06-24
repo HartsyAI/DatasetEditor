@@ -1,215 +1,128 @@
-# Dataset Editor Architecture & Performance Blueprint
+# Dataset Studio — Architecture
 
-> **Goal**: Deliver a modular, API-first platform capable of serving billions of dataset items to hundreds of concurrent users with near-instant interactivity.
-
----
-
-## 1. Guiding Principles
-
-1. **API-First**: Every UI action calls an HTTP API. The API orchestrates business logic and data access.
-2. **Streaming Everywhere**: Parse, ingest, and serve data in chunks; avoid full in-memory materialization.
-3. **Virtualized UI**: Render only what the user sees; aggressively prefetch just ahead of the viewport.
-4. **Client Caching**: Use browser storage/IndexedDB for hot pages, tiles, and user preferences.
-5. **Modular Extensibility**: Pluggable parsers, modalities, and viewers via dependency injection/providers.
-6. **Observability**: Telemetry across ingestion, APIs, and client fetch cycles for diagnostics and scaling.
+> **Goal:** browse, curate, and edit billion-scale AI image datasets through a desktop-grade
+> web UI, with flat client memory and O(1)-per-page server access regardless of dataset size.
 
 ---
 
-## 2. High-Level Architecture
+## 1. Guiding principles
+
+1. **Two data paths.** Stream from HuggingFace (nothing stored) *or* import locally into Parquet + PostgreSQL.
+2. **Perceived performance first.** Instant color placeholders, eager first screen, true virtualization — then real O(1) paging underneath.
+3. **Flat client memory.** The browser never holds the whole dataset; only a few screenfuls of cards are in the DOM at any time.
+4. **Stream, don't buffer.** Server-side ingestion and paging avoid materializing whole files/datasets where possible.
+5. **Modular.** Viewers and features can be added as extensions (see [EXTENSION_ARCHITECTURE.md](EXTENSION_ARCHITECTURE.md)).
+
+---
+
+## 2. High-level architecture
 
 ```
-┌────────────────────────┐         ┌────────────────────────┐
-│        Browser         │         │          API           │
-│  (Blazor WebAssembly)  │ <──────>│  ASP.NET Core Minimal  │
-│                        │  HTTPS  │    APIs / Controllers  │
-└────────────────────────┘         └──────────┬─────────────┘
-                                              │
-                         ┌────────────────────┴────────────────────┐
-                         │              Backing Services           │
-                         │   • Ingestion Workers (Hosted Services) │
-                         │   • Storage (Blob/S3/Azure)             │
-                         │   • Database (Postgres/Dynamo/etc.)     │
-                         │   • Search Index (Elastic/OpenSearch)   │
-                         └─────────────────────────────────────────┘
+┌────────────────────────┐      HTTPS      ┌──────────────────────────┐
+│        ClientApp        │ <────────────>  │        APIBackend         │
+│  (Blazor WebAssembly)   │                 │   (ASP.NET Core, net10)   │
+│  • VirtualizedItemView  │                 │  • Dataset/Item endpoints │
+│  • DatasetCacheService  │                 │  • Background ingestion    │
+│  • IndexedDB cache       │                │  • HuggingFace integration │
+└────────────────────────┘                 └─────────────┬─────────────┘
+                                                          │
+                ┌─────────────────────────────────────────┼──────────────────────────────┐
+                │ PostgreSQL (EF Core / Npgsql)             │   Apache Parquet (sharded)     │
+                │   dataset metadata, users, captions       │   dataset items, 10M rows/shard │
+                └────────────────────────────────────────────────────────────────────────────┘
+                                                          │
+                                       HuggingFace datasets-server (streaming rows)
 ```
 
-### 2.1 Client Responsibilities
-- Upload wizard calls API endpoints with chunked uploads.
-- UI requests paginated lists/search results via `HttpClient`.
-- `Virtualize<T>` (or MudBlazor equivalent) uses `ItemsProvider` to retrieve pages.
-- Prefetch and cache upcoming pages in IndexedDB to hide network latency.
-- Central `DatasetCacheService` coordinates fetch, cache, and eviction.
+### Projects
 
-### 2.2 API Responsibilities
-- Handle dataset lifecycle: upload, ingestion status, metadata, query endpoints.
-- Coordinate ingestion workers to parse files and persist metadata.
-- Expose REST endpoints for dataset browsing (`GET /datasets/{id}/items` with cursor paging), search, and filters.
-- Enforce rate limits/auth (future multi-tenant support).
-
-### 2.3 Backend Services
-- **Ingestion Worker**: Background service reading uploaded files, using streaming parser (CsvHelper async reader) to populate storage.
-- **Storage**: Raw files in blob storage; thumbnails and derived assets stored or generated on demand.
-- **Database**: Stores dataset metadata, item attributes, indexes (B-tree or columnar). Candidate: PostgreSQL + PostGIS; alternative: DynamoDB.
-- **Search Index**: Elastic/OpenSearch for full-text, tag search, filters.
+| Project | Target | Responsibility |
+|---|---|---|
+| `Core` | net8.0 | Domain models, parsers, filtering, abstractions |
+| `DTO` | net8.0 | Shared contracts (`DatasetItemDto`, `PageResponse<T>`, …) |
+| `APIBackend` | net10.0 | API endpoints, EF/Postgres, Parquet storage, ingestion, HF integration |
+| `ClientApp` | net8.0 | Blazor WASM viewer, caching, state, JS interop |
+| `Extensions/SDK` (+ `SDK.Api`) | net8.0 | Extension contracts (client-safe + API-only) |
 
 ---
 
-## 3. Detailed Component Plan
+## 3. Data model
 
-### 3.1 Client (Blazor WASM)
+Items are stored and transferred as **`DatasetItemDto`** (id, dataset id, external id, title,
+description, image/thumbnail URLs, width/height, tags, favorite, a string `Metadata` dictionary,
+timestamps). Rich image attributes (photographer, average color, engagement counts, etc.) live in
+`Metadata` and are surfaced via extension methods on the client
+(`DatasetItemDtoExtensions.AverageColor()`, `Photographer()`, …).
 
-| Component / Service | Purpose | Notes |
-|---------------------|---------|-------|
-| `DatasetUploader` | Initiates upload via API (multipart or chunks). | Replace current `ReadToEndAsync`; use chunked POST to `/api/uploads`. |
-| `DatasetCacheService` | Manages cached pages in memory + IndexedDB. | Keeps sliding window of items. Exposes async `GetPageAsync(pageToken)`. |
-| `VirtualizedImageGrid` | Wraps `Virtualize<T>` with `ItemsProvider`. | Batches requests, shows skeletons, handles prefetch. |
-| `FilterPanel` | Sends filter state to API query endpoint. | Debounce input; uses `GET /datasets/{id}/items?filter=...`. |
-| `NavigationService` | Routes with dataset IDs instead of local state. | Query string or route parameters for cursors. |
-| `NotificationService` | Surfaces ingest status/progress. | Subscribe to SignalR (future) for real-time updates. |
-| `ViewState` / `DatasetState` | Stores UI state only (selected items, view mode). | Items themselves are streamed through cache service. |
-
-#### TODOs for Client
-- [ ] Scaffold `DatasetCacheService` with fetching + caching strategies.
-- [ ] Refactor `ImageGrid` to use `ItemsProvider` pattern with API.
-- [ ] Replace local dataset state list with cache references.
-- [ ] Implement IndexedDB storage using `Blazored.LocalStorage` or direct JS interop for larger caches.
-- [ ] Create skeleton components for dataset detail, stats, search facets fed from API.
-
-### 3.2 API (ASP.NET Core Web API)
-
-| Area | Endpoints | Description |
-|------|-----------|-------------|
-| Dataset Lifecycle | `POST /api/datasets` | Creates dataset record. Returns dataset ID. |
-|  | `POST /api/datasets/{id}/upload` | Accepts file upload (multipart or chunked). Initiates ingestion job. |
-|  | `GET /api/datasets/{id}` | Metadata + ingestion status. |
-| Items & Filtering | `GET /api/datasets/{id}/items` | Cursor-based paging, filter params (search, tags, dimensions). |
-|  | `GET /api/datasets/{id}/items/{itemId}` | Fetch single item metadata/details. |
-| Search | `GET /api/datasets/{id}/search` | Delegates to search index with advanced query syntax. |
-| Stats | `GET /api/datasets/{id}/stats` | Returns aggregates (counts, tag histograms, etc.). |
-
-#### Implementation Outline
-- Minimal API or conventional controllers (choose minimal for speed).
-- DTOs defined in shared project or `HartsysDatasetEditor.Contracts` for reuse.
-- Background ingestion hosted service monitoring queue (e.g., `Channel` or DB status statements).
-- Use EF Core or Dapper to interact with relational DB; repository interfaces for alternative stores.
-- Integration tests to validate API contract.
-
-#### TODOs for API
-- [x] Create `HartsysDatasetEditor.Api` project (ASP.NET Core Web API).
-- [x] Setup dependency injection for repositories, parsers, background services.
-- [x] Implement sample in-memory repository + stub ingestion worker for local dev.
-- [x] Define shared contracts project for DTOs (DatasetSummaryDto, ItemDto, FilterRequest, PageResponse<T>).
-- [ ] Add Swagger/OpenAPI UI and document authentication requirements.
-- [ ] Configure CORS for WASM client.
-
-### 3.3 Ingestion / Workers
-- Background hosted services in API project or separate worker service.
-- Use asynchronous CSV parsing (CsvHelper `GetRecordsAsync`) and streaming writes.
-- Support plugin parser discovery (DI). Parser chooses correct `IDatasetItem` builder.
-- Persist ingestion progress to DB for resume/failure handling.
-- Generate thumbnails via serverless task or background job if needed.
-
-#### TODOs
-- [ ] Implement ingestion interface `IDatasetIngestionService` with methods `StartIngestionAsync`, `GetStatusAsync`.
-- [ ] Provide sample implementation storing to in-memory or file-based store for dev.
-- [ ] Document expected storage contract (tables, blob structure).
-
-### 3.4 Storage & Search Strategy
-- **Primary DB**: Table `DatasetItems` with indexes on datasetId + itemId, plus filter fields (tags, dimensions). For high-scale, partition by datasetId.
-- **Blob Storage**: `datasets/{datasetId}/source/{file}` and `datasets/{datasetId}/thumbnails/{itemId}.jpg`.
-- **Search**: Elastic/OpenSearch index keyed by `datasetId` + `itemId`. Document includes full-text fields and filter facets.
-- **Caching**: CDN or reverse proxy for thumbnail delivery.
-
-### 3.5 Observability Plan
-- Structured logs via Serilog/ILogger with correlation IDs per upload/request.
-- Metrics (Prometheus/OpenTelemetry): ingest throughput, API latency, cache hit rate.
-- Alerts on ingestion failures or API error spikes.
+- **Metadata (Postgres):** `DatasetEntity` (name, status, counts, source type/URI, HuggingFace
+  repo/config/split, error message) and related tables (users, captions, permissions) via
+  `DatasetStudioDbContext`. Migrations live in `APIBackend/DataAccess/PostgreSQL/Migrations` and
+  are applied automatically on API startup.
+- **Items (Parquet):** sharded files `dataset_{id}_shard_{n}.parquet`, **10M rows per shard**,
+  written in batches. Read/write/paging primitives in `ParquetItemReader` / `ParquetItemWriter`,
+  fronted by `ParquetItemRepository`.
 
 ---
 
-## 4. Data Flow Walkthrough
+## 4. Server: paging, editing, ingestion
 
-1. **Upload**
-   - Client `DatasetUploader` POST -> `/api/datasets` -> returns ID.
-   - Client `PUT /api/datasets/{id}/upload` streaming file.
-   - API stores raw file in blob, enqueues ingestion job.
-   - Ingestion worker streams file, parses rows, writes to DB/search index.
-   - Status updates accessible via `GET /api/datasets/{id}` (progress %, counts).
+### Paging
+`GET /api/datasets/{id}/items?cursor=…&pageSize=…` returns `PageResponse<DatasetItemDto>`:
 
-2. **Browse/View**
-   - Client requests first page: `GET /api/datasets/{id}/items?pageSize=100`.
-   - API returns `PageResponse<ItemDto>` with `NextCursor`.
-   - `Virtualize` requests more items with `NextCursor` when nearing bottom.
-   - Cache service stores previous pages; prefetch next page in background.
-   - Image URLs point to CDN or direct Unsplash URLs with transformations.
+- **Local datasets:** cursor is the opaque Parquet `"shard:row"` token — O(1) per page, no full scans.
+- **Streaming datasets:** the request maps to a HuggingFace `/rows?offset=…` call; rows are mapped
+  to DTOs on the fly. Config/split are auto-discovered once and cached on the dataset.
 
-3. **Filter/Search**
-   - Filter state serialized into query string or POST body.
-   - API translates to DB/search query; returns page + counts.
-   - Cache invalidated or segmented per filter signature.
+### Editing
+Single (`PATCH /api/items/{id}`) and bulk (`PATCH /api/items/bulk`) edits update items
+**shard-scoped**: only the Parquet shard(s) actually containing changed items are rewritten, not
+the whole dataset. Writes are serialized **per dataset** (a keyed semaphore), so editing one
+dataset never blocks another.
 
----
-
-## 5. Checklist & Milestones
-
-### Phase A – Infrastructure Setup
-- [x] Add `HartsysDatasetEditor.Api` (ASP.NET Core) project.
-- [x] Create shared contracts project (`HartsysDatasetEditor.Contracts`).
-- [x] Configure solution to host WASM + API together (aspnet-hosted). 
-- [x] Add README section summarizing architecture and how to run both projects.
-
-### Phase B – API Skeleton
-- [x] `POST /api/datasets` -> returns datasetId.
-- [x] `POST /api/datasets/{id}/upload` -> accepts multipart (stub ingestion for now).
-- [x] `GET /api/datasets/{id}/items` -> returns stubbed page from in-memory store.
-- [x] Swagger UI + CORS configuration.
-
-### Phase C – Client Refactor
-- [x] Replace local `DatasetLoader` usage with API-backed service.
-- [x] Implement `DatasetCacheService` and update viewer to use `ItemsProvider`.
-- [x] Add placeholder ingestion status UI (polling `GET /api/datasets/{id}`).
-- [x] Implement IndexedDB caching (optional initial stub).
-
-### Phase D – Ingestion & Persistence
-- [ ] Implement ingestion background service with streaming parser.
-- [ ] Connect to real database (EF Core migrations).
-- [ ] Integrate search index (optional stub first).
-- [ ] Add progress reporting and retry handling.
-
-### Phase E – Advanced Features
-- [ ] Pre-fetch heuristics & CDN integration.
-- [ ] Multi-dataset dashboard with summary stats.
-- [ ] Real-time notifications (SignalR) for ingestion completion.
-- [ ] Modular parser/plugin loading via reflection.
+### Ingestion
+Uploads are saved to a temp file and **queued** (`IngestionQueue`); the endpoint returns `202`
+immediately. A hosted `IngestionBackgroundService` drains the queue off the request thread, parses
+the file (CSV/TSV/Parquet/JSON/JSONL/ZIP/image folders) and writes items in batches. On failure it
+records `Failed` + an error message on the dataset, which the client's status poller surfaces.
 
 ---
 
-## 6. Developer Notes & Conventions
-- Use async/await end-to-end. Avoid blocking calls in WASM/API.
-- DTOs should be lean; avoid sending raw dataset rows.
-- Prefer `CancellationToken` on all async methods.
-- Parse filters server-side; keep client filter state serializable (JSON or query).
-- Document extension hooks with XML comments + README references.
-- Add TODOs to code linking back to sections of this doc for future contributors.
+## 5. Client: virtualized viewer
+
+```
+API → DatasetApiClient → DatasetCacheService → DatasetState.Items (sliding window)
+    → ViewerContainer → VirtualizedItemView (<Virtualize>, row-based) → ImageCard / ImageListRow
+```
+
+- **`DatasetCacheService`** keeps a fixed-size in-memory window over the dataset (cursor paging,
+  forward/back, eviction), with an optional **IndexedDB** layer caching pages across reloads.
+- **`VirtualizedItemView`** wraps Blazor's `<Virtualize>` using **row virtualization** (each
+  virtualized element is one row of *N* cards), so a responsive N-column grid stays virtualized.
+  Only a few screenfuls of cards exist in the DOM at any scroll depth. The same component renders
+  the list view (`Columns = 1`). Column count and row height are computed from the container width
+  (a small `ResizeObserver` JS interop), and nearing the end triggers prefetch via the cache.
+- **`ImageCard`** shows a dominant-color (`average_color`) placeholder instantly, then fades in a
+  width-bounded thumbnail (`loading="lazy"`, `decoding="async"`) over it — zero layout shift.
 
 ---
 
-## 7. Future Considerations
-- Authentication & multi-tenant dataset isolation.
-- Role-based access (viewers vs. editors).
-- Audit logs and versioning of datasets.
-- Integration with external AI services (captioning, tagging).
-- Federation: ability to query across multiple dataset stores.
+## 6. Extensions
+
+Extensions are manifest-described plugins discovered at startup on both API and client. The
+contract is split so the WASM client never references ASP.NET hosting types:
+`IExtension` (client-safe, `Extensions.SDK`) and `IApiExtension : IExtension`
+(`Extensions.SDK.Api`, adds `ConfigureApp(IApplicationBuilder)`). See
+[EXTENSION_ARCHITECTURE.md](EXTENSION_ARCHITECTURE.md).
 
 ---
 
-## 8. Immediate Next Client Integration Steps
-- Wire `DatasetCacheService` to call `GET /api/datasets/{id}/items` using cursor-based pagination.
-- Update uploader flow to use `POST /api/datasets` and capture returned dataset ID for viewer navigation.
-- Introduce a dataset list screen that consumes `GET /api/datasets` summaries.
-- Replace local dataset state with API-backed DTOs and store cursors in `DatasetState`.
-- Document interim client/api contract expectations (error shapes, pagination) in README.
+## 7. Roadmap / known gaps
 
----
-
-*This document should evolve with each milestone. Update checklists and references as features land.*
+- **Ingestion memory:** ingestion now runs in the background, but some parsers still materialize
+  the whole file before writing — chunked (streaming) parse + insert is the follow-up for fully
+  bounded memory on multi-GB imports.
+- **Client filtering:** filter UI exists, but full-dataset filtering needs server-side query
+  support (today filtering applies to the buffered window).
+- **Extensions:** loading/discovery work; endpoint auto-registration and permission enforcement
+  are still planned (see [EXTENSION_SYSTEM_IMPLEMENTATION_PLAN.md](EXTENSION_SYSTEM_IMPLEMENTATION_PLAN.md)).
+- **Search/observability:** a dedicated search index and metrics/telemetry are future work.
