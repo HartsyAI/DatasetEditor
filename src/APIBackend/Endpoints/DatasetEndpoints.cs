@@ -68,7 +68,7 @@ internal static class DatasetEndpoints
 
     /// <summary>Gets all datasets with pagination</summary>
     public static async Task<IResult> GetAllDatasets(
-        IDatasetRepository datasetRepository,
+        [FromServices] IDatasetRepository datasetRepository,
         [FromQuery] int page = 0,
         [FromQuery] int pageSize = 50,
         CancellationToken cancellationToken = default)
