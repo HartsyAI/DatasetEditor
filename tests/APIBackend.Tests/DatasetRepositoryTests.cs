@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using DatasetStudio.APIBackend.DataAccess.PostgreSQL;
-using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities;
 using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 using DatasetStudio.DTO.Datasets;
 using FluentAssertions;
@@ -12,6 +11,12 @@ using Xunit;
 
 namespace DatasetStudio.Tests.APIBackend
 {
+    // NOTE: this file previously tested a DatasetEntity-in/DatasetEntity-out shape
+    // (CreateAsync(DatasetEntity), GetAsync, ListAsync) that never matched the real
+    // DatasetRepository (Core.Abstractions.Repositories.IDatasetRepository), which has
+    // always been DatasetDto-in/DatasetDto-out with CreateAsync returning a Guid,
+    // GetByIdAsync, and GetAllAsync. It could not have compiled — evidence this suite
+    // was never actually run. Rewritten against the real API.
     public sealed class DatasetRepositoryTests
     {
         private static DatasetStudioDbContext CreateInMemoryContext()
@@ -29,8 +34,9 @@ namespace DatasetStudio.Tests.APIBackend
             using DatasetStudioDbContext context = CreateInMemoryContext();
             DatasetRepository repository = new DatasetRepository(context);
 
-            DatasetEntity entity = new DatasetEntity
+            DatasetDto dataset = new()
             {
+                Id = Guid.NewGuid(),
                 Name = "Test dataset",
                 Description = "Description",
                 Format = "CSV",
@@ -38,12 +44,10 @@ namespace DatasetStudio.Tests.APIBackend
                 Status = IngestionStatusDto.Pending,
                 TotalItems = 0,
                 SourceType = DatasetSourceType.LocalUpload,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
             };
 
-            DatasetEntity created = await repository.CreateAsync(entity, CancellationToken.None);
-            DatasetEntity? loaded = await repository.GetAsync(created.Id, CancellationToken.None);
+            Guid createdId = await repository.CreateAsync(dataset, CancellationToken.None);
+            DatasetDto? loaded = await repository.GetByIdAsync(createdId, CancellationToken.None);
 
             loaded.Should().NotBeNull();
             if (loaded != null)
@@ -54,39 +58,40 @@ namespace DatasetStudio.Tests.APIBackend
         }
 
         [Fact]
-        public async Task ListAsync_ReturnsDatasetsOrderedByCreatedAtDescending()
+        public async Task GetAllAsync_ReturnsDatasetsOrderedByCreatedAtDescending()
         {
             using DatasetStudioDbContext context = CreateInMemoryContext();
             DatasetRepository repository = new DatasetRepository(context);
 
-            DatasetEntity older = new DatasetEntity
+            DatasetDto older = new()
             {
+                Id = Guid.NewGuid(),
                 Name = "Older",
                 Format = "CSV",
                 Modality = "Image",
                 Status = IngestionStatusDto.Pending,
                 TotalItems = 0,
                 SourceType = DatasetSourceType.LocalUpload,
-                CreatedAt = DateTime.UtcNow.AddMinutes(-10),
-                UpdatedAt = DateTime.UtcNow.AddMinutes(-10)
             };
 
-            DatasetEntity newer = new DatasetEntity
+            DatasetDto newer = new()
             {
+                Id = Guid.NewGuid(),
                 Name = "Newer",
                 Format = "CSV",
                 Modality = "Image",
                 Status = IngestionStatusDto.Pending,
                 TotalItems = 0,
                 SourceType = DatasetSourceType.LocalUpload,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
             };
 
+            // CreateAsync stamps CreatedAt = UtcNow server-side, so order the writes
+            // themselves rather than pre-setting timestamps the repository ignores.
             await repository.CreateAsync(older, CancellationToken.None);
+            await Task.Delay(TimeSpan.FromMilliseconds(5));
             await repository.CreateAsync(newer, CancellationToken.None);
 
-            IReadOnlyList<DatasetEntity> list = await repository.ListAsync(CancellationToken.None);
+            List<DatasetDto> list = await repository.GetAllAsync(page: 0, pageSize: 50, CancellationToken.None);
 
             list.Count.Should().Be(2);
             list[0].Name.Should().Be("Newer");
@@ -99,22 +104,21 @@ namespace DatasetStudio.Tests.APIBackend
             using DatasetStudioDbContext context = CreateInMemoryContext();
             DatasetRepository repository = new DatasetRepository(context);
 
-            DatasetEntity entity = new DatasetEntity
+            DatasetDto dataset = new()
             {
+                Id = Guid.NewGuid(),
                 Name = "ToDelete",
                 Format = "CSV",
                 Modality = "Image",
                 Status = IngestionStatusDto.Pending,
                 TotalItems = 0,
                 SourceType = DatasetSourceType.LocalUpload,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
             };
 
-            DatasetEntity created = await repository.CreateAsync(entity, CancellationToken.None);
+            Guid createdId = await repository.CreateAsync(dataset, CancellationToken.None);
 
-            await repository.DeleteAsync(created.Id, CancellationToken.None);
-            DatasetEntity? loaded = await repository.GetAsync(created.Id, CancellationToken.None);
+            await repository.DeleteAsync(createdId, CancellationToken.None);
+            DatasetDto? loaded = await repository.GetByIdAsync(createdId, CancellationToken.None);
 
             loaded.Should().BeNull();
         }

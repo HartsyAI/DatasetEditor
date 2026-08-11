@@ -22,15 +22,28 @@ public class ApiExtensionRegistry
     public ApiExtensionRegistry(
         ILogger<ApiExtensionRegistry> logger,
         IConfiguration configuration,
-        IServiceProvider serviceProvider)
+        IServiceProvider serviceProvider,
+        string contentRootPath)
     {
         _logger = logger;
         _configuration = configuration;
         _serviceProvider = serviceProvider;
 
-        var basePath = Directory.GetCurrentDirectory();
-        _builtInExtensionsPath = Path.Combine(basePath, "Extensions", "BuiltIn");
-        _communityExtensionsPath = Path.Combine(basePath, "Extensions", "Community");
+        // Extensions live at repo-root `src/Extensions/{BuiltIn,Community}`, one level up
+        // from this project's own content root (`src/APIBackend`) — NOT under
+        // Directory.GetCurrentDirectory(), which under `dotnet run --project src/APIBackend`
+        // *is* src/APIBackend, so "Extensions/BuiltIn" relative to it never resolved to
+        // anything and every built-in extension silently failed to load. Configurable via
+        // Extensions:BuiltInPath/Extensions:CommunityPath (e.g. for a production layout
+        // where extensions are copied alongside the published output instead).
+        string defaultBuiltIn = Path.GetFullPath(Path.Combine(contentRootPath, "..", "Extensions", "BuiltIn"));
+        string defaultCommunity = Path.GetFullPath(Path.Combine(contentRootPath, "..", "Extensions", "Community"));
+        _builtInExtensionsPath = configuration["Extensions:BuiltInPath"] is { Length: > 0 } builtInOverride
+            ? Path.GetFullPath(builtInOverride)
+            : defaultBuiltIn;
+        _communityExtensionsPath = configuration["Extensions:CommunityPath"] is { Length: > 0 } communityOverride
+            ? Path.GetFullPath(communityOverride)
+            : defaultCommunity;
     }
 
     /// <summary>

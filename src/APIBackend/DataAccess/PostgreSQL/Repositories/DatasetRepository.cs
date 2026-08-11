@@ -40,6 +40,14 @@ public sealed class DatasetRepository : IDatasetRepository
             HuggingFaceSplit = dataset.HuggingFaceSplit,
             TotalItems = dataset.TotalItems,
             ErrorMessage = dataset.ErrorMessage,
+            Format = dataset.Format,
+            Modality = dataset.Modality,
+            TotalSizeBytes = dataset.TotalSizeBytes,
+            StoragePath = dataset.StoragePath,
+            ParquetPath = dataset.ParquetPath,
+            IsPublic = dataset.IsPublic,
+            Metadata = dataset.Metadata,
+            CreatedByUserId = dataset.CreatedByUserId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -99,6 +107,14 @@ public sealed class DatasetRepository : IDatasetRepository
         entity.HuggingFaceSplit = dataset.HuggingFaceSplit;
         entity.TotalItems = dataset.TotalItems;
         entity.ErrorMessage = dataset.ErrorMessage;
+        entity.Format = dataset.Format;
+        entity.Modality = dataset.Modality;
+        entity.TotalSizeBytes = dataset.TotalSizeBytes;
+        entity.StoragePath = dataset.StoragePath;
+        entity.ParquetPath = dataset.ParquetPath;
+        entity.IsPublic = dataset.IsPublic;
+        entity.Metadata = dataset.Metadata;
+        entity.CreatedByUserId = dataset.CreatedByUserId;
         entity.UpdatedAt = DateTime.UtcNow;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -196,7 +212,15 @@ public sealed class DatasetRepository : IDatasetRepository
             HuggingFaceRepository = entity.HuggingFaceRepository,
             HuggingFaceConfig = entity.HuggingFaceConfig,
             HuggingFaceSplit = entity.HuggingFaceSplit,
-            ErrorMessage = entity.ErrorMessage
+            ErrorMessage = entity.ErrorMessage,
+            Format = entity.Format,
+            Modality = entity.Modality,
+            TotalSizeBytes = entity.TotalSizeBytes,
+            StoragePath = entity.StoragePath,
+            ParquetPath = entity.ParquetPath,
+            IsPublic = entity.IsPublic,
+            Metadata = entity.Metadata,
+            CreatedByUserId = entity.CreatedByUserId
         };
     }
 }

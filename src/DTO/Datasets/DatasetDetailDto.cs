@@ -18,4 +18,9 @@ public sealed record DatasetDetailDto
     public string? HuggingFaceConfig { get; init; }
     public string? HuggingFaceSplit { get; init; }
     public string? ErrorMessage { get; init; }
+    public string Format { get; init; } = "Unknown";
+    public string Modality { get; init; } = "Image";
+    public long TotalSizeBytes { get; init; }
+    public bool IsPublic { get; init; } = true;
+    public Guid? CreatedByUserId { get; init; }
 }

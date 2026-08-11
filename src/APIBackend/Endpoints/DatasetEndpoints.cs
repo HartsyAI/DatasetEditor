@@ -2,12 +2,16 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Primitives;
 using DatasetStudio.APIBackend.Extensions;
 using DatasetStudio.APIBackend.Models;
-using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities;
 using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.APIBackend.Services.DatasetManagement.Dtos;
 using DatasetStudio.APIBackend.Services.Integration;
 using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
+
+// IDatasetRepository is referenced fully-qualified (Core.Abstractions.Repositories.IDatasetRepository)
+// rather than via `using`, because this file also uses the unrelated, same-named
+// Services.DatasetManagement.IDatasetItemRepository — a `using` for both namespaces would make
+// IDatasetItemRepository ambiguous. DatasetIngestionService follows the same convention.
 
 namespace DatasetStudio.APIBackend.Endpoints;
 
@@ -68,38 +72,20 @@ internal static class DatasetEndpoints
 
     /// <summary>Gets all datasets with pagination</summary>
     public static async Task<IResult> GetAllDatasets(
-        [FromServices] IDatasetRepository datasetRepository,
+        [FromServices] Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         [FromQuery] int page = 0,
         [FromQuery] int pageSize = 50,
         CancellationToken cancellationToken = default)
     {
-        // Get paginated datasets
-        IReadOnlyList<DatasetEntity> allDatasets = await datasetRepository.ListAsync(cancellationToken);
+        List<DatasetDto> pagedDatasets = await datasetRepository.GetAllAsync(page, pageSize, cancellationToken);
+        long totalCount = await datasetRepository.GetCountAsync(cancellationToken);
 
-        // Apply pagination
-        List<DatasetEntity> pagedDatasets = allDatasets
-            .Skip(page * pageSize)
-            .Take(pageSize)
-            .ToList();
-
-        // Map to DTOs
-        List<DatasetSummaryDto> dtos = pagedDatasets.Select(d => new DatasetSummaryDto
-        {
-            Id = d.Id,
-            Name = d.Name,
-            Description = d.Description,
-            Status = d.Status,
-            TotalItems = d.TotalItems,
-            CreatedAt = d.CreatedAt,
-            UpdatedAt = d.UpdatedAt,
-            Format = "CSV", // Default format
-            Modality = "Image" // Default modality
-        }).ToList();
+        List<DatasetSummaryDto> dtos = pagedDatasets.Select(d => d.ToSummaryDto()).ToList();
 
         return Results.Ok(new
         {
             datasets = dtos,
-            totalCount = allDatasets.Count,
+            totalCount,
             page,
             pageSize
         });
@@ -108,10 +94,10 @@ internal static class DatasetEndpoints
     /// <summary>Gets a single dataset by ID</summary>
     public static async Task<IResult> GetDataset(
         Guid datasetId,
-        IDatasetRepository repository,
+        Core.Abstractions.Repositories.IDatasetRepository repository,
         CancellationToken cancellationToken)
     {
-        DatasetEntity? dataset = await repository.GetAsync(datasetId, cancellationToken);
+        DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
 
         if (dataset is null)
         {
@@ -124,32 +110,40 @@ internal static class DatasetEndpoints
     /// <summary>Creates a new dataset</summary>
     public static async Task<IResult> CreateDataset(
         CreateDatasetRequest request,
-        IDatasetRepository repository,
-        IDatasetIngestionService ingestionService,
+        Core.Abstractions.Repositories.IDatasetRepository repository,
         CancellationToken cancellationToken)
     {
-        DatasetEntity entity = new()
+        DatasetDto dataset = new()
         {
             Id = Guid.NewGuid(),
             Name = request.Name,
             Description = request.Description,
             Status = IngestionStatusDto.Pending,
+            SourceType = request.SourceType,
+            SourceUri = request.SourceUri,
+            IsStreaming = request.IsStreaming,
         };
 
-        await repository.CreateAsync(entity, cancellationToken);
-        await ingestionService.StartIngestionAsync(entity.Id, uploadLocation: null, cancellationToken);
+        Guid createdId = await repository.CreateAsync(dataset, cancellationToken);
 
-        return Results.Created($"/api/datasets/{entity.Id}", entity.ToDetailDto());
+        // Just creates the dataset shell in Pending status. Ingestion itself is kicked off
+        // by a follow-up call — UploadDatasetFile (local file) or ImportFromHuggingFace —
+        // once there's actually something to ingest. There is deliberately no
+        // StartIngestionAsync(id, uploadLocation: null) call here: that method treats a
+        // missing upload location as a failure and throws, which would 500 every create.
+        DatasetDto created = dataset with { Id = createdId };
+
+        return Results.Created($"/api/datasets/{createdId}", created.ToDetailDto());
     }
 
     /// <summary>Deletes a dataset and all of its items.</summary>
     public static async Task<IResult> DeleteDataset(
         Guid datasetId,
-        IDatasetRepository datasetRepository,
+        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         IDatasetItemRepository itemRepository,
         CancellationToken cancellationToken)
     {
-        DatasetEntity? dataset = await datasetRepository.GetAsync(datasetId, cancellationToken);
+        DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
         if (dataset is null)
         {
             return Results.NotFound();
@@ -165,11 +159,11 @@ internal static class DatasetEndpoints
     public static async Task<IResult> UploadDatasetFile(
         Guid datasetId,
         IFormFile file,
-        IDatasetRepository repository,
+        Core.Abstractions.Repositories.IDatasetRepository repository,
         IngestionQueue ingestionQueue,
         CancellationToken cancellationToken)
     {
-        DatasetEntity? dataset = await repository.GetAsync(datasetId, cancellationToken);
+        DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
 
         if (dataset is null)
         {
@@ -190,8 +184,8 @@ internal static class DatasetEndpoints
             await file.CopyToAsync(stream, cancellationToken);
         }
 
-        dataset.SourceFileName = file.FileName;
-        await repository.UpdateAsync(dataset, cancellationToken);
+        DatasetDto updated = dataset with { SourceFileName = file.FileName };
+        await repository.UpdateAsync(updated, cancellationToken);
 
         // Queue ingestion to run in the background; return immediately so a large upload
         // doesn't hold the request thread. The client polls dataset status for progress.
@@ -205,13 +199,13 @@ internal static class DatasetEndpoints
         Guid datasetId,
         int? pageSize,
         string? cursor,
-        IDatasetRepository datasetRepository,
+        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         IDatasetItemRepository itemRepository,
         IHuggingFaceDatasetServerClient huggingFaceDatasetServerClient,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        DatasetEntity? dataset = await datasetRepository.GetAsync(datasetId, cancellationToken);
+        DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
         if (dataset is null)
         {
             return Results.NotFound();
@@ -245,12 +239,12 @@ internal static class DatasetEndpoints
                 {
                     config = sizeInfo.Config;
                     split = string.IsNullOrWhiteSpace(sizeInfo.Split) ? "train" : sizeInfo.Split;
-                    dataset.HuggingFaceConfig = config;
-                    dataset.HuggingFaceSplit = split;
-                    if (sizeInfo.NumRows.HasValue)
+                    dataset = dataset with
                     {
-                        dataset.TotalItems = sizeInfo.NumRows.Value;
-                    }
+                        HuggingFaceConfig = config,
+                        HuggingFaceSplit = split,
+                        TotalItems = sizeInfo.NumRows ?? dataset.TotalItems,
+                    };
 
                     await datasetRepository.UpdateAsync(dataset, cancellationToken);
                 }
@@ -525,11 +519,11 @@ internal static class DatasetEndpoints
     public static async Task<IResult> ImportFromHuggingFace(
         Guid datasetId,
         ImportHuggingFaceDatasetRequest request,
-        IDatasetRepository repository,
+        Core.Abstractions.Repositories.IDatasetRepository repository,
         IDatasetIngestionService ingestionService,
         CancellationToken cancellationToken)
     {
-        DatasetEntity? dataset = await repository.GetAsync(datasetId, cancellationToken);
+        DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
 
         if (dataset is null)
         {
@@ -542,14 +536,11 @@ internal static class DatasetEndpoints
         }
 
         // Update dataset name/description if provided
-        if (!string.IsNullOrWhiteSpace(request.Name))
+        dataset = dataset with
         {
-            dataset.Name = request.Name;
-        }
-        if (!string.IsNullOrWhiteSpace(request.Description))
-        {
-            dataset.Description = request.Description;
-        }
+            Name = string.IsNullOrWhiteSpace(request.Name) ? dataset.Name : request.Name,
+            Description = string.IsNullOrWhiteSpace(request.Description) ? dataset.Description : request.Description,
+        };
 
         await repository.UpdateAsync(dataset, cancellationToken);
 
@@ -579,11 +570,11 @@ internal static class DatasetEndpoints
     public static async Task<IResult> ServeDatasetFile(
         Guid datasetId,
         string filePath,
-        IDatasetRepository datasetRepository,
+        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         IConfiguration configuration,
         CancellationToken cancellationToken)
     {
-        DatasetEntity? dataset = await datasetRepository.GetAsync(datasetId, cancellationToken);
+        DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
         if (dataset is null)
         {
             return Results.NotFound();
@@ -629,7 +620,7 @@ internal static class DatasetEndpoints
     }
 
     /// <summary>Gets dataset folder path for file serving</summary>
-    private static string GetDatasetFolderPathForFile(DatasetEntity dataset, string datasetRootPath)
+    private static string GetDatasetFolderPathForFile(DatasetDto dataset, string datasetRootPath)
     {
         string root = Path.GetFullPath(datasetRootPath);
         Directory.CreateDirectory(root);

@@ -3,7 +3,6 @@ using DatasetStudio.APIBackend.DataAccess.PostgreSQL;
 using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.APIBackend.Services.Integration;
-using DatasetStudio.APIBackend.Services.Storage;
 using DatasetStudio.Core.Utilities.Logging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -51,13 +50,6 @@ public static class ServiceCollectionExtensions
         });
 
         Logs.Info($"PostgreSQL configured with connection: {MaskConnectionString(connectionString)}");
-
-        // ========================================
-        // Storage Services
-        // ========================================
-
-        // Parquet service for dataset item storage
-        services.AddSingleton<IParquetDataService, ParquetDataService>();
 
         // ========================================
         // Repositories

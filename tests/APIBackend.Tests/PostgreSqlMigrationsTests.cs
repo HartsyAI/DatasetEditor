@@ -2,47 +2,39 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using DatasetStudio.APIBackend.DataAccess.PostgreSQL;
+using DatasetStudio.Tests.APIBackend.Fixtures;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Xunit;
-using Xunit.Sdk;
 
 namespace DatasetStudio.Tests.APIBackend
 {
+    // Runs against the shared PostgresContainerFixture by default (see the "Postgres
+    // collection" definition) instead of requiring DATASETSTUDIO_TEST_POSTGRES_CONNECTION to
+    // be set manually — that env var still works as an override (e.g. to point at a real dev
+    // Postgres instead of spinning up a container), but this test no longer silently reports
+    // "failed" (via a bare SkipException xUnit has no built-in handling for) when it's unset.
+    [Collection(PostgresCollection.Name)]
     public sealed class PostgreSqlMigrationsTests
     {
-        private static string? GetBaseConnectionString()
+        private readonly PostgresContainerFixture _postgres;
+
+        public PostgreSqlMigrationsTests(PostgresContainerFixture postgres)
         {
-            string? connectionString = Environment.GetEnvironmentVariable("DATASETSTUDIO_TEST_POSTGRES_CONNECTION");
-            if (!string.IsNullOrWhiteSpace(connectionString))
-            {
-                return connectionString;
-            }
-
-            connectionString = Environment.GetEnvironmentVariable("ConnectionStrings__DatasetStudio");
-            if (!string.IsNullOrWhiteSpace(connectionString))
-            {
-                return connectionString;
-            }
-
-            return null;
+            _postgres = postgres;
         }
 
-        private static void Skip(string reason)
+        private string GetBaseConnectionString()
         {
-            throw new SkipException(reason);
+            string? connectionString = Environment.GetEnvironmentVariable("DATASETSTUDIO_TEST_POSTGRES_CONNECTION");
+            return string.IsNullOrWhiteSpace(connectionString) ? _postgres.ConnectionString : connectionString;
         }
 
         [Fact]
         public async Task MigrateAsync_CreatesExpectedSchema()
         {
-            string? baseConnectionString = GetBaseConnectionString();
-            if (string.IsNullOrWhiteSpace(baseConnectionString))
-            {
-                Skip("PostgreSQL connection string not configured. Set DATASETSTUDIO_TEST_POSTGRES_CONNECTION to run this test.");
-                return;
-            }
+            string baseConnectionString = GetBaseConnectionString();
 
             NpgsqlConnectionStringBuilder baseBuilder;
             try
@@ -51,7 +43,7 @@ namespace DatasetStudio.Tests.APIBackend
             }
             catch (Exception ex)
             {
-                Skip("Invalid PostgreSQL connection string: " + ex.Message);
+                Assert.Fail("Invalid PostgreSQL connection string: " + ex.Message);
                 return;
             }
 
@@ -78,7 +70,7 @@ namespace DatasetStudio.Tests.APIBackend
                 }
                 catch (Exception ex)
                 {
-                    Skip("PostgreSQL is not reachable: " + ex.Message);
+                    Assert.Fail("PostgreSQL is not reachable: " + ex.Message);
                     return;
                 }
 
@@ -89,12 +81,12 @@ namespace DatasetStudio.Tests.APIBackend
                 }
                 catch (PostgresException ex) when (ex.SqlState == "42501")
                 {
-                    Skip("Unable to create test database: " + ex.MessageText);
+                    Assert.Fail("Unable to create test database: " + ex.MessageText);
                     return;
                 }
                 catch (Exception ex)
                 {
-                    Skip("Unable to create test database: " + ex.Message);
+                    Assert.Fail("Unable to create test database: " + ex.Message);
                     return;
                 }
 
