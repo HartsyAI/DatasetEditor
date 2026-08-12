@@ -16,6 +16,7 @@ using IDatasetRepository = DatasetStudio.Core.Abstractions.Repositories.IDataset
 using IDatasetItemRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetItemRepository;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -37,7 +38,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             var hfClient = new Mock<IHuggingFaceClient>().Object;
             IConfiguration config = new ConfigurationBuilder().Build();
-            return new DatasetIngestionService(datasetRepository, itemRepository, hfClient, config);
+            return new DatasetIngestionService(datasetRepository, itemRepository, hfClient, config, NullLogger<DatasetIngestionService>.Instance);
         }
 
         private static string BuildCsv(int rowCount)

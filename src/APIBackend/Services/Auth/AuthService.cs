@@ -1,6 +1,6 @@
 using DatasetStudio.Core.Abstractions.Repositories;
-using DatasetStudio.Core.Utilities.Logging;
 using DatasetStudio.DTO.Auth;
+using Microsoft.Extensions.Logging;
 
 namespace DatasetStudio.APIBackend.Services.Auth;
 
@@ -10,11 +10,13 @@ public sealed class AuthService : IAuthService
 
     private readonly IUserRepository _userRepository;
     private readonly IPasswordHasher _passwordHasher;
+    private readonly ILogger<AuthService> _logger;
 
-    public AuthService(IUserRepository userRepository, IPasswordHasher passwordHasher)
+    public AuthService(IUserRepository userRepository, IPasswordHasher passwordHasher, ILogger<AuthService> logger)
     {
         _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
         _passwordHasher = passwordHasher ?? throw new ArgumentNullException(nameof(passwordHasher));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<AuthResult> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
@@ -51,7 +53,7 @@ public sealed class AuthService : IAuthService
         };
 
         Guid createdId = await _userRepository.CreateAsync(newUser, cancellationToken);
-        Logs.Info($"[Auth] Registered new user '{request.Username}' ({createdId})");
+        _logger.LogInformation("[Auth] Registered new user '{Username}' ({UserId})", request.Username, createdId);
 
         return AuthResult.Ok(newUser with { Id = createdId });
     }
@@ -90,7 +92,7 @@ public sealed class AuthService : IAuthService
         UserDto updated = user with { LastLoginAt = DateTime.UtcNow };
         await _userRepository.UpdateAsync(updated, cancellationToken);
 
-        Logs.Info($"[Auth] User '{user.Username}' ({user.Id}) logged in");
+        _logger.LogInformation("[Auth] User '{Username}' ({UserId}) logged in", user.Username, user.Id);
         return AuthResult.Ok(updated);
     }
 }

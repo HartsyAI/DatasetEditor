@@ -69,7 +69,18 @@ builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath))
     .SetApplicationName("DatasetStudio");
 
-builder.Services.AddDatasetServices(builder.Configuration, builder.Environment);
+// AddDatasetServices runs before builder.Build(), so there's no DI container yet to resolve a
+// logger from -- same constraint the extension-discovery block below solves with its own
+// throwaway ServiceProvider. This one is cheaper to build directly since AddDatasetServices
+// only needs a logger, not a whole container.
+using (ILoggerFactory bootstrapLoggerFactory = LoggerFactory.Create(logging =>
+{
+    logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
+    logging.AddConsole();
+}))
+{
+    builder.Services.AddDatasetServices(builder.Configuration, builder.Environment, bootstrapLoggerFactory.CreateLogger("Startup"));
+}
 builder.Services.AddAuthServices();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -176,6 +187,12 @@ builder.Services.AddCors(options =>
     });
 });
 WebApplication app = builder.Build();
+
+// Routes Core.Utilities.Logging.Logs (used by the shared Core project's ingestion/parsing code,
+// which predates real DI-based logging there) through this app's actual configured logging
+// instead of its Console.WriteLine fallback. See Logs.cs for why that project isn't fully
+// converted to injected ILogger<T> instead.
+DatasetStudio.Core.Utilities.Logging.Logs.Initialize(app.Services.GetRequiredService<ILoggerFactory>());
 
 // Apply EF Core migrations on startup so the PostgreSQL schema exists. Requires the
 // database to be reachable (run `docker compose up -d` first).

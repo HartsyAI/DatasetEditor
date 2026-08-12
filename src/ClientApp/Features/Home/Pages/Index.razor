@@ -134,9 +134,12 @@
             <MudCard Elevation="2">
                 <MudCardHeader>
                     <CardHeaderContent>
-                        <MudText Typo="Typo.subtitle1">AI tools</MudText>
+                        <MudText Typo="Typo.subtitle1">
+                            AI tools
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Class="ml-2">Coming soon</MudChip>
+                        </MudText>
                         <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                            Prepare datasets with captioning, tagging, and more.
+                            Auto-captioning, tagging, and quality scoring — planned, not yet built.
                         </MudText>
                     </CardHeaderContent>
                     <CardHeaderActions>
@@ -148,7 +151,7 @@
                                Color="Color.Secondary"
                                FullWidth="true"
                                OnClick="@NavigateToAiTools">
-                        Explore AI tools
+                        View status
                     </MudButton>
                 </MudCardActions>
             </MudCard>

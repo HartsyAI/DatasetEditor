@@ -4,7 +4,6 @@ using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.APIBackend.Services.Integration;
 using DatasetStudio.APIBackend.Services.Storage;
-using DatasetStudio.Core.Utilities.Logging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -16,7 +15,8 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddDatasetServices(
         this IServiceCollection services,
         IConfiguration configuration,
-        IWebHostEnvironment environment)
+        IWebHostEnvironment environment,
+        ILogger startupLogger)
     {
         // ========================================
         // PostgreSQL Database
@@ -50,7 +50,7 @@ public static class ServiceCollectionExtensions
             options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
         });
 
-        Logs.Info($"PostgreSQL configured with connection: {MaskConnectionString(connectionString)}");
+        startupLogger.LogInformation("PostgreSQL configured with connection: {ConnectionString}", MaskConnectionString(connectionString));
 
         // ========================================
         // Repositories
@@ -134,14 +134,12 @@ public static class ServiceCollectionExtensions
             ?? Array.Empty<S3StorageProfileConfig>();
         services.AddSingleton<IS3StorageProfileResolver>(new S3StorageProfileResolver(s3StorageProfiles));
         services.AddSingleton<IS3StorageService, S3StorageService>();
-        Logs.Info($"S3 storage profiles configured: {(s3StorageProfiles.Length == 0 ? "(none)" : string.Join(", ", s3StorageProfiles.Select(p => p.Name)))}");
+        startupLogger.LogInformation("S3 storage profiles configured: {Profiles}",
+            s3StorageProfiles.Length == 0 ? "(none)" : string.Join(", ", s3StorageProfiles.Select(p => p.Name)));
 
-        Logs.Info($"Storage directories created:");
-        Logs.Info($"  Parquet: {parquetPath}");
-        Logs.Info($"  Blobs: {blobPath}");
-        Logs.Info($"  Thumbnails: {thumbnailPath}");
-        Logs.Info($"  Uploads: {uploadPath}");
-        Logs.Info($"  Datasets: {datasetRootPath}");
+        startupLogger.LogInformation(
+            "Storage directories created: Parquet={Parquet} Blobs={Blobs} Thumbnails={Thumbnails} Uploads={Uploads} Datasets={Datasets}",
+            parquetPath, blobPath, thumbnailPath, uploadPath, datasetRootPath);
 
         return services;
     }

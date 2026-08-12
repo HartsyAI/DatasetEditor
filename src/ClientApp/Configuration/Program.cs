@@ -8,7 +8,6 @@ using DatasetStudio.ClientApp.Configuration;
 using DatasetStudio.ClientApp.Features.Auth.Services;
 using DatasetStudio.ClientApp.Services.ApiClients;
 using DatasetStudio.ClientApp.Services.Caching;
-using DatasetStudio.ClientApp.Services.Extensions;
 using DatasetStudio.ClientApp.Services.Interop;
 using DatasetStudio.ClientApp.Services.StateManagement;
 using DatasetStudio.ClientApp.Shared.Services;
@@ -20,6 +19,7 @@ using DatasetStudio.Core.BusinessLogic.ModalityProviders;
 using DatasetStudio.Core.Utilities;
 using DatasetStudio.Core.Utilities.Logging;
 using DatasetStudio.Extensions.SDK;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Threading.Tasks;
 
@@ -118,4 +118,13 @@ builder.Services.AddScoped<ApiKeyState>();
 // TODO: Add Fluxor state management when complexity grows
 // TODO: Add SignalR services for real-time features (when server added)
 
-await builder.Build().RunAsync();
+WebAssemblyHost host = builder.Build();
+
+// Routes Core.Utilities.Logging.Logs (used across ~25 ClientApp/Core call sites that predate
+// real DI-based logging) through WASM's built-in browser-console logging provider instead of
+// its Console.WriteLine fallback -- Console output doesn't reach the browser devtools console
+// in a WASM app the way it does in a normal .NET process. See Logs.cs for why this project
+// isn't fully converted to injected ILogger<T> instead.
+Logs.Initialize(host.Services.GetRequiredService<ILoggerFactory>());
+
+await host.RunAsync();

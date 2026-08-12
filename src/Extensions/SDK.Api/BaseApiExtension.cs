@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace DatasetStudio.Extensions.SDK;
 
@@ -35,9 +36,12 @@ public abstract class BaseApiExtension : IApiExtension
         ?? throw new InvalidOperationException("Extension not initialized. Call InitializeAsync first.");
 
     /// <summary>
-    /// Gets the logger for this extension.
+    /// Gets the logger for this extension. Falls back to a no-op logger before
+    /// InitializeAsync runs -- ConfigureServices/ConfigureApp are called by Program.cs before
+    /// InitializeAsync (services must be registered pre-Build(), the extension context can only
+    /// be built after), so this must never throw the way Context does.
     /// </summary>
-    protected ILogger Logger => Context.Logger;
+    protected ILogger Logger => _context?.Logger ?? NullLogger.Instance;
 
     /// <summary>
     /// Gets the service provider for dependency injection.

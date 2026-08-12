@@ -1,7 +1,7 @@
 using DatasetStudio.Core.Abstractions.Repositories;
-using DatasetStudio.Core.Utilities.Logging;
 using DatasetStudio.DTO.Auth;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace DatasetStudio.APIBackend.Services.Auth;
 
@@ -22,12 +22,14 @@ public sealed class AdminBootstrapper : IAdminBootstrapper
     private readonly IUserRepository _userRepository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IConfiguration _configuration;
+    private readonly ILogger<AdminBootstrapper> _logger;
 
-    public AdminBootstrapper(IUserRepository userRepository, IPasswordHasher passwordHasher, IConfiguration configuration)
+    public AdminBootstrapper(IUserRepository userRepository, IPasswordHasher passwordHasher, IConfiguration configuration, ILogger<AdminBootstrapper> logger)
     {
         _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
         _passwordHasher = passwordHasher ?? throw new ArgumentNullException(nameof(passwordHasher));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task RunAsync(CancellationToken cancellationToken = default)
@@ -35,7 +37,7 @@ public sealed class AdminBootstrapper : IAdminBootstrapper
         string? adminPassword = _configuration["ADMIN_PASSWORD"];
         if (string.IsNullOrWhiteSpace(adminPassword))
         {
-            Logs.Info("[Auth] ADMIN_PASSWORD not configured -- skipping admin bootstrap. " +
+            _logger.LogInformation("[Auth] ADMIN_PASSWORD not configured -- skipping admin bootstrap. " +
                 "If the seeded admin account's placeholder password was never repaired, it remains permanently unusable (by design, not a bug).");
             return;
         }
@@ -59,7 +61,7 @@ public sealed class AdminBootstrapper : IAdminBootstrapper
                 CreatedAt = DateTime.UtcNow
             };
             await _userRepository.CreateAsync(admin, cancellationToken);
-            Logs.Info($"[Auth] Bootstrapped new admin account '{adminUsername}'");
+            _logger.LogInformation("[Auth] Bootstrapped new admin account '{AdminUsername}'", adminUsername);
             return;
         }
 
@@ -72,6 +74,6 @@ public sealed class AdminBootstrapper : IAdminBootstrapper
             EmailVerified = true
         };
         await _userRepository.UpdateAsync(updated, cancellationToken);
-        Logs.Info($"[Auth] Synced admin account '{adminUsername}' from ADMIN_* configuration");
+        _logger.LogInformation("[Auth] Synced admin account '{AdminUsername}' from ADMIN_* configuration", adminUsername);
     }
 }

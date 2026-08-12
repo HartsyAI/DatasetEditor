@@ -3,9 +3,15 @@
 <PageTitle>AI Tools - DatasetStudio</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
-    <MudText Typo="Typo.h4" Class="mb-4">AI Tools</MudText>
-    <MudText Typo="Typo.body2" Class="mud-text-secondary">
-        Central hub for AI-assisted operations (auto-captioning, tagging, quality
-        scoring, etc.) will be implemented here.
-    </MudText>
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+        <MudText Typo="Typo.h4">AI Tools</MudText>
+        <MudChip T="string" Color="Color.Default">Coming soon</MudChip>
+    </MudStack>
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+        This is a planned hub for AI-assisted operations — auto-captioning, tagging, quality
+        scoring, and similar — not yet implemented. It needs its own model-serving decision
+        (local hosting vs. a third-party API, with the cost/latency tradeoffs that come with
+        either) separate from the core browse/curate flow, so it's tracked as backlogged v2 work
+        rather than shipped half-built.
+    </MudAlert>
 </MudContainer>

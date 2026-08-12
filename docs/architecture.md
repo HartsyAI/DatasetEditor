@@ -1,14 +1,15 @@
 # Dataset Studio — Architecture
 
 > **Goal:** browse, curate, and edit billion-scale AI image datasets through a desktop-grade
-> web UI, with flat client memory and O(1)-per-page server access regardless of dataset size.
+> web UI, with flat client memory and per-page server access bounded by a single Parquet
+> row-group's size, not the full dataset.
 
 ---
 
 ## 1. Guiding principles
 
 1. **Two data paths.** Stream from HuggingFace (nothing stored) *or* import locally into Parquet + PostgreSQL.
-2. **Perceived performance first.** Instant color placeholders, eager first screen, true virtualization — then real O(1) paging underneath.
+2. **Perceived performance first.** Instant color placeholders, eager first screen, true virtualization — then row-group-bounded paging underneath (see §4).
 3. **Flat client memory.** The browser never holds the whole dataset; only a few screenfuls of cards are in the DOM at any time.
 4. **Stream, don't buffer.** Server-side ingestion and paging avoid materializing whole files/datasets where possible.
 5. **Modular.** Viewers and features can be added as extensions (see [EXTENSION_ARCHITECTURE.md](EXTENSION_ARCHITECTURE.md)).
@@ -69,7 +70,14 @@ timestamps). Rich image attributes (photographer, average color, engagement coun
 ### Paging
 `GET /api/datasets/{id}/items?cursor=…&pageSize=…` returns `PageResponse<DatasetItemDto>`:
 
-- **Local datasets:** cursor is the opaque Parquet `"shard:row"` token — O(1) per page, no full scans.
+- **Local datasets:** cursor is the opaque Parquet `"shard:row"` token. `ReadPageAsync` reads row
+  groups sequentially starting from the cursor's position until the page fills — cost is bounded
+  by a row group's size (the ingestion writer's batch size, `ParquetSchemaDefinition.
+  DefaultBatchSize` = 10,000 rows, see §3/§4 Ingestion), not O(1) and not the full shard or
+  dataset. The Phase 1 append fix (`FileMode.Open, FileAccess.ReadWrite` instead of `Append`,
+  needed for the footer rewrite on append) doesn't change row-group sizing itself, but does mean
+  a re-ingested/appended shard can end up with more, smaller row groups than a single bulk write
+  would — still bounded, just a different constant. No full scans either way.
 - **Streaming datasets:** the request maps to a HuggingFace `/rows?offset=…` call; rows are mapped
   to DTOs on the fly. Config/split are auto-discovered once and cached on the dataset.
 
@@ -114,15 +122,34 @@ contract is split so the WASM client never references ASP.NET hosting types:
 (`Extensions.SDK.Api`, adds `ConfigureApp(IApplicationBuilder)`). See
 [EXTENSION_ARCHITECTURE.md](EXTENSION_ARCHITECTURE.md).
 
+**Real state as of Phase 7** (found by actually running the pipeline end-to-end for the first
+time, not assumed from the design): of the 5 built-in manifests
+(`src/Extensions/BuiltIn/{CoreViewer,Creator,Editor,AdvancedTools,AITools}`), only **CoreViewer**
+has both a real project and working code — and even that only after fixing a lifecycle bug where
+`BaseApiExtension`'s `Logger` property threw before `InitializeAsync` ran, which is *before*
+`ConfigureServices`/`ConfigureApp` are called in the real startup order. Its two endpoints are
+explicitly reference/example code (hardcoded placeholder data, no permission checks) — see the
+class-level comment in `CoreViewerApiExtension.cs`. `Creator` has empty stub `.Api`/`.Client`
+projects (build, but contain no `IExtension` implementation). `Editor`/`AdvancedTools`/`AITools`
+are manifest-only, no project at all. `ApiExtensionRegistry` handles all of this gracefully
+(logs "API assembly not found", doesn't crash), so this is an honest capability gap, not a
+runtime bug. The client-side counterpart, `ClientExtensionRegistry`, was deleted in Phase 7: it
+scanned the real filesystem (`Directory.Exists`/`File.Exists`), which doesn't work in a Blazor
+WebAssembly browser sandbox, and had zero call sites of its own — a working client-extension
+loader needs a different design (e.g. an HTTP-served manifest + dynamic WASM assembly loading),
+not built here.
+
 ---
 
 ## 7. Roadmap / known gaps
 
-- **Ingestion memory:** ingestion now runs in the background, but some parsers still materialize
-  the whole file before writing — chunked (streaming) parse + insert is the follow-up for fully
-  bounded memory on multi-GB imports.
 - **Client filtering:** filter UI exists, but full-dataset filtering needs server-side query
   support (today filtering applies to the buffered window).
-- **Extensions:** loading/discovery work; endpoint auto-registration and permission enforcement
-  are still planned (see [EXTENSION_SYSTEM_IMPLEMENTATION_PLAN.md](EXTENSION_SYSTEM_IMPLEMENTATION_PLAN.md)).
+- **Extensions:** only 1 of 5 built-in manifests (CoreViewer) has real, working code; endpoint
+  auto-registration and permission enforcement for extension routes are still planned. See §6
+  above for the real state and
+  [EXTENSION_SYSTEM_IMPLEMENTATION_PLAN.md](EXTENSION_SYSTEM_IMPLEMENTATION_PLAN.md).
+- **AI Tools:** nav entry and page both explicitly labeled "Coming soon" (Phase 7) rather than
+  shipped as a placeholder that reads as broken — needs its own model-serving decision (local
+  hosting vs. a third-party API) before it's buildable.
 - **Search/observability:** a dedicated search index and metrics/telemetry are future work.

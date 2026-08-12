@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using DatasetStudio.APIBackend.Models;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.Core.Utilities;
-using DatasetStudio.Core.Utilities.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DatasetStudio.APIBackend.Services.Integration;
 
@@ -24,20 +24,23 @@ internal sealed class HuggingFaceDiscoveryService : IHuggingFaceDiscoveryService
 {
     private readonly IHuggingFaceClient _huggingFaceClient;
     private readonly IHuggingFaceDatasetServerClient _datasetServerClient;
+    private readonly ILogger<HuggingFaceDiscoveryService> _logger;
 
     public HuggingFaceDiscoveryService(
         IHuggingFaceClient huggingFaceClient,
-        IHuggingFaceDatasetServerClient datasetServerClient)
+        IHuggingFaceDatasetServerClient datasetServerClient,
+        ILogger<HuggingFaceDiscoveryService> logger)
     {
         _huggingFaceClient = huggingFaceClient ?? throw new ArgumentNullException(nameof(huggingFaceClient));
         _datasetServerClient = datasetServerClient ?? throw new ArgumentNullException(nameof(datasetServerClient));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<HuggingFaceDiscoveryResponse> DiscoverDatasetAsync(
         HuggingFaceDiscoveryRequest request,
         CancellationToken cancellationToken = default)
     {
-        Logs.Info($"[HF DISCOVERY] Starting discovery for {request.Repository}");
+        _logger.LogInformation("[HF DISCOVERY] Starting discovery for {Repository}", request.Repository);
 
         // Step 1: Fetch basic dataset info from HuggingFace Hub
         HuggingFaceDatasetInfo? info = await _huggingFaceClient.GetDatasetInfoAsync(
@@ -48,7 +51,7 @@ internal sealed class HuggingFaceDiscoveryService : IHuggingFaceDiscoveryService
 
         if (info == null)
         {
-            Logs.Warning($"[HF DISCOVERY] Dataset {request.Repository} not found or inaccessible");
+            _logger.LogWarning("[HF DISCOVERY] Dataset {Repository} not found or inaccessible", request.Repository);
             return new HuggingFaceDiscoveryResponse
             {
                 Repository = request.Repository,
@@ -57,7 +60,7 @@ internal sealed class HuggingFaceDiscoveryService : IHuggingFaceDiscoveryService
             };
         }
 
-        Logs.Info($"[HF DISCOVERY] Found dataset {request.Repository} with {info.Files.Count} files");
+        _logger.LogInformation("[HF DISCOVERY] Found dataset {Repository} with {FileCount} files", request.Repository, info.Files.Count);
 
         // Build dataset profile
         HuggingFaceDatasetProfile profile = HuggingFaceDatasetProfile.FromDatasetInfo(request.Repository, info);
@@ -77,7 +80,7 @@ internal sealed class HuggingFaceDiscoveryService : IHuggingFaceDiscoveryService
         HuggingFaceStreamingOptions? streamingOptions = null;
         if (request.IsStreaming)
         {
-            Logs.Info($"[HF DISCOVERY] Discovering streaming options for {request.Repository}");
+            _logger.LogInformation("[HF DISCOVERY] Discovering streaming options for {Repository}", request.Repository);
             streamingOptions = await DiscoverStreamingOptionsAsync(
                 request.Repository,
                 request.AccessToken,
@@ -87,7 +90,7 @@ internal sealed class HuggingFaceDiscoveryService : IHuggingFaceDiscoveryService
         // Step 4: Build download options
         HuggingFaceDownloadOptions downloadOptions = BuildDownloadOptions(profile);
 
-        Logs.Info($"[HF DISCOVERY] Discovery complete for {request.Repository}");
+        _logger.LogInformation("[HF DISCOVERY] Discovery complete for {Repository}", request.Repository);
 
         return new HuggingFaceDiscoveryResponse
         {
@@ -114,7 +117,7 @@ internal sealed class HuggingFaceDiscoveryService : IHuggingFaceDiscoveryService
 
             if (allSplits != null && allSplits.Count > 0)
             {
-                Logs.Info($"[HF DISCOVERY] Found {allSplits.Count} config/split combinations for {repository}");
+                _logger.LogInformation("[HF DISCOVERY] Found {SplitCount} config/split combinations for {Repository}", allSplits.Count, repository);
                 
                 // Convert to HuggingFaceConfigOption
                 List<HuggingFaceConfigOption> options = new List<HuggingFaceConfigOption>();
@@ -185,7 +188,7 @@ internal sealed class HuggingFaceDiscoveryService : IHuggingFaceDiscoveryService
         }
         catch (Exception ex)
         {
-            Logs.Warning($"[HF DISCOVERY] Error discovering streaming options: {ex.Message}");
+            _logger.LogWarning(ex, "[HF DISCOVERY] Error discovering streaming options");
             return new HuggingFaceStreamingOptions
             {
                 IsSupported = false,

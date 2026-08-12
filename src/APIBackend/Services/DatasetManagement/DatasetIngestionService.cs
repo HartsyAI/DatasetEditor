@@ -5,9 +5,9 @@ using System.Text.Json;
 using CsvHelper;
 using CsvHelper.Configuration;
 using DatasetStudio.APIBackend.Services.Integration;
-using DatasetStudio.Core.Utilities.Logging;
 using DatasetStudio.DTO.Datasets;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace DatasetStudio.APIBackend.Services.DatasetManagement;
 
@@ -33,12 +33,14 @@ public class DatasetIngestionService : IDatasetIngestionService
     private readonly IConfiguration _configuration;
     private readonly string _uploadPath;
     private readonly string _datasetRootPath;
+    private readonly ILogger<DatasetIngestionService> _logger;
 
     public DatasetIngestionService(
         Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         Core.Abstractions.Repositories.IDatasetItemRepository itemRepository,
         IHuggingFaceClient huggingFaceClient,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        ILogger<DatasetIngestionService> logger)
     {
         _datasetRepository = datasetRepository ?? throw new ArgumentNullException(nameof(datasetRepository));
         _itemRepository = itemRepository ?? throw new ArgumentNullException(nameof(itemRepository));
@@ -46,6 +48,7 @@ public class DatasetIngestionService : IDatasetIngestionService
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _uploadPath = configuration["Storage:UploadPath"] ?? "./uploads";
         _datasetRootPath = configuration["Storage:DatasetRootPath"] ?? "./data/datasets";
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task StartIngestionAsync(Guid datasetId, string? uploadLocation, CancellationToken cancellationToken = default)
@@ -66,21 +69,21 @@ public class DatasetIngestionService : IDatasetIngestionService
         try
         {
             await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Processing, cancellationToken: cancellationToken);
-            Logs.Info($"[HF Import] Starting import for dataset {datasetId} from {request.Repository}");
+            _logger.LogInformation("[HF Import] Starting import for dataset {DatasetId} from {Repository}", datasetId, request.Repository);
 
             // If streaming mode, just update metadata - no download needed
             if (request.IsStreaming)
             {
-                Logs.Info($"[HF Import] Streaming mode enabled for {request.Repository}");
+                _logger.LogInformation("[HF Import] Streaming mode enabled for {Repository}", request.Repository);
                 // Dataset metadata is already saved by the endpoint
                 // Items will be fetched on-demand from HuggingFace Datasets Server API
                 await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Completed, cancellationToken: cancellationToken);
-                Logs.Info($"[HF Import] Streaming dataset configured successfully");
+                _logger.LogInformation("[HF Import] Streaming dataset configured successfully");
                 return;
             }
 
             // Non-streaming mode: Download and parse the dataset
-            Logs.Info($"[HF Import] Download mode - fetching dataset info");
+            _logger.LogInformation("[HF Import] Download mode - fetching dataset info");
             var datasetInfo = await _huggingFaceClient.GetDatasetInfoAsync(
                 request.Repository,
                 request.Revision,
@@ -112,7 +115,7 @@ public class DatasetIngestionService : IDatasetIngestionService
             var downloadPath = Path.Combine(_uploadPath, $"hf_{datasetId}_{Path.GetFileName(fileToDownload)}");
             Directory.CreateDirectory(_uploadPath);
 
-            Logs.Info($"[HF Import] Downloading {fileToDownload} to {downloadPath}");
+            _logger.LogInformation("[HF Import] Downloading {FileToDownload} to {DownloadPath}", fileToDownload, downloadPath);
             await _huggingFaceClient.DownloadFileAsync(
                 request.Repository,
                 fileToDownload,
@@ -132,14 +135,14 @@ public class DatasetIngestionService : IDatasetIngestionService
             }
             catch (Exception ex)
             {
-                Logs.Warning($"[HF Import] Failed to cleanup download file {downloadPath}: {ex.Message}");
+                _logger.LogWarning(ex, "[HF Import] Failed to cleanup download file {DownloadPath}", downloadPath);
             }
 
-            Logs.Info($"[HF Import] Successfully imported dataset from {request.Repository}");
+            _logger.LogInformation("[HF Import] Successfully imported dataset from {Repository}", request.Repository);
         }
         catch (Exception ex)
         {
-            Logs.Error($"[HF Import] Failed to import from HuggingFace: {ex.Message}");
+            _logger.LogError(ex, "[HF Import] Failed to import from HuggingFace");
             await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Failed, ex.Message, cancellationToken);
             throw;
         }
@@ -151,7 +154,7 @@ public class DatasetIngestionService : IDatasetIngestionService
         try
         {
             await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Processing, cancellationToken: cancellationToken);
-            Logs.Info($"[Ingestion] Starting ingestion for dataset {datasetId}, file: {fileName}");
+            _logger.LogInformation("[Ingestion] Starting ingestion for dataset {DatasetId}, file: {FileName}", datasetId, fileName);
 
             var extension = Path.GetExtension(fileName).ToLowerInvariant();
             IAsyncEnumerable<DatasetItemDto> itemStream = extension switch
@@ -179,7 +182,7 @@ public class DatasetIngestionService : IDatasetIngestionService
             await _datasetRepository.UpdateItemCountAsync(datasetId, trueTotalCount, cancellationToken);
             await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Completed, cancellationToken: cancellationToken);
 
-            Logs.Info($"[Ingestion] Successfully ingested {totalWritten} items for dataset {datasetId} (total now {trueTotalCount})");
+            _logger.LogInformation("[Ingestion] Successfully ingested {TotalWritten} items for dataset {DatasetId} (total now {TrueTotalCount})", totalWritten, datasetId, trueTotalCount);
         }
         catch (Exception ex)
         {
@@ -193,7 +196,7 @@ public class DatasetIngestionService : IDatasetIngestionService
             string message = totalWritten > 0
                 ? $"Failed after writing {totalWritten} item(s): {ex.Message}"
                 : ex.Message;
-            Logs.Error($"[Ingestion] Failed to ingest dataset {datasetId}: {message}");
+            _logger.LogError(ex, "[Ingestion] Failed to ingest dataset {DatasetId}: {Message}", datasetId, message);
             await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Failed, message, cancellationToken);
             throw;
         }
@@ -217,7 +220,7 @@ public class DatasetIngestionService : IDatasetIngestionService
             {
                 await _itemRepository.InsertItemsAsync(datasetId, chunk, cancellationToken);
                 totalWritten += chunk.Count;
-                Logs.Info($"[Ingestion] Wrote chunk of {chunk.Count} items for dataset {datasetId} (total so far: {totalWritten})");
+                _logger.LogInformation("[Ingestion] Wrote chunk of {ChunkCount} items for dataset {DatasetId} (total so far: {TotalWritten})", chunk.Count, datasetId, totalWritten);
                 chunk.Clear();
             }
         }
@@ -237,7 +240,7 @@ public class DatasetIngestionService : IDatasetIngestionService
         try
         {
             await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Processing, cancellationToken: cancellationToken);
-            Logs.Info($"[Ingestion] Starting folder ingestion for dataset {datasetId}, folder: {folderPath}");
+            _logger.LogInformation("[Ingestion] Starting folder ingestion for dataset {DatasetId}, folder: {FolderPath}", datasetId, folderPath);
 
             // Record where the source images actually live so ServeDatasetFile knows to serve
             // straight from this folder — a dataset here can be an arbitrary, potentially huge
@@ -269,7 +272,7 @@ public class DatasetIngestionService : IDatasetIngestionService
             await _datasetRepository.UpdateItemCountAsync(datasetId, trueTotalCount, cancellationToken);
             await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Completed, cancellationToken: cancellationToken);
 
-            Logs.Info($"[Ingestion] Successfully ingested {totalWritten} images from folder for dataset {datasetId} (total now {trueTotalCount})");
+            _logger.LogInformation("[Ingestion] Successfully ingested {TotalWritten} images from folder for dataset {DatasetId} (total now {TrueTotalCount})", totalWritten, datasetId, trueTotalCount);
         }
         catch (Exception ex)
         {
@@ -277,7 +280,7 @@ public class DatasetIngestionService : IDatasetIngestionService
             string message = totalWritten > 0
                 ? $"Failed after writing {totalWritten} item(s): {ex.Message}"
                 : ex.Message;
-            Logs.Error($"[Ingestion] Failed to ingest folder for dataset {datasetId}: {message}");
+            _logger.LogError(ex, "[Ingestion] Failed to ingest folder for dataset {DatasetId}: {Message}", datasetId, message);
             await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Failed, message, cancellationToken);
             throw;
         }
@@ -492,7 +495,7 @@ public class DatasetIngestionService : IDatasetIngestionService
                 string destinationPath = Path.GetFullPath(Path.Combine(normalizedExtractRoot, entry.FullName));
                 if (!destinationPath.StartsWith(extractContainmentPrefix, StringComparison.OrdinalIgnoreCase))
                 {
-                    Logs.Warning($"[Ingestion] Skipping ZIP entry that would extract outside the target directory: {entry.FullName}");
+                    _logger.LogWarning("[Ingestion] Skipping ZIP entry that would extract outside the target directory: {EntryFullName}", entry.FullName);
                     continue;
                 }
 
@@ -534,7 +537,7 @@ public class DatasetIngestionService : IDatasetIngestionService
                 }
                 catch (Exception cleanupEx)
                 {
-                    Logs.Warning($"[Ingestion] Failed to clean up partially-extracted ZIP contents at {extractPath}: {cleanupEx.Message}");
+                    _logger.LogWarning(cleanupEx, "[Ingestion] Failed to clean up partially-extracted ZIP contents at {ExtractPath}", extractPath);
                 }
             }
         }

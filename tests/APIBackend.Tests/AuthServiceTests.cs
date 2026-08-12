@@ -8,6 +8,7 @@ using DatasetStudio.DTO.Auth;
 using DatasetStudio.DTO.Datasets;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 using IPermissionRepository = DatasetStudio.Core.Abstractions.Repositories.IPermissionRepository;
@@ -20,7 +21,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public void Hash_ThenVerify_RoundTripsCorrectly()
         {
-            var hasher = new BCryptPasswordHasher();
+            var hasher = new BCryptPasswordHasher(NullLogger<BCryptPasswordHasher>.Instance);
             string hash = hasher.Hash("correct-horse-battery-staple");
 
             hasher.Verify("correct-horse-battery-staple", hash).Should().BeTrue();
@@ -32,7 +33,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             // This is exactly the seeded admin row's shape before AdminBootstrapper repairs it --
             // a literal placeholder string, not real BCrypt output.
-            var hasher = new BCryptPasswordHasher();
+            var hasher = new BCryptPasswordHasher(NullLogger<BCryptPasswordHasher>.Instance);
 
             Action act = () => hasher.Verify("any-password", "$2a$11$placeholder_hash_replace_on_first_run").Should().BeFalse();
 
@@ -55,7 +56,7 @@ namespace DatasetStudio.Tests.APIBackend
         public async Task RunAsync_NoAdminPasswordConfigured_SkipsEntirely()
         {
             var userRepo = new Mock<IUserRepository>();
-            var bootstrapper = new AdminBootstrapper(userRepo.Object, new BCryptPasswordHasher(), BuildConfig(null, null, null));
+            var bootstrapper = new AdminBootstrapper(userRepo.Object, new BCryptPasswordHasher(NullLogger<BCryptPasswordHasher>.Instance), BuildConfig(null, null, null), NullLogger<AdminBootstrapper>.Instance);
 
             await bootstrapper.RunAsync(CancellationToken.None);
 
@@ -85,8 +86,8 @@ namespace DatasetStudio.Tests.APIBackend
                 .Callback<UserDto, CancellationToken>((u, _) => updatedWith = u)
                 .Returns(Task.CompletedTask);
 
-            var hasher = new BCryptPasswordHasher();
-            var bootstrapper = new AdminBootstrapper(userRepo.Object, hasher, BuildConfig(null, null, "real-password-123"));
+            var hasher = new BCryptPasswordHasher(NullLogger<BCryptPasswordHasher>.Instance);
+            var bootstrapper = new AdminBootstrapper(userRepo.Object, hasher, BuildConfig(null, null, "real-password-123"), NullLogger<AdminBootstrapper>.Instance);
 
             await bootstrapper.RunAsync(CancellationToken.None);
 
@@ -110,8 +111,8 @@ namespace DatasetStudio.Tests.APIBackend
                 .Callback<UserDto, CancellationToken>((u, _) => stored = u)
                 .Returns(Task.CompletedTask);
 
-            var hasher = new BCryptPasswordHasher();
-            var bootstrapper = new AdminBootstrapper(userRepo.Object, hasher, BuildConfig(null, null, "pw-one"));
+            var hasher = new BCryptPasswordHasher(NullLogger<BCryptPasswordHasher>.Instance);
+            var bootstrapper = new AdminBootstrapper(userRepo.Object, hasher, BuildConfig(null, null, "pw-one"), NullLogger<AdminBootstrapper>.Instance);
             await bootstrapper.RunAsync(CancellationToken.None);
             await bootstrapper.RunAsync(CancellationToken.None); // second boot, same env
 
@@ -126,7 +127,7 @@ namespace DatasetStudio.Tests.APIBackend
             userRepo.Setup(r => r.GetByUsernameAsync("customadmin", It.IsAny<CancellationToken>())).ReturnsAsync((UserDto?)null);
             userRepo.Setup(r => r.CreateAsync(It.IsAny<UserDto>(), It.IsAny<CancellationToken>())).ReturnsAsync(Guid.NewGuid());
 
-            var bootstrapper = new AdminBootstrapper(userRepo.Object, new BCryptPasswordHasher(), BuildConfig("customadmin", "admin@example.com", "pw"));
+            var bootstrapper = new AdminBootstrapper(userRepo.Object, new BCryptPasswordHasher(NullLogger<BCryptPasswordHasher>.Instance), BuildConfig("customadmin", "admin@example.com", "pw"), NullLogger<AdminBootstrapper>.Instance);
             await bootstrapper.RunAsync(CancellationToken.None);
 
             userRepo.Verify(r => r.CreateAsync(It.Is<UserDto>(u => u.Username == "customadmin" && u.Role == "Admin"), It.IsAny<CancellationToken>()), Times.Once);

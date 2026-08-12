@@ -3,7 +3,6 @@ using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.DTO.Items;
 using DatasetStudio.Core.Utilities;
-using DatasetStudio.Core.Utilities.Logging;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DatasetStudio.APIBackend.Endpoints;
@@ -36,7 +35,8 @@ public static class ItemEditEndpoints
         IDatasetItemRepository itemRepository,
         Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         IDatasetPermissionService permissionService,
-        HttpContext httpContext)
+        HttpContext httpContext,
+        ILogger<Program> logger)
     {
         DatasetItemDto? item = await itemRepository.GetItemAsync(itemId);
 
@@ -104,7 +104,7 @@ public static class ItemEditEndpoints
         // Save to database
         await itemRepository.UpdateItemAsync(item);
 
-        Logs.Info($"Updated item {itemId}: Title={request.Title}, Tags={request.Tags?.Count ?? 0}");
+        logger.LogInformation("Updated item {ItemId}: Title={Title}, Tags={TagCount}", itemId, request.Title, request.Tags?.Count ?? 0);
 
         return Results.Ok(item);
     }
@@ -114,7 +114,8 @@ public static class ItemEditEndpoints
         IDatasetItemRepository itemRepository,
         Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         IDatasetPermissionService permissionService,
-        HttpContext httpContext)
+        HttpContext httpContext,
+        ILogger<Program> logger)
     {
         if (!request.ItemIds.Any())
         {
@@ -200,7 +201,7 @@ public static class ItemEditEndpoints
         // Bulk update in database
         await itemRepository.UpdateItemsAsync(itemsToUpdate);
 
-        Logs.Info($"Bulk updated {itemsToUpdate.Count} items");
+        logger.LogInformation("Bulk updated {ItemCount} items", itemsToUpdate.Count);
 
         return Results.Ok(new { updatedCount = itemsToUpdate.Count });
     }

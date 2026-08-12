@@ -1,4 +1,4 @@
-using DatasetStudio.Core.Utilities.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace DatasetStudio.APIBackend.Services.Auth;
 
@@ -8,6 +8,13 @@ public sealed class BCryptPasswordHasher : IPasswordHasher
     // deliberately slow (that's the point of BCrypt) but not so slow it makes login/register
     // requests feel broken.
     private const int WorkFactor = 11;
+
+    private readonly ILogger<BCryptPasswordHasher> _logger;
+
+    public BCryptPasswordHasher(ILogger<BCryptPasswordHasher> logger)
+    {
+        _logger = logger;
+    }
 
     public string Hash(string password) => BCrypt.Net.BCrypt.HashPassword(password, WorkFactor);
 
@@ -23,7 +30,7 @@ public sealed class BCryptPasswordHasher : IPasswordHasher
             // well-formed BCrypt output -- the seeded admin row ships with exactly such a
             // placeholder value until the admin bootstrap repairs it. A malformed hash means
             // "this password can never match", not "something went wrong".
-            Logs.Warning($"[Auth] Password verification failed against a malformed hash: {ex.Message}");
+            _logger.LogWarning("[Auth] Password verification failed against a malformed hash: {Message}", ex.Message);
             return false;
         }
     }
