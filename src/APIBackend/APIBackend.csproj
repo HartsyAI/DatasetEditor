@@ -25,6 +25,9 @@
     <PackageReference Include="SkiaSharp" Version="4.151.1" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.151.1" />
 
+    <!-- S3 / S3-compatible storage (real AWS S3, MinIO, R2, Backblaze via ServiceURL override) -->
+    <PackageReference Include="AWSSDK.S3" Version="4.0.102.1" />
+
     <!-- Entity Framework Core for PostgreSQL -->
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.11" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11">

@@ -20,6 +20,14 @@ public sealed record DatasetDto
     public string? HuggingFaceRepository { get; init; }
     public string? HuggingFaceConfig { get; init; }
     public string? HuggingFaceSplit { get; init; }
+    /// <summary>
+    /// Name of the server-side StorageProfile (env-var-configured credentials + endpoint) this
+    /// S3-sourced dataset reads through. Never the credentials themselves -- same rule Phase 3
+    /// established for auth secrets, extended here (see IS3StorageProfileResolver).
+    /// </summary>
+    public string? S3StorageProfileName { get; init; }
+    public string? S3Bucket { get; init; }
+    public string? S3Prefix { get; init; }
     public string? ErrorMessage { get; init; }
     public string Format { get; init; } = "Unknown";
     public string Modality { get; init; } = "Image";

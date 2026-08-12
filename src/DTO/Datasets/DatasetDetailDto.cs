@@ -17,6 +17,9 @@ public sealed record DatasetDetailDto
     public string? HuggingFaceRepository { get; init; }
     public string? HuggingFaceConfig { get; init; }
     public string? HuggingFaceSplit { get; init; }
+    public string? S3StorageProfileName { get; init; }
+    public string? S3Bucket { get; init; }
+    public string? S3Prefix { get; init; }
     public string? ErrorMessage { get; init; }
     public string Format { get; init; } = "Unknown";
     public string Modality { get; init; } = "Image";

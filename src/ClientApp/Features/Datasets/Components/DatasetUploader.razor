@@ -317,6 +317,70 @@
                     }
                 </MudStack>
             </MudTabPanel>
+
+            <MudTabPanel Text="S3 bucket" Icon="@Icons.Material.Filled.Cloud">
+                @* S3 / S3-compatible bucket Import Content *@
+                <MudStack Spacing="3" Class="mt-4">
+                    <MudAlert Severity="Severity.Info" Dense="true">
+                        Point DatasetStudio at an S3 (or S3-compatible: MinIO, R2, Backblaze) bucket.
+                        Images stay in the bucket and are proxied through the API on demand — nothing is copied.
+                    </MudAlert>
+
+                    <MudTextField T="string" @bind-Value="_s3StorageProfileName"
+                                 Label="Storage profile"
+                                 Placeholder="minio-dev"
+                                 HelperText="Name of a server-configured storage profile (set up by the operator, not your credentials)"
+                                 Variant="Variant.Outlined"
+                                 Immediate="true"
+                                 Required="true" />
+
+                    <MudTextField T="string" @bind-Value="_s3Bucket"
+                                 Label="Bucket"
+                                 Placeholder="my-dataset-bucket"
+                                 HelperText="Must be one of the profile's allowed buckets"
+                                 Variant="Variant.Outlined"
+                                 Immediate="true"
+                                 Required="true" />
+
+                    <MudTextField T="string" @bind-Value="_s3Prefix"
+                                 Label="Prefix (Optional)"
+                                 Placeholder="images/"
+                                 HelperText="Only objects under this key prefix belong to the dataset"
+                                 Variant="Variant.Outlined" />
+
+                    <MudTextField T="string" @bind-Value="_s3DatasetName"
+                                 Label="Dataset Name (Optional)"
+                                 Placeholder="My Dataset"
+                                 HelperText="Defaults to the bucket name"
+                                 Variant="Variant.Outlined" />
+
+                    <MudButton Variant="Variant.Filled"
+                              Color="Color.Primary"
+                              StartIcon="@Icons.Material.Filled.Cloud"
+                              OnClick="@ImportFromS3Async"
+                              Disabled="@(_isUploading || string.IsNullOrWhiteSpace(_s3StorageProfileName) || string.IsNullOrWhiteSpace(_s3Bucket))"
+                              FullWidth="true">
+                        @(_isUploading && _activeTabIndex == 3 ? "Connecting..." : "Connect Bucket")
+                    </MudButton>
+
+                    @if (_isUploading && _activeTabIndex == 3)
+                    {
+                        <MudPaper Class="pa-4" Elevation="3">
+                            <MudStack Spacing="3">
+                                <MudText Typo="Typo.h6" Align="Align.Center">Connecting to S3</MudText>
+                                <MudProgressLinear Color="Color.Primary"
+                                                  Indeterminate="true"
+                                                  Size="Size.Large"
+                                                  Striped="true"
+                                                  Class="my-2" />
+                                <MudText Typo="Typo.body2" Align="Align.Center">
+                                    @_uploadStatus
+                                </MudText>
+                            </MudStack>
+                        </MudPaper>
+                    }
+                </MudStack>
+            </MudTabPanel>
         </MudTabs>
     </MudStack>
 </MudPaper>

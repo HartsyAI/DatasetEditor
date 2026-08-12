@@ -59,6 +59,12 @@ public partial class DatasetUploader
     public string _folderPath = string.Empty;
     public string? _folderDatasetName = null;
 
+    // S3 import fields
+    public string _s3StorageProfileName = string.Empty;
+    public string _s3Bucket = string.Empty;
+    public string? _s3Prefix = null;
+    public string? _s3DatasetName = null;
+
     private const string FileInputElementId = "fileInput";
 
     protected override void OnInitialized()
@@ -1014,6 +1020,79 @@ public partial class DatasetUploader
             string userMessage = GetFriendlyErrorMessage(ex);
             _errorMessage = userMessage;
             Logs.Error("Failed to import from folder", ex);
+            DatasetState.SetError(userMessage);
+            NotificationService.ShowError(userMessage);
+        }
+        finally
+        {
+            _isUploading = false;
+            _uploadStatus = string.Empty;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>Creates a dataset from an S3 (or S3-compatible) bucket.</summary>
+    public async Task ImportFromS3Async()
+    {
+        if (string.IsNullOrWhiteSpace(_s3StorageProfileName) || string.IsNullOrWhiteSpace(_s3Bucket))
+        {
+            _errorMessage = "Please enter a storage profile name and bucket.";
+            return;
+        }
+
+        _errorMessage = null;
+        _isUploading = true;
+        _uploadStatus = "Creating dataset...";
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            string datasetName = !string.IsNullOrWhiteSpace(_s3DatasetName)
+                ? _s3DatasetName
+                : _s3Bucket;
+
+            DatasetDetailDto? dataset = await DatasetApiClient.CreateDatasetAsync(
+                new CreateDatasetRequest(datasetName, $"S3 bucket: {_s3Bucket}" + (string.IsNullOrWhiteSpace(_s3Prefix) ? "" : $"/{_s3Prefix}")));
+
+            if (dataset == null)
+            {
+                throw new Exception("Failed to create dataset on server.");
+            }
+
+            Guid datasetId = dataset.Id;
+            Logs.Info($"Dataset created with ID: {datasetId} for S3 import");
+
+            _uploadStatus = "Connecting to bucket...";
+            await InvokeAsync(StateHasChanged);
+
+            bool success = await DatasetApiClient.ImportFromS3Async(
+                datasetId, new ImportS3DatasetRequest(_s3StorageProfileName, _s3Bucket, _s3Prefix));
+
+            if (!success)
+            {
+                throw new Exception("S3 import request failed.");
+            }
+
+            // Like HF streaming, items load on demand -- no background processing to wait for.
+            DatasetState.SetLoading(true);
+            await DatasetCacheService.LoadFirstPageAsync(datasetId);
+            DatasetState.SetLoading(false);
+
+            NotificationService.ShowSuccess($"Dataset '{datasetName}' connected to S3. Items load on demand as you browse.");
+
+            _s3StorageProfileName = string.Empty;
+            _s3Bucket = string.Empty;
+            _s3Prefix = null;
+            _s3DatasetName = null;
+
+            await Task.Delay(500);
+            NavigationService.NavigateToDataset(datasetId.ToString());
+        }
+        catch (Exception ex)
+        {
+            string userMessage = GetFriendlyErrorMessage(ex);
+            _errorMessage = userMessage;
+            Logs.Error("Failed to import from S3", ex);
             DatasetState.SetError(userMessage);
             NotificationService.ShowError(userMessage);
         }

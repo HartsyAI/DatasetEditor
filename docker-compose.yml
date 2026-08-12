@@ -2,11 +2,18 @@
 # Matches ConnectionStrings:DatasetStudio in src/APIBackend/Configuration/appsettings.Development.json
 # (Host=localhost;Port=5432;Database=dataset_studio_dev;Username=postgres;Password=postgres).
 #
+# Also includes a dev-only MinIO service for exercising the S3 storage source locally --
+# NOT part of the production compose file (Phase 6). In production, operators bring their own
+# S3-compatible endpoint and configure it via a Storage:S3StorageProfiles environment-variable
+# profile, same as ADMIN_PASSWORD/ConnectionStrings.
+#
 # Usage:
-#   docker compose up -d        # start Postgres
+#   docker compose up -d        # start Postgres + MinIO
 #   dotnet run --project src/APIBackend   # API auto-applies EF migrations on startup
-#   docker compose down         # stop (keeps data in the named volume)
+#   docker compose down         # stop (keeps data in the named volumes)
 #   docker compose down -v      # stop and wipe data
+#
+# MinIO console: http://localhost:9001 (login: minioadmin / minioadmin)
 services:
   postgres:
     image: postgres:16
@@ -26,5 +33,27 @@ services:
       timeout: 5s
       retries: 10
 
+  minio:
+    image: minio/minio
+    container_name: datasetstudio-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - datasetstudio_minio_data:/data
+    healthcheck:
+      # No curl/wget in this image -- mc (the MinIO client) is bundled, so use it directly
+      # instead against the local server.
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
 volumes:
   datasetstudio_pgdata:
+  datasetstudio_minio_data:

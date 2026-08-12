@@ -68,6 +68,8 @@ namespace DatasetStudio.Tests.APIBackend
         [InlineData("GET", "/api/datasets/00000000-0000-0000-0000-000000000000/items")]
         [InlineData("GET", "/api/datasets/00000000-0000-0000-0000-000000000000/files/x.jpg")]
         [InlineData("DELETE", "/api/datasets/00000000-0000-0000-0000-000000000000")]
+        [InlineData("POST", "/api/datasets/00000000-0000-0000-0000-000000000000/import-s3")]
+        [InlineData("GET", "/api/datasets/00000000-0000-0000-0000-000000000000/s3-file?key=x.jpg")]
         public async Task EveryMappedDatasetRoute_NeverReturns500(string method, string path)
         {
             using HttpClient client = _factory.CreateClient();

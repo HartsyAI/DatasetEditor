@@ -96,6 +96,23 @@ internal static class DatasetEndpoints
             .Produces<FileStreamResult>(StatusCodes.Status200OK, "image/jpeg")
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status400BadRequest);
+
+        // Gated like ImportFromHuggingFace (CanWriteAsync on the target dataset), not
+        // ImportFromFolder's blanket Admin-only rule -- an S3 import can only ever reach a
+        // bucket the operator explicitly allow-listed on the named profile (see
+        // S3StorageProfileConfig.AllowedBuckets), so it doesn't carry ImportFromFolder's
+        // "arbitrary server filesystem" risk.
+        group.MapPost("/{datasetId:guid}/import-s3", ImportFromS3)
+            .WithName("ImportFromS3")
+            .Produces(StatusCodes.Status202Accepted)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status400BadRequest)
+            .RequireAuthorization();
+
+        group.MapGet("/{datasetId:guid}/s3-file", GetS3File)
+            .WithName("GetS3File")
+            .Produces<FileStreamResult>(StatusCodes.Status200OK, "image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp")
+            .Produces(StatusCodes.Status404NotFound);
     }
 
     /// <summary>Gets all datasets with pagination, scoped to what the caller may see.</summary>
@@ -263,6 +280,7 @@ internal static class DatasetEndpoints
         Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         IDatasetItemRepository itemRepository,
         IHuggingFaceDatasetServerClient huggingFaceDatasetServerClient,
+        Services.Storage.IS3StorageService s3StorageService,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
         CancellationToken cancellationToken)
@@ -275,8 +293,18 @@ internal static class DatasetEndpoints
 
         int size = pageSize.GetValueOrDefault(100);
 
+        // Handle S3-sourced datasets: lists bucket objects live, on every page request, the
+        // same "no bulk ingestion" design as the HuggingFace-streaming branch below. Checked
+        // by SourceType alone (not the shared IsStreaming flag, which ImportFromS3 also sets
+        // to true) -- falling through to the HF branch's `|| dataset.IsStreaming` check would
+        // have silently misrouted every S3 dataset into it.
+        if (dataset.SourceType == DatasetSourceType.ExternalS3Streaming)
+        {
+            return await GetS3DatasetItemsPage(datasetId, dataset, cursor, size, s3StorageService, cancellationToken);
+        }
+
         // Handle HuggingFace streaming datasets
-        if (dataset.SourceType == DatasetSourceType.HuggingFaceStreaming || dataset.IsStreaming)
+        if (dataset.SourceType == DatasetSourceType.HuggingFaceStreaming)
         {
             string? repository = dataset.HuggingFaceRepository;
             if (string.IsNullOrWhiteSpace(repository))
@@ -385,6 +413,90 @@ internal static class DatasetEndpoints
             NextCursor = repositoryNextCursor,
             TotalCount = null
         });
+    }
+
+    /// <summary>
+    /// Lists one page of an S3-sourced dataset's bucket objects live and maps each to a
+    /// DatasetItemDto -- the S3 counterpart of the HuggingFace-streaming branch's
+    /// MapStreamingRowToDatasetItem. The S3 object key doubles as ExternalId AND (via GetS3File)
+    /// as the stable identity for the item's image/thumbnail URLs -- unlike HF-streaming rows,
+    /// which need a fabricated row-offset scheme (see hf-thumbnail's doc comment) because HF
+    /// never hands back anything as naturally stable as a key. Non-image keys (e.g. a manifest
+    /// file sitting in the same prefix) are silently skipped, not surfaced as broken items.
+    /// </summary>
+    private static async Task<IResult> GetS3DatasetItemsPage(
+        Guid datasetId,
+        DatasetDto dataset,
+        string? cursor,
+        int size,
+        Services.Storage.IS3StorageService s3StorageService,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(dataset.S3StorageProfileName) || string.IsNullOrWhiteSpace(dataset.S3Bucket))
+        {
+            return Results.BadRequest(new { error = "ExternalS3Streaming dataset is missing bucket metadata" });
+        }
+
+        // S3's ListObjectsV2 pages via an opaque continuation token, not a numeric offset like
+        // HF's -- the cursor is passed through as-is, never parsed.
+        Services.Storage.S3ListPage page;
+        try
+        {
+            page = await s3StorageService.ListObjectsAsync(
+                dataset.S3StorageProfileName, dataset.S3Bucket, dataset.S3Prefix, cursor, size, cancellationToken);
+        }
+        catch (Exception)
+        {
+            return Results.Ok(new PageResponse<DatasetItemDto>
+            {
+                Items = Array.Empty<DatasetItemDto>(),
+                NextCursor = null,
+                TotalCount = 0
+            });
+        }
+
+        List<DatasetItemDto> items = new(page.Keys.Count);
+        DateTime now = DateTime.UtcNow;
+        foreach (string key in page.Keys)
+        {
+            if (!HasImageExtension(key))
+            {
+                continue;
+            }
+
+            string encodedKey = Uri.EscapeDataString(key);
+            string fileUrl = $"/api/datasets/{datasetId}/s3-file?key={encodedKey}";
+            items.Add(new DatasetItemDto
+            {
+                Id = Guid.NewGuid(),
+                DatasetId = datasetId,
+                ExternalId = key,
+                Title = Path.GetFileNameWithoutExtension(key),
+                ImageUrl = fileUrl,
+                ThumbnailUrl = fileUrl,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
+        }
+
+        return Results.Ok(new PageResponse<DatasetItemDto>
+        {
+            Items = items,
+            NextCursor = page.NextContinuationToken,
+            TotalCount = null
+        });
+    }
+
+    /// <summary>File-extension check for a raw S3 key (IsLikelyImageUrl expects a URL-shaped string with "http" in it, which a bare key never has).</summary>
+    private static bool HasImageExtension(string key)
+    {
+        string lower = key.ToLowerInvariant();
+        return lower.EndsWith(".jpg", StringComparison.Ordinal) ||
+               lower.EndsWith(".jpeg", StringComparison.Ordinal) ||
+               lower.EndsWith(".png", StringComparison.Ordinal) ||
+               lower.EndsWith(".webp", StringComparison.Ordinal) ||
+               lower.EndsWith(".gif", StringComparison.Ordinal) ||
+               lower.EndsWith(".bmp", StringComparison.Ordinal);
     }
 
     /// <summary>Maps a streaming HuggingFace row to DatasetItemDto</summary>
@@ -733,6 +845,87 @@ internal static class DatasetEndpoints
     }
 
     /// <summary>
+    /// Points a dataset at an S3 (or S3-compatible) bucket. Mirrors HuggingFace streaming's
+    /// design: no bulk ingestion happens here or is queued -- GetDatasetItems' S3 branch lists
+    /// bucket objects live, on every page request, the same way its HF-streaming branch calls
+    /// datasets-server live. What this endpoint actually does is validate + record the
+    /// bucket/prefix and confirm the profile can really reach it (one cheap ListObjectsV2 call)
+    /// before marking the dataset Completed, so a broken profile/bucket fails fast with a clear
+    /// error instead of surfacing as an empty grid.
+    /// </summary>
+    public static async Task<IResult> ImportFromS3(
+        Guid datasetId,
+        ImportS3DatasetRequest request,
+        Core.Abstractions.Repositories.IDatasetRepository repository,
+        IDatasetPermissionService permissionService,
+        Services.Storage.IS3StorageProfileResolver profileResolver,
+        Services.Storage.IS3StorageService s3StorageService,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
+        if (dataset is null)
+        {
+            return Results.NotFound(new { error = "Dataset not found" });
+        }
+        // See ImportFromHuggingFace's identical guard.
+        if (!await permissionService.CanReadAsync(dataset, httpContext.User, cancellationToken))
+        {
+            return Results.NotFound(new { error = "Dataset not found" });
+        }
+        if (!await permissionService.CanWriteAsync(dataset, httpContext.User, cancellationToken))
+        {
+            return Results.Forbid();
+        }
+
+        if (string.IsNullOrWhiteSpace(request.StorageProfileName) || string.IsNullOrWhiteSpace(request.Bucket))
+        {
+            return Results.BadRequest(new { error = "StorageProfileName and Bucket are required" });
+        }
+
+        if (profileResolver.GetProfile(request.StorageProfileName) is null)
+        {
+            return Results.BadRequest(new { error = $"Unknown storage profile '{request.StorageProfileName}'" });
+        }
+
+        // The allow-list check, not the request, is the authority on which buckets this
+        // profile's credentials may touch -- see S3StorageProfileConfig.AllowedBuckets.
+        if (!profileResolver.IsBucketAllowed(request.StorageProfileName, request.Bucket))
+        {
+            return Results.BadRequest(new { error = $"Bucket '{request.Bucket}' is not allowed for profile '{request.StorageProfileName}'" });
+        }
+
+        try
+        {
+            await s3StorageService.ListObjectsAsync(
+                request.StorageProfileName, request.Bucket, request.Prefix, continuationToken: null, maxKeys: 1, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            return Results.BadRequest(new { error = $"Could not reach bucket '{request.Bucket}': {ex.Message}" });
+        }
+
+        dataset = dataset with
+        {
+            SourceType = DatasetSourceType.ExternalS3Streaming,
+            IsStreaming = true,
+            S3StorageProfileName = request.StorageProfileName,
+            S3Bucket = request.Bucket,
+            S3Prefix = request.Prefix,
+            Status = IngestionStatusDto.Completed,
+        };
+        await repository.UpdateAsync(dataset, cancellationToken);
+
+        return Results.Accepted($"/api/datasets/{datasetId}", new
+        {
+            datasetId,
+            bucket = request.Bucket,
+            prefix = request.Prefix,
+            message = "Bucket connected. Items load on demand as you browse."
+        });
+    }
+
+    /// <summary>
     /// Serves a file from a dataset's folder (for locally stored images). Same read-visibility
     /// rule as GetDataset. An optional <c>?w=</c> query param requests a cached, width-bounded
     /// JPEG thumbnail instead of the full-res original -- folded into this handler rather than
@@ -845,6 +1038,99 @@ internal static class DatasetEndpoints
 
         FileStream fileStream = File.OpenRead(normalizedFullPath);
         return Results.File(fileStream, contentType, enableRangeProcessing: true);
+    }
+
+    /// <summary>
+    /// Proxy-streams an object from an S3-sourced dataset's bucket, with the same optional
+    /// <c>?w=</c> thumbnail branch ServeDatasetFile has. Proxying (not presigned URLs) keeps
+    /// this endpoint's permission check and the thumbnail cache as the single enforcement
+    /// point for S3-sourced content, same as every other source type. <paramref name="key"/>
+    /// is validated against the dataset's own stored S3Prefix via S3KeySafety before any
+    /// GetObjectAsync call -- the S3 equivalent of ServeDatasetFile's local-path containment
+    /// check, closing off a dataset scoped to one prefix being used to read another.
+    /// </summary>
+    public static async Task<IResult> GetS3File(
+        Guid datasetId,
+        [FromQuery] string? key,
+        [FromQuery] int? w,
+        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        IDatasetPermissionService permissionService,
+        Services.Storage.IS3StorageService s3StorageService,
+        Services.Storage.IThumbnailService thumbnailService,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
+        if (dataset is null || !await permissionService.CanReadAsync(dataset, httpContext.User, cancellationToken))
+        {
+            return Results.NotFound();
+        }
+
+        if (dataset.SourceType != DatasetSourceType.ExternalS3Streaming
+            || string.IsNullOrWhiteSpace(dataset.S3StorageProfileName)
+            || string.IsNullOrWhiteSpace(dataset.S3Bucket))
+        {
+            return Results.NotFound();
+        }
+
+        if (string.IsNullOrWhiteSpace(key) || !Services.Storage.S3KeySafety.IsKeyWithinPrefix(dataset.S3Prefix, key))
+        {
+            return Results.NotFound();
+        }
+
+        string extension = Path.GetExtension(key).ToLowerInvariant();
+        string contentType = extension switch
+        {
+            ".jpg" or ".jpeg" => "image/jpeg",
+            ".png" => "image/png",
+            ".webp" => "image/webp",
+            ".gif" => "image/gif",
+            ".bmp" => "image/bmp",
+            _ => "application/octet-stream"
+        };
+
+        string profileName = dataset.S3StorageProfileName;
+        string bucket = dataset.S3Bucket;
+
+        if (w.HasValue && w.Value > 0)
+        {
+            // Folds profile+bucket+key into the cache key, not just key -- a dataset's profile
+            // or bucket can be repointed via a later import-s3 call (mirrors why hf-thumbnail's
+            // cache key folds in repository/config/split, not just offset).
+            string cacheKey = $"s3|{profileName}|{bucket}|{key}";
+            Services.Storage.ThumbnailResult thumbnail = await thumbnailService.GetOrCreateJpegAsync(
+                cacheKey,
+                w.Value,
+                async ct =>
+                {
+                    await using Stream? objectStream = await s3StorageService.GetObjectStreamAsync(profileName, bucket, key, ct);
+                    if (objectStream is null)
+                    {
+                        return null;
+                    }
+                    using MemoryStream buffer = new();
+                    await objectStream.CopyToAsync(buffer, ct);
+                    return buffer.ToArray();
+                },
+                cancellationToken);
+
+            if (thumbnail.Outcome == Services.Storage.ThumbnailOutcome.SourceNotFound)
+            {
+                return Results.NotFound();
+            }
+            if (thumbnail.Outcome == Services.Storage.ThumbnailOutcome.Generated)
+            {
+                return Results.File(thumbnail.Bytes!, "image/jpeg");
+            }
+            // Undecodable: fall through to proxy the original below.
+        }
+
+        Stream? stream = await s3StorageService.GetObjectStreamAsync(profileName, bucket, key, cancellationToken);
+        if (stream is null)
+        {
+            return Results.NotFound();
+        }
+        return Results.Stream(stream, contentType);
     }
 
     /// <summary>

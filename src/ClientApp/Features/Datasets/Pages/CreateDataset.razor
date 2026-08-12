@@ -14,7 +14,7 @@
                 </MudText>
 
                 <MudGrid>
-                    <MudItem xs="12" md="4">
+                    <MudItem xs="12" md="3">
                         <MudCard Class="pa-3" Elevation="2">
                             <MudText Typo="Typo.subtitle1">Upload files or ZIP</MudText>
                             <MudText Typo="Typo.body2" Class="mud-text-secondary">
@@ -28,7 +28,7 @@
                         </MudCard>
                     </MudItem>
 
-                    <MudItem xs="12" md="4">
+                    <MudItem xs="12" md="3">
                         <MudCard Class="pa-3" Elevation="2">
                             <MudText Typo="Typo.subtitle1">Import from HuggingFace</MudText>
                             <MudText Typo="Typo.body2" Class="mud-text-secondary">
@@ -42,7 +42,7 @@
                         </MudCard>
                     </MudItem>
 
-                    <MudItem xs="12" md="4">
+                    <MudItem xs="12" md="3">
                         <MudCard Class="pa-3" Elevation="2">
                             <MudText Typo="Typo.subtitle1">Local folder</MudText>
                             <MudText Typo="Typo.body2" Class="mud-text-secondary">
@@ -52,6 +52,20 @@
                                        StartIcon="@Icons.Material.Filled.Folder"
                                        OnClick='@(() => SelectSource("folder"))'>
                                 Use Local Folder
+                            </MudButton>
+                        </MudCard>
+                    </MudItem>
+
+                    <MudItem xs="12" md="3">
+                        <MudCard Class="pa-3" Elevation="2">
+                            <MudText Typo="Typo.subtitle1">S3 bucket</MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                                Connect an S3 or S3-compatible bucket (MinIO, R2, Backblaze).
+                            </MudText>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3"
+                                       StartIcon="@Icons.Material.Filled.Cloud"
+                                       OnClick='@(() => SelectSource("s3"))'>
+                                Use S3 Bucket
                             </MudButton>
                         </MudCard>
                     </MudItem>
@@ -78,6 +92,10 @@
                 else if (_selectedSource == "folder")
                 {
                     <DatasetUploader InitialTabIndex="2" />
+                }
+                else if (_selectedSource == "s3")
+                {
+                    <DatasetUploader InitialTabIndex="3" />
                 }
             </MudStack>
         </MudStep>

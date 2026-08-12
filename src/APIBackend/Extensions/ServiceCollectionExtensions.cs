@@ -122,6 +122,20 @@ public static class ServiceCollectionExtensions
             return new ThumbnailService(thumbnailPath, logger);
         });
 
+        // ========================================
+        // S3 / S3-compatible storage
+        // ========================================
+
+        // Same GetSection(...).Get<T[]>() idiom already used for Cors:AllowedOrigins -- real
+        // credentials come from environment variables (Storage__S3StorageProfiles__0__AccessKey,
+        // etc.) at deploy time, never committed to appsettings.json.
+        S3StorageProfileConfig[] s3StorageProfiles =
+            configuration.GetSection("Storage:S3StorageProfiles").Get<S3StorageProfileConfig[]>()
+            ?? Array.Empty<S3StorageProfileConfig>();
+        services.AddSingleton<IS3StorageProfileResolver>(new S3StorageProfileResolver(s3StorageProfiles));
+        services.AddSingleton<IS3StorageService, S3StorageService>();
+        Logs.Info($"S3 storage profiles configured: {(s3StorageProfiles.Length == 0 ? "(none)" : string.Join(", ", s3StorageProfiles.Select(p => p.Name)))}");
+
         Logs.Info($"Storage directories created:");
         Logs.Info($"  Parquet: {parquetPath}");
         Logs.Info($"  Blobs: {blobPath}");

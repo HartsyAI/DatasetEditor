@@ -21,6 +21,9 @@ internal static class DatasetMappings
         HuggingFaceRepository = dataset.HuggingFaceRepository,
         HuggingFaceConfig = dataset.HuggingFaceConfig,
         HuggingFaceSplit = dataset.HuggingFaceSplit,
+        S3StorageProfileName = dataset.S3StorageProfileName,
+        S3Bucket = dataset.S3Bucket,
+        S3Prefix = dataset.S3Prefix,
     };
 
     public static DatasetDetailDto ToDetailDto(this DatasetDto dataset) => new()
@@ -39,6 +42,9 @@ internal static class DatasetMappings
         HuggingFaceRepository = dataset.HuggingFaceRepository,
         HuggingFaceConfig = dataset.HuggingFaceConfig,
         HuggingFaceSplit = dataset.HuggingFaceSplit,
+        S3StorageProfileName = dataset.S3StorageProfileName,
+        S3Bucket = dataset.S3Bucket,
+        S3Prefix = dataset.S3Prefix,
         ErrorMessage = dataset.ErrorMessage,
         Format = dataset.Format,
         Modality = dataset.Modality,

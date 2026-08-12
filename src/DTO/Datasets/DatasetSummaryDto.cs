@@ -18,4 +18,7 @@ public sealed record DatasetSummaryDto
     public string? HuggingFaceRepository { get; init; }
     public string? HuggingFaceConfig { get; init; }
     public string? HuggingFaceSplit { get; init; }
+    public string? S3StorageProfileName { get; init; }
+    public string? S3Bucket { get; init; }
+    public string? S3Prefix { get; init; }
 }

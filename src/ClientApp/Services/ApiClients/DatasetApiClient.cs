@@ -113,6 +113,17 @@ public sealed class DatasetApiClient
         return response.IsSuccessStatusCode;
     }
 
+    public async Task<bool> ImportFromS3Async(Guid datasetId, ImportS3DatasetRequest request, CancellationToken cancellationToken = default)
+    {
+        HttpResponseMessage response = await _httpClient.PostAsJsonAsync(
+            $"api/datasets/{datasetId}/import-s3",
+            request,
+            SerializerOptions,
+            cancellationToken);
+
+        return response.IsSuccessStatusCode;
+    }
+
     public async Task<HuggingFaceDiscoveryResponse?> DiscoverHuggingFaceDatasetAsync(HuggingFaceDiscoveryRequest request, CancellationToken cancellationToken = default)
     {
         HttpResponseMessage response = await _httpClient.PostAsJsonAsync(

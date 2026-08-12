@@ -171,6 +171,21 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("parquet_path");
 
+                    b.Property<string>("S3Bucket")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("s3_bucket");
+
+                    b.Property<string>("S3Prefix")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("s3_prefix");
+
+                    b.Property<string>("S3StorageProfileName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("s3_storage_profile_name");
+
                     b.Property<string>("SourceFileName")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")

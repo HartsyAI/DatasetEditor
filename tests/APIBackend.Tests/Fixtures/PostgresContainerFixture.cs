@@ -47,8 +47,13 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
         }
     }
 
+    /// <summary>
+    /// Also provides <see cref="MinioContainerFixture"/> -- folded into this same collection
+    /// rather than a separate one so S3 integration tests don't spin up a second, concurrent
+    /// Postgres container (see MinioContainerFixture's doc comment for why that mattered).
+    /// </summary>
     [CollectionDefinition(Name)]
-    public sealed class PostgresCollection : ICollectionFixture<PostgresContainerFixture>
+    public sealed class PostgresCollection : ICollectionFixture<PostgresContainerFixture>, ICollectionFixture<MinioContainerFixture>
     {
         public const string Name = "Postgres collection";
     }

@@ -90,6 +90,24 @@ public class DatasetEntity
     [Column("storage_path")]
     public string? StoragePath { get; set; }
 
+    /// <summary>
+    /// Name of the server-side StorageProfile (env-var-configured credentials + endpoint) an
+    /// S3-sourced dataset reads through. Never the credentials themselves.
+    /// </summary>
+    [MaxLength(100)]
+    [Column("s3_storage_profile_name")]
+    public string? S3StorageProfileName { get; set; }
+
+    /// <summary>Bucket name for an S3-sourced dataset.</summary>
+    [MaxLength(255)]
+    [Column("s3_bucket")]
+    public string? S3Bucket { get; set; }
+
+    /// <summary>Key prefix scoping which objects in the bucket belong to this dataset.</summary>
+    [MaxLength(1000)]
+    [Column("s3_prefix")]
+    public string? S3Prefix { get; set; }
+
     /// <summary>Path to the Parquet file storing dataset items (for non-streaming datasets)</summary>
     [MaxLength(1000)]
     [Column("parquet_path")]

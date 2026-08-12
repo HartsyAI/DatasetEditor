@@ -38,6 +38,9 @@ public sealed class DatasetRepository : IDatasetRepository
             HuggingFaceRepository = dataset.HuggingFaceRepository,
             HuggingFaceConfig = dataset.HuggingFaceConfig,
             HuggingFaceSplit = dataset.HuggingFaceSplit,
+            S3StorageProfileName = dataset.S3StorageProfileName,
+            S3Bucket = dataset.S3Bucket,
+            S3Prefix = dataset.S3Prefix,
             TotalItems = dataset.TotalItems,
             ErrorMessage = dataset.ErrorMessage,
             Format = dataset.Format,
@@ -129,6 +132,9 @@ public sealed class DatasetRepository : IDatasetRepository
         entity.HuggingFaceRepository = dataset.HuggingFaceRepository;
         entity.HuggingFaceConfig = dataset.HuggingFaceConfig;
         entity.HuggingFaceSplit = dataset.HuggingFaceSplit;
+        entity.S3StorageProfileName = dataset.S3StorageProfileName;
+        entity.S3Bucket = dataset.S3Bucket;
+        entity.S3Prefix = dataset.S3Prefix;
         entity.TotalItems = dataset.TotalItems;
         entity.ErrorMessage = dataset.ErrorMessage;
         entity.Format = dataset.Format;
@@ -245,6 +251,9 @@ public sealed class DatasetRepository : IDatasetRepository
             HuggingFaceRepository = entity.HuggingFaceRepository,
             HuggingFaceConfig = entity.HuggingFaceConfig,
             HuggingFaceSplit = entity.HuggingFaceSplit,
+            S3StorageProfileName = entity.S3StorageProfileName,
+            S3Bucket = entity.S3Bucket,
+            S3Prefix = entity.S3Prefix,
             ErrorMessage = entity.ErrorMessage,
             Format = entity.Format,
             Modality = entity.Modality,
