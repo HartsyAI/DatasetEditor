@@ -2,10 +2,20 @@
 @using DatasetStudio.DTO.Datasets
 @using MudBlazor
 
-<PageTitle>My Datasets - DatasetStudio</PageTitle>
+<PageTitle>@(_isAuthenticated ? "My Datasets" : "Public Datasets") - DatasetStudio</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
-    <MudText Typo="Typo.h4" Class="mb-4">My Datasets</MudText>
+    <MudText Typo="Typo.h4" Class="mb-1">@(_isAuthenticated ? "My Datasets" : "Public Datasets")</MudText>
+    @if (!_isAuthenticated)
+    {
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+            Showing datasets their creators made public. <MudLink Href="/login">Log in</MudLink> to see your own datasets too.
+        </MudText>
+    }
+    else
+    {
+        <div class="mb-4"></div>
+    }
 
     <MudPaper Class="pa-4 mb-4" Elevation="1">
         <MudStack Spacing="2">
@@ -106,12 +116,15 @@
                                       OnClick="@(() => ViewDataset(dataset))">
                                 Open
                             </MudButton>
-                            <MudButton Variant="Variant.Text"
-                                      Color="Color.Error"
-                                      StartIcon="@Icons.Material.Filled.Delete"
-                                      OnClick="@(() => DeleteDatasetAsync(dataset))">
-                                Delete
-                            </MudButton>
+                            @if (CanDelete(dataset))
+                            {
+                                <MudButton Variant="Variant.Text"
+                                          Color="Color.Error"
+                                          StartIcon="@Icons.Material.Filled.Delete"
+                                          OnClick="@(() => DeleteDatasetAsync(dataset))">
+                                    Delete
+                                </MudButton>
+                            }
                             <MudSpacer />
                             <MudText Typo="Typo.caption" Class="mud-text-secondary">
                                 Updated @FormatTimeAgo(dataset.UpdatedAt)

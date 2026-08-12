@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
 using MudBlazor;
 using DatasetStudio.DTO.Datasets;
@@ -14,6 +16,7 @@ public partial class DatasetLibrary : ComponentBase
     [Inject] public NavigationManager Navigation { get; set; } = default!;
     [Inject] public ISnackbar Snackbar { get; set; } = default!;
 
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
 
     private List<DatasetSummaryDto> _datasets = new();
     private List<DatasetSummaryDto> _filteredDatasets = new();
@@ -22,11 +25,26 @@ public partial class DatasetLibrary : ComponentBase
     private IngestionStatusDto? _statusFilter = null;
     private DatasetSourceType? _sourceFilter = null;
     private bool _onlyReady = false;
+    private bool _isAuthenticated = false;
+    private Guid? _currentUserId = null;
 
-    protected override Task OnInitializedAsync()
+    protected override async Task OnInitializedAsync()
     {
-        return LoadDatasetsAsync();
+        if (AuthStateTask is not null)
+        {
+            AuthenticationState authState = await AuthStateTask;
+            _isAuthenticated = authState.User.Identity?.IsAuthenticated ?? false;
+            string? idClaim = authState.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            _currentUserId = Guid.TryParse(idClaim, out Guid id) ? id : null;
+        }
+
+        await LoadDatasetsAsync();
     }
+
+    // GetAllAsync's visibility filter returns public datasets from every user plus the
+    // caller's own private ones -- ownership, not "did I create it", gates destructive actions.
+    private bool CanDelete(DatasetSummaryDto dataset) =>
+        _currentUserId is not null && dataset.CreatedByUserId == _currentUserId;
 
     private async Task LoadDatasetsAsync()
     {

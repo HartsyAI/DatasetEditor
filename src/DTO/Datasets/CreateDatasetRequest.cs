@@ -6,4 +6,5 @@ public sealed record CreateDatasetRequest(
     string? Description,
     DatasetSourceType SourceType = DatasetSourceType.LocalUpload,
     string? SourceUri = null,
-    bool IsStreaming = false);
+    bool IsStreaming = false,
+    bool IsPublic = false);

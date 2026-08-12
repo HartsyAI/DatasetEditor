@@ -44,6 +44,10 @@ public partial class DatasetUploader
     public int _activeTabIndex = 0;
     [Parameter] public int InitialTabIndex { get; set; } = 0;
 
+    // Shared across every ingestion mode below -- off by default so a new dataset is
+    // visible only to its creator until they explicitly opt in.
+    public bool _isPublic = false;
+
     // HuggingFace import fields
     public string _hfRepository = string.Empty;
     public string? _hfDatasetName = null;
@@ -276,7 +280,7 @@ public partial class DatasetUploader
 
             string datasetName = Path.GetFileNameWithoutExtension(file.Name);
             DatasetDetailDto? dataset = await DatasetApiClient.CreateDatasetAsync(
-                new CreateDatasetRequest(datasetName, $"Uploaded via UI on {DateTime.UtcNow:O}"));
+                new CreateDatasetRequest(datasetName, $"Uploaded via UI on {DateTime.UtcNow:O}", IsPublic: _isPublic));
 
             if (dataset is null)
             {
@@ -477,9 +481,9 @@ public partial class DatasetUploader
             // Step 3: Create dataset
             UpdateProgress(30, "Creating dataset...");
             string datasetName = Path.GetFileNameWithoutExtension(_detectedCollection.PrimaryFileName);
-            
+
             DatasetDetailDto? dataset = await DatasetApiClient.CreateDatasetAsync(
-                new CreateDatasetRequest(datasetName, $"Uploaded via UI on {DateTime.UtcNow:O}"));
+                new CreateDatasetRequest(datasetName, $"Uploaded via UI on {DateTime.UtcNow:O}", IsPublic: _isPublic));
             
             if (dataset == null)
             {
@@ -724,7 +728,7 @@ public partial class DatasetUploader
                 : $"Imported from HuggingFace: {_hfRepository}";
 
             DatasetDetailDto? dataset = await DatasetApiClient.CreateDatasetAsync(
-                new CreateDatasetRequest(datasetName, description));
+                new CreateDatasetRequest(datasetName, description, IsPublic: _isPublic));
 
             if (dataset == null)
             {
@@ -960,7 +964,7 @@ public partial class DatasetUploader
                 : new DirectoryInfo(_folderPath).Name;
 
             DatasetDetailDto? dataset = await DatasetApiClient.CreateDatasetAsync(
-                new CreateDatasetRequest(datasetName, $"Imported from folder: {_folderPath}"));
+                new CreateDatasetRequest(datasetName, $"Imported from folder: {_folderPath}", IsPublic: _isPublic));
 
             if (dataset == null)
             {
@@ -1052,7 +1056,7 @@ public partial class DatasetUploader
                 : _s3Bucket;
 
             DatasetDetailDto? dataset = await DatasetApiClient.CreateDatasetAsync(
-                new CreateDatasetRequest(datasetName, $"S3 bucket: {_s3Bucket}" + (string.IsNullOrWhiteSpace(_s3Prefix) ? "" : $"/{_s3Prefix}")));
+                new CreateDatasetRequest(datasetName, $"S3 bucket: {_s3Bucket}" + (string.IsNullOrWhiteSpace(_s3Prefix) ? "" : $"/{_s3Prefix}"), IsPublic: _isPublic));
 
             if (dataset == null)
             {

@@ -173,6 +173,7 @@ internal static class DatasetEndpoints
             SourceType = request.SourceType,
             SourceUri = request.SourceUri,
             IsStreaming = request.IsStreaming,
+            IsPublic = request.IsPublic,
             CreatedByUserId = httpContext.User.GetUserId(),
         };
 

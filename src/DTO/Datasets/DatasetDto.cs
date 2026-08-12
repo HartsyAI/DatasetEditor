@@ -34,7 +34,7 @@ public sealed record DatasetDto
     public long TotalSizeBytes { get; init; }
     public string? StoragePath { get; init; }
     public string? ParquetPath { get; init; }
-    public bool IsPublic { get; init; } = true;
+    public bool IsPublic { get; init; } = false;
     public string? Metadata { get; init; }
     public Guid? CreatedByUserId { get; init; }
 }

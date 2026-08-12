@@ -117,9 +117,10 @@ public class DatasetEntity
     [Column("error_message")]
     public string? ErrorMessage { get; set; }
 
-    /// <summary>Indicates if the dataset is public (for future multi-user support)</summary>
+    /// <summary>Whether the dataset is visible to anonymous/non-owner callers. Defaults closed --
+    /// creators opt in explicitly, rather than every new dataset being world-readable by default.</summary>
     [Column("is_public")]
-    public bool IsPublic { get; set; } = true;
+    public bool IsPublic { get; set; } = false;
 
     /// <summary>JSON metadata for additional dataset properties</summary>
     [Column("metadata", TypeName = "jsonb")]

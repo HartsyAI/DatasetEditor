@@ -24,6 +24,8 @@ internal static class DatasetMappings
         S3StorageProfileName = dataset.S3StorageProfileName,
         S3Bucket = dataset.S3Bucket,
         S3Prefix = dataset.S3Prefix,
+        IsPublic = dataset.IsPublic,
+        CreatedByUserId = dataset.CreatedByUserId,
     };
 
     public static DatasetDetailDto ToDetailDto(this DatasetDto dataset) => new()

@@ -21,4 +21,6 @@ public sealed record DatasetSummaryDto
     public string? S3StorageProfileName { get; init; }
     public string? S3Bucket { get; init; }
     public string? S3Prefix { get; init; }
+    public bool IsPublic { get; init; }
+    public Guid? CreatedByUserId { get; init; }
 }
