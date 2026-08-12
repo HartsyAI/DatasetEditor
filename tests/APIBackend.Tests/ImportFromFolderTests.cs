@@ -4,10 +4,13 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL;
 using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.Tests.APIBackend.Fixtures;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace DatasetStudio.Tests.APIBackend
@@ -37,6 +40,24 @@ namespace DatasetStudio.Tests.APIBackend
             _factory = new DatasetStudioApiFactory(_postgres.ConnectionString);
             await _factory.InitializeDatabaseAsync();
             _client = _factory.CreateClient();
+
+            // CreateDataset and ImportFromFolder both require authentication as of Phase 3;
+            // ImportFromFolder additionally requires the Admin role (see
+            // AuthEndpointsTests.ImportFromFolder_NonAdminAuthenticatedUser_Returns403), so this
+            // test user needs elevation, not just any account.
+            await _client.PostAsJsonAsync("/api/auth/register",
+                new DatasetStudio.DTO.Auth.RegisterRequest("import-folder-test-admin", "import-folder-test-admin@example.com", "password123"));
+            using (IServiceScope scope = _factory.Services.CreateScope())
+            {
+                DatasetStudioDbContext db = scope.ServiceProvider.GetRequiredService<DatasetStudioDbContext>();
+                var user = await db.Users.AsTracking().FirstAsync(u => u.Username == "import-folder-test-admin");
+                user.Role = "Admin";
+                await db.SaveChangesAsync();
+            }
+            // The role claim was baked into the cookie at registration time (before the
+            // promotion above), so re-authenticate to pick up the new "Admin" claim.
+            await _client.PostAsJsonAsync("/api/auth/login",
+                new DatasetStudio.DTO.Auth.LoginRequest("import-folder-test-admin", "password123"));
         }
 
         public async Task DisposeAsync()

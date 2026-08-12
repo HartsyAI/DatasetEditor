@@ -1,3 +1,4 @@
+using DatasetStudio.APIBackend.Services.Auth;
 using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.DTO.Items;
@@ -18,25 +19,49 @@ public static class ItemEditEndpoints
         group.MapPatch("/{itemId:guid}", UpdateItem)
             .WithName("UpdateItem")
             .Produces<DatasetItemDto>()
-            .ProducesProblem(404);
+            .ProducesProblem(404)
+            .RequireAuthorization();
 
         // Bulk update items
         group.MapPatch("/bulk", BulkUpdateItems)
             .WithName("BulkUpdateItems")
             .Produces<int>()
-            .ProducesProblem(400);
+            .ProducesProblem(400)
+            .RequireAuthorization();
     }
 
     public static async Task<IResult> UpdateItem(
         Guid itemId,
         [FromBody] UpdateItemRequest request,
-        IDatasetItemRepository itemRepository)
+        IDatasetItemRepository itemRepository,
+        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        IDatasetPermissionService permissionService,
+        HttpContext httpContext)
     {
         DatasetItemDto? item = await itemRepository.GetItemAsync(itemId);
 
         if (item == null)
         {
             return Results.NotFound(new { message = $"Item {itemId} not found" });
+        }
+
+        // Item edits are a write on the owning dataset -- resolve it and apply the same
+        // owner/admin/granted-write rule as DatasetEndpoints' mutation routes.
+        DatasetDto? owningDataset = await datasetRepository.GetByIdAsync(item.DatasetId);
+        if (owningDataset is null)
+        {
+            return Results.Forbid();
+        }
+        // Same existence-leak guard as DatasetEndpoints' mutation routes: if the caller can't
+        // even read the owning dataset (private, not theirs, no grant), the item itself must
+        // read as not-found, not "exists but forbidden".
+        if (!await permissionService.CanReadAsync(owningDataset, httpContext.User))
+        {
+            return Results.NotFound(new { message = $"Item {itemId} not found" });
+        }
+        if (!await permissionService.CanWriteAsync(owningDataset, httpContext.User))
+        {
+            return Results.Forbid();
         }
 
         // Update fields if provided
@@ -86,7 +111,10 @@ public static class ItemEditEndpoints
 
     public static async Task<IResult> BulkUpdateItems(
         [FromBody] BulkUpdateItemsRequest request,
-        IDatasetItemRepository itemRepository)
+        IDatasetItemRepository itemRepository,
+        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        IDatasetPermissionService permissionService,
+        HttpContext httpContext)
     {
         if (!request.ItemIds.Any())
         {
@@ -94,12 +122,30 @@ public static class ItemEditEndpoints
         }
 
         List<DatasetItemDto> itemsToUpdate = new();
+        // A bulk request is expected to stay within one open dataset view, but nothing enforces
+        // that at the API layer -- cache the write-permission result per DatasetId rather than
+        // assuming a single dataset (or re-checking the same one on every item).
+        Dictionary<Guid, bool> writePermissionByDataset = new();
 
         foreach (Guid itemId in request.ItemIds)
         {
             DatasetItemDto? item = await itemRepository.GetItemAsync(itemId);
             if (item == null)
                 continue;
+
+            if (!writePermissionByDataset.TryGetValue(item.DatasetId, out bool canWrite))
+            {
+                DatasetDto? owningDataset = await datasetRepository.GetByIdAsync(item.DatasetId);
+                canWrite = owningDataset is not null && await permissionService.CanWriteAsync(owningDataset, httpContext.User);
+                writePermissionByDataset[item.DatasetId] = canWrite;
+            }
+            if (!canWrite)
+            {
+                // Same tolerant "skip and keep going" behavior as an item that doesn't exist --
+                // a client-observable partial-success count rather than failing the whole batch
+                // because one item belongs to a dataset the caller can't write to.
+                continue;
+            }
 
             // Add tags
             if (request.TagsToAdd != null && request.TagsToAdd.Any())

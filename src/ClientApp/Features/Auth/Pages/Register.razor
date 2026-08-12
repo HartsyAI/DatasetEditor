@@ -1,0 +1,52 @@
+@page "/register"
+@using DatasetStudio.ClientApp.Features.Auth.Services
+
+<PageTitle>Register - DatasetStudio</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="py-8">
+    <MudPaper Class="pa-6" Elevation="2">
+        <MudText Typo="Typo.h5" GutterBottom="true">Create an account</MudText>
+
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-4">@_errorMessage</MudAlert>
+        }
+
+        <MudTextField T="string"
+                      @bind-Value="_username"
+                      Label="Username"
+                      Variant="Variant.Outlined"
+                      Immediate="true"
+                      AutoFocus="true"
+                      Class="mb-4" />
+
+        <MudTextField T="string"
+                      @bind-Value="_email"
+                      Label="Email"
+                      InputType="InputType.Email"
+                      Variant="Variant.Outlined"
+                      Immediate="true"
+                      Class="mb-4" />
+
+        <MudTextField T="string"
+                      @bind-Value="_password"
+                      Label="Password"
+                      InputType="InputType.Password"
+                      HelperText="At least 8 characters"
+                      Variant="Variant.Outlined"
+                      Immediate="true"
+                      Class="mb-4" />
+
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   FullWidth="true"
+                   Disabled="@(_isSubmitting || string.IsNullOrWhiteSpace(_username) || string.IsNullOrWhiteSpace(_email) || string.IsNullOrWhiteSpace(_password))"
+                   OnClick="SubmitAsync">
+            @(_isSubmitting ? "Creating account..." : "Register")
+        </MudButton>
+
+        <MudText Typo="Typo.body2" Class="mt-4">
+            Already have an account? <MudLink Href="/login">Log in</MudLink>
+        </MudText>
+    </MudPaper>
+</MudContainer>

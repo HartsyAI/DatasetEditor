@@ -1,6 +1,26 @@
 @using DatasetStudio.Core.Utilities
 
 <MudNavMenu>
+    <AuthorizeView>
+        <Authorized>
+            <MudText Typo="Typo.body2" Class="px-4 pt-2 mud-text-secondary">
+                Signed in as <strong>@context.User.Identity?.Name</strong>
+            </MudText>
+            <MudNavLink OnClick="LogoutAsync" Icon="@Icons.Material.Filled.Logout">
+                Log out
+            </MudNavLink>
+        </Authorized>
+        <NotAuthorized>
+            <MudNavLink Href="/login" Icon="@Icons.Material.Filled.Login">
+                Log in
+            </MudNavLink>
+            <MudNavLink Href="/register" Icon="@Icons.Material.Filled.PersonAdd">
+                Register
+            </MudNavLink>
+        </NotAuthorized>
+    </AuthorizeView>
+    <MudDivider Class="my-2" />
+
     <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">
         Dashboard
     </MudNavLink>

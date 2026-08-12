@@ -1,0 +1,44 @@
+@page "/login"
+@using DatasetStudio.ClientApp.Features.Auth.Services
+
+<PageTitle>Log in - DatasetStudio</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="py-8">
+    <MudPaper Class="pa-6" Elevation="2">
+        <MudText Typo="Typo.h5" GutterBottom="true">Log in</MudText>
+
+        @if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-4">@_errorMessage</MudAlert>
+        }
+
+        <MudTextField T="string"
+                      @bind-Value="_usernameOrEmail"
+                      Label="Username or email"
+                      Variant="Variant.Outlined"
+                      Immediate="true"
+                      AutoFocus="true"
+                      Class="mb-4" />
+
+        <MudTextField T="string"
+                      @bind-Value="_password"
+                      Label="Password"
+                      InputType="InputType.Password"
+                      Variant="Variant.Outlined"
+                      Immediate="true"
+                      Class="mb-4"
+                      @onkeyup="@(async e => { if (e.Key == "Enter") { await SubmitAsync(); } })" />
+
+        <MudButton Color="Color.Primary"
+                   Variant="Variant.Filled"
+                   FullWidth="true"
+                   Disabled="@(_isSubmitting || string.IsNullOrWhiteSpace(_usernameOrEmail) || string.IsNullOrWhiteSpace(_password))"
+                   OnClick="SubmitAsync">
+            @(_isSubmitting ? "Logging in..." : "Log in")
+        </MudButton>
+
+        <MudText Typo="Typo.body2" Class="mt-4">
+            Don't have an account? <MudLink Href="/register">Register</MudLink>
+        </MudText>
+    </MudPaper>
+</MudContainer>

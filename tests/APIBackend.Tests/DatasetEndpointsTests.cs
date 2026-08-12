@@ -36,6 +36,16 @@ namespace DatasetStudio.Tests.APIBackend
             _factory = new DatasetStudioApiFactory(_postgres.ConnectionString);
             await _factory.InitializeDatabaseAsync();
             _client = _factory.CreateClient();
+
+            // Phase 3 gated CreateDataset (and everything downstream of an existing dataset --
+            // import-huggingface, upload, delete) behind authentication. WebApplicationFactory
+            // clients carry cookies by default (HandleCookies defaults to true), so registering
+            // once here and reusing _client authenticates every request below it for the rest
+            // of this class -- the two purely-anonymous-friendly tests (empty listing, 404 on
+            // an unknown id) still behave identically whether the caller happens to be logged
+            // in or not.
+            await _client.PostAsJsonAsync("/api/auth/register",
+                new DatasetStudio.DTO.Auth.RegisterRequest("dataset-endpoints-test-user", "dataset-endpoints-test-user@example.com", "password123"));
         }
 
         public async Task DisposeAsync()

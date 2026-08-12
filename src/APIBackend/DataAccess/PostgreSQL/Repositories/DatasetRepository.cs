@@ -67,16 +67,32 @@ public sealed class DatasetRepository : IDatasetRepository
         return entity == null ? null : MapToDto(entity);
     }
 
-    public async Task<List<DatasetDto>> GetAllAsync(int page = 0, int pageSize = 50, CancellationToken cancellationToken = default)
+    public async Task<List<DatasetDto>> GetAllAsync(int page = 0, int pageSize = 50, DatasetVisibilityFilter? visibility = null, CancellationToken cancellationToken = default)
     {
-        var entities = await _dbContext.Datasets
-            .AsNoTracking()
+        var entities = await ApplyVisibilityFilter(_dbContext.Datasets.AsNoTracking(), visibility)
             .OrderByDescending(d => d.CreatedAt)
             .Skip(page * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
 
         return entities.Select(MapToDto).ToList();
+    }
+
+    /// <summary>
+    /// Translates to a real SQL WHERE clause (EF-translated), applied before Skip/Take -- filtering
+    /// an already-fetched page in memory instead would silently under-fill pages whenever some of
+    /// the fetched rows aren't visible to the caller (the same undercounting bug class Phase 1
+    /// fixed for item-cursor filtering).
+    /// </summary>
+    private static IQueryable<DatasetEntity> ApplyVisibilityFilter(IQueryable<DatasetEntity> query, DatasetVisibilityFilter? visibility)
+    {
+        if (visibility is null || visibility.Value.IsAdmin)
+        {
+            return query; // unfiltered: internal/background caller, or an admin who can see everything
+        }
+
+        Guid? userId = visibility.Value.RequestingUserId;
+        return query.Where(d => d.IsPublic || (userId != null && d.CreatedByUserId == userId));
     }
 
     public async Task UpdateAsync(DatasetDto dataset, CancellationToken cancellationToken = default)
@@ -148,17 +164,16 @@ public sealed class DatasetRepository : IDatasetRepository
         await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<long> GetCountAsync(CancellationToken cancellationToken = default)
+    public async Task<long> GetCountAsync(DatasetVisibilityFilter? visibility = null, CancellationToken cancellationToken = default)
     {
-        return await _dbContext.Datasets.LongCountAsync(cancellationToken);
+        return await ApplyVisibilityFilter(_dbContext.Datasets.AsNoTracking(), visibility).LongCountAsync(cancellationToken);
     }
 
-    public async Task<List<DatasetDto>> SearchAsync(string query, int page = 0, int pageSize = 50, CancellationToken cancellationToken = default)
+    public async Task<List<DatasetDto>> SearchAsync(string query, int page = 0, int pageSize = 50, DatasetVisibilityFilter? visibility = null, CancellationToken cancellationToken = default)
     {
         var searchLower = query.ToLowerInvariant();
 
-        var entities = await _dbContext.Datasets
-            .AsNoTracking()
+        var entities = await ApplyVisibilityFilter(_dbContext.Datasets.AsNoTracking(), visibility)
             .Where(d =>
                 d.Name.ToLower().Contains(searchLower) ||
                 (d.Description != null && d.Description.ToLower().Contains(searchLower)) ||

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using DatasetStudio.ClientApp.Features.Auth.Services;
 using DatasetStudio.ClientApp.Services.StateManagement;
 using DatasetStudio.Core.Utilities;
 using DatasetStudio.Core.Utilities.Logging;
@@ -9,6 +10,16 @@ namespace DatasetStudio.ClientApp.Shared.Layout;
 public partial class NavMenu : IDisposable
 {
     [Inject] public DatasetState DatasetState { get; set; } = default!;
+    [Inject] private AuthApiClient AuthApiClient { get; set; } = default!;
+    [Inject] private CookieAuthenticationStateProvider AuthStateProvider { get; set; } = default!;
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+
+    private async Task LogoutAsync()
+    {
+        await AuthApiClient.LogoutAsync();
+        AuthStateProvider.NotifyUserLoggedOut();
+        Navigation.NavigateTo("/", forceLoad: false);
+    }
 
     public List<string> _recentDatasets = new();
 

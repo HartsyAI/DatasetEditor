@@ -97,7 +97,7 @@ namespace DatasetStudio.Tests.APIBackend
             await Task.Delay(TimeSpan.FromMilliseconds(5));
             await repository.CreateAsync(newer, CancellationToken.None);
 
-            List<DatasetDto> list = await repository.GetAllAsync(page: 0, pageSize: 50, CancellationToken.None);
+            List<DatasetDto> list = await repository.GetAllAsync(page: 0, pageSize: 50, cancellationToken: CancellationToken.None);
 
             list.Count.Should().Be(2);
             list[0].Name.Should().Be("Newer");

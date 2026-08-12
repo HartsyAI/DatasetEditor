@@ -35,6 +35,10 @@ namespace DatasetStudio.Tests.APIBackend
             _factory = new DatasetStudioApiFactory(_postgres.ConnectionString);
             await _factory.InitializeDatabaseAsync();
             _client = _factory.CreateClient();
+
+            // CreateDataset requires authentication as of Phase 3.
+            await _client.PostAsJsonAsync("/api/auth/register",
+                new DatasetStudio.DTO.Auth.RegisterRequest("serve-file-security-test-user", "serve-file-security-test-user@example.com", "password123"));
         }
 
         public async Task DisposeAsync()

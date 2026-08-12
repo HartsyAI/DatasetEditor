@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using MudBlazor.Services;
 using Blazored.LocalStorage;
 using DatasetStudio.ClientApp;
 using DatasetStudio.ClientApp.Configuration;
+using DatasetStudio.ClientApp.Features.Auth.Services;
 using DatasetStudio.ClientApp.Services.ApiClients;
 using DatasetStudio.ClientApp.Services.Caching;
 using DatasetStudio.ClientApp.Services.Extensions;
@@ -34,11 +36,23 @@ builder.Services.AddOptions<DatasetApiOptions>()
     .Validate(options => !string.IsNullOrWhiteSpace(options.BaseAddress), "DatasetApi:BaseAddress must be configured.")
     .ValidateOnStart();
 
+// CookieCredentialsHandler makes every request through these typed clients opt into sending
+// the session cookie cross-origin (client:5002 dev server -> API:5000) -- without it, calls
+// would silently 401 even right after a successful login. Attached once here, not per call
+// site, so a new API method can't forget it.
+builder.Services.AddTransient<CookieCredentialsHandler>();
+
 builder.Services.AddHttpClient<DatasetApiClient>((sp, client) =>
 {
     var options = sp.GetRequiredService<IOptions<DatasetApiOptions>>().Value;
     client.BaseAddress = new Uri(options.BaseAddress!, UriKind.Absolute);
-});
+}).AddHttpMessageHandler<CookieCredentialsHandler>();
+
+builder.Services.AddHttpClient<AuthApiClient>((sp, client) =>
+{
+    var options = sp.GetRequiredService<IOptions<DatasetApiOptions>>().Value;
+    client.BaseAddress = new Uri(options.BaseAddress!, UriKind.Absolute);
+}).AddHttpMessageHandler<CookieCredentialsHandler>();
 
 // MudBlazor services
 builder.Services.AddMudServices();
@@ -67,6 +81,13 @@ TaskScheduler.UnobservedTaskException += (sender, args) =>
     args.SetObserved();
 };
 
+// Auth: AuthorizeRouteView/AuthorizeView/[Authorize] all resolve state through this single
+// scoped provider, which asks the API's /api/auth/me (backed by the session cookie -- there is
+// no client-side token to decode, the cookie is HttpOnly).
+builder.Services.AddAuthorizationCore();
+builder.Services.AddScoped<CookieAuthenticationStateProvider>();
+builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredService<CookieAuthenticationStateProvider>());
+
 // Register Client services
 builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<NavigationService>();
@@ -82,7 +103,6 @@ builder.Services.AddScoped<ViewState>();
 builder.Services.AddScoped<ApiKeyState>();
 
 // TODO: Add Fluxor state management when complexity grows
-// TODO: Add authentication services when server is added
 // TODO: Add SignalR services for real-time features (when server added)
 
 await builder.Build().RunAsync();

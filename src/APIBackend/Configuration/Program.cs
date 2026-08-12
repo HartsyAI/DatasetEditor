@@ -1,12 +1,14 @@
 using DatasetStudio.APIBackend.Endpoints;
 using DatasetStudio.APIBackend.Extensions;
 using DatasetStudio.APIBackend.Models;
+using DatasetStudio.APIBackend.Services.Auth;
 using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.APIBackend.Services.Extensions;
 using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.APIBackend.DataAccess.PostgreSQL;
 using DatasetStudio.Extensions.SDK;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -45,8 +47,46 @@ builder.Services.Configure<FormOptions>(options =>
 });
 
 builder.Services.AddDatasetServices(builder.Configuration, builder.Environment);
+builder.Services.AddAuthServices();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Cookie auth: the client is same-origin in production (the API self-hosts the published WASM
+// app, see UseBlazorFrameworkFiles below), but in dev the client's own dev server (5002) and
+// the API (5000) are different origins on the same "site" (both localhost, different ports) --
+// SameSite=Lax cookies still flow for that case, but only once CORS AllowCredentials() is set
+// (below) AND the client opts every request into credentials explicitly (Blazor WASM's
+// HttpClient does not send cookies cross-origin by default -- see ClientApp's
+// CookieCredentialsHandler).
+builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+    .AddCookie(options =>
+    {
+        options.Cookie.Name = "DatasetStudio.Auth";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        // SameAsRequest (not Always): dev runs over plain http://localhost, and a cookie
+        // marked Secure is silently dropped by the browser on a non-https request -- that
+        // would make login "succeed" (200 + Set-Cookie in the response) while every
+        // subsequent authenticated call still 401s, with nothing in the response to explain
+        // why. Phase 6 puts a TLS-terminating proxy in front in production, at which point
+        // requests arrive as https and this already does the right (Secure) thing.
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.ExpireTimeSpan = TimeSpan.FromDays(7);
+        options.SlidingExpiration = true;
+        // This is an API, not a page app -- an unauthenticated/forbidden request should get a
+        // plain status code, not a 302 redirect to a login page that doesn't exist server-side.
+        options.Events.OnRedirectToLogin = context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return Task.CompletedTask;
+        };
+        options.Events.OnRedirectToAccessDenied = context =>
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return Task.CompletedTask;
+        };
+    });
+builder.Services.AddAuthorization();
 
 // Extension discovery/ConfigureServices has to run before builder.Build(), so it needs a
 // service provider before one otherwise exists, and DiscoverAndLoadAsync's result is used
@@ -93,19 +133,23 @@ builder.Services.AddSingleton(extensionRegistry);
 
 string corsPolicyName = "DatasetEditorClient";
 string[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+if (allowedOrigins.Length == 0)
+{
+    // Login/session cookies require CORS AllowCredentials(), and AllowAnyOrigin() +
+    // AllowCredentials() together are illegal per the CORS spec (the browser rejects it
+    // outright) -- so the old "fall back to AllowAnyOrigin() when unconfigured" behavior
+    // would make every credentialed request fail with an opaque CORS error at request time,
+    // not a config warning at startup. A deployment that clears Cors:AllowedOrigins should
+    // fail loudly and immediately instead.
+    throw new InvalidOperationException(
+        "Cors:AllowedOrigins must list at least one explicit origin. AllowAnyOrigin() is " +
+        "incompatible with the credentialed (cookie) authentication this app requires.");
+}
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(corsPolicyName, policy =>
     {
-        if (allowedOrigins.Length == 0)
-        {
-            policy.AllowAnyOrigin();
-        }
-        else
-        {
-            policy.WithOrigins(allowedOrigins);
-        }
-        policy.AllowAnyHeader().AllowAnyMethod();
+        policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
     });
 });
 WebApplication app = builder.Build();
@@ -127,6 +171,12 @@ using (IServiceScope migrationScope = app.Services.CreateScope())
             "Failed to apply database migrations. Is PostgreSQL running? Try `docker compose up -d`.");
         throw;
     }
+
+    // Must run after migrations (needs the users table to exist) and before the app starts
+    // accepting requests (a login attempt racing an unrepaired seeded admin row would fail
+    // unpredictably depending on timing).
+    IAdminBootstrapper adminBootstrapper = migrationScope.ServiceProvider.GetRequiredService<IAdminBootstrapper>();
+    await adminBootstrapper.RunAsync();
 }
 
 if (app.Environment.IsDevelopment())
@@ -138,6 +188,8 @@ app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 app.UseRouting();
 app.UseCors(corsPolicyName);
+app.UseAuthentication();
+app.UseAuthorization();
 
 // Configure and initialize extensions
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
@@ -187,6 +239,7 @@ foreach (var extension in extensions)
 }
 
 // Map all endpoints
+app.MapAuthEndpoints();
 app.MapDatasetEndpoints();
 app.MapItemEditEndpoints();
 

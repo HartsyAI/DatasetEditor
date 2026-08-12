@@ -227,11 +227,20 @@ public class DatasetStudioDbContext : DbContext
         {
             if (entry.State == EntityState.Added)
             {
-                // Set CreatedAt for new entities
-                object? createdAtValue = entry.Property("CreatedAt").CurrentValue;
-                if (createdAtValue is not DateTime existingCreatedAt || existingCreatedAt == default)
+                // Set CreatedAt for new entities -- guarded the same way the UpdatedAt branch
+                // below already is. PermissionEntity has no CreatedAt property (it has
+                // GrantedAt instead), and entry.Property("CreatedAt") throws
+                // InvalidOperationException for an entity type that doesn't declare it, so an
+                // unconditional call here made every PermissionEntity insert throw. Nothing
+                // exercised this path before -- Permissions had zero write call sites until
+                // Phase 3's dataset-permission-grant tests became the first code to insert one.
+                if (entry.Metadata.FindProperty("CreatedAt") != null)
                 {
-                    entry.Property("CreatedAt").CurrentValue = DateTime.UtcNow;
+                    object? createdAtValue = entry.Property("CreatedAt").CurrentValue;
+                    if (createdAtValue is not DateTime existingCreatedAt || existingCreatedAt == default)
+                    {
+                        entry.Property("CreatedAt").CurrentValue = DateTime.UtcNow;
+                    }
                 }
             }
 

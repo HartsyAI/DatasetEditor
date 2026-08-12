@@ -2,16 +2,19 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Primitives;
 using DatasetStudio.APIBackend.Extensions;
 using DatasetStudio.APIBackend.Models;
+using DatasetStudio.APIBackend.Services.Auth;
 using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.APIBackend.Services.DatasetManagement.Dtos;
 using DatasetStudio.APIBackend.Services.Integration;
 using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
+using DatasetVisibilityFilter = DatasetStudio.Core.Abstractions.Repositories.DatasetVisibilityFilter;
 
 // IDatasetRepository is referenced fully-qualified (Core.Abstractions.Repositories.IDatasetRepository)
 // rather than via `using`, because this file also uses the unrelated, same-named
 // Services.DatasetManagement.IDatasetItemRepository — a `using` for both namespaces would make
 // IDatasetItemRepository ambiguous. DatasetIngestionService follows the same convention.
+// DatasetVisibilityFilter is aliased individually instead for the same reason.
 
 namespace DatasetStudio.APIBackend.Endpoints;
 
@@ -28,6 +31,10 @@ internal static class DatasetEndpoints
             .Produces<HuggingFaceDiscoveryResponse>()
             .Produces(StatusCodes.Status400BadRequest);
 
+        // Anonymous-reachable, but each handler below scopes its own results/checks to what
+        // the caller may actually see (IDatasetPermissionService / DatasetVisibilityFilter) --
+        // a private dataset is invisible to a stranger, not 401/403'd, matching how e.g. GitHub
+        // treats a private repo you're not a collaborator on (404, not "exists but forbidden").
         group.MapGet("/", GetAllDatasets)
             .WithName("GetAllDatasets")
             .Produces<object>();
@@ -39,7 +46,8 @@ internal static class DatasetEndpoints
 
         group.MapPost("/", CreateDataset)
             .WithName("CreateDataset")
-            .Produces<DatasetDetailDto>(StatusCodes.Status201Created);
+            .Produces<DatasetDetailDto>(StatusCodes.Status201Created)
+            .RequireAuthorization();
 
         group.MapPost("/{datasetId:guid}/upload", UploadDatasetFile)
             .Accepts<IFormFile>("multipart/form-data")
@@ -47,12 +55,14 @@ internal static class DatasetEndpoints
             .WithName("UploadDatasetFile")
             .Produces(StatusCodes.Status202Accepted)
             .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status400BadRequest);
+            .Produces(StatusCodes.Status400BadRequest)
+            .RequireAuthorization();
 
         group.MapDelete("/{datasetId:guid}", DeleteDataset)
             .WithName("DeleteDataset")
             .Produces(StatusCodes.Status204NoContent)
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .RequireAuthorization();
 
         group.MapGet("/{datasetId:guid}/items", GetDatasetItems)
             .WithName("ListDatasetItems")
@@ -62,13 +72,19 @@ internal static class DatasetEndpoints
             .WithName("ImportFromHuggingFace")
             .Produces(StatusCodes.Status202Accepted)
             .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status400BadRequest);
+            .Produces(StatusCodes.Status400BadRequest)
+            .RequireAuthorization();
 
+        // Admin-only, not just "any authenticated user with write access" -- this ingests an
+        // arbitrary path off the server's own filesystem. Requiring mere authentication would
+        // let any self-registered account (registration is open) use the server as a proxy to
+        // read/enumerate any folder the API process can see.
         group.MapPost("/{datasetId:guid}/import-folder", ImportFromFolder)
             .WithName("ImportFromFolder")
             .Produces(StatusCodes.Status202Accepted)
             .Produces(StatusCodes.Status404NotFound)
-            .Produces(StatusCodes.Status400BadRequest);
+            .Produces(StatusCodes.Status400BadRequest)
+            .RequireAuthorization(policy => policy.RequireRole("Admin"));
 
         group.MapGet("/{datasetId:guid}/files/{*filePath}", ServeDatasetFile)
             .WithName("ServeDatasetFile")
@@ -76,15 +92,17 @@ internal static class DatasetEndpoints
             .Produces(StatusCodes.Status404NotFound);
     }
 
-    /// <summary>Gets all datasets with pagination</summary>
+    /// <summary>Gets all datasets with pagination, scoped to what the caller may see.</summary>
     public static async Task<IResult> GetAllDatasets(
         [FromServices] Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        HttpContext httpContext,
         [FromQuery] int page = 0,
         [FromQuery] int pageSize = 50,
         CancellationToken cancellationToken = default)
     {
-        List<DatasetDto> pagedDatasets = await datasetRepository.GetAllAsync(page, pageSize, cancellationToken);
-        long totalCount = await datasetRepository.GetCountAsync(cancellationToken);
+        DatasetVisibilityFilter visibility = BuildVisibilityFilter(httpContext.User);
+        List<DatasetDto> pagedDatasets = await datasetRepository.GetAllAsync(page, pageSize, visibility, cancellationToken);
+        long totalCount = await datasetRepository.GetCountAsync(visibility, cancellationToken);
 
         List<DatasetSummaryDto> dtos = pagedDatasets.Select(d => d.ToSummaryDto()).ToList();
 
@@ -97,15 +115,17 @@ internal static class DatasetEndpoints
         });
     }
 
-    /// <summary>Gets a single dataset by ID</summary>
+    /// <summary>Gets a single dataset by ID. 404s (not 403) if the caller can't see it -- existence of a private dataset isn't revealed to non-owners.</summary>
     public static async Task<IResult> GetDataset(
         Guid datasetId,
         Core.Abstractions.Repositories.IDatasetRepository repository,
+        IDatasetPermissionService permissionService,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
 
-        if (dataset is null)
+        if (dataset is null || !await permissionService.CanReadAsync(dataset, httpContext.User, cancellationToken))
         {
             return Results.NotFound();
         }
@@ -113,12 +133,14 @@ internal static class DatasetEndpoints
         return Results.Ok(dataset.ToDetailDto());
     }
 
-    /// <summary>Creates a new dataset</summary>
+    /// <summary>Creates a new dataset, owned by the authenticated caller.</summary>
     public static async Task<IResult> CreateDataset(
         CreateDatasetRequest request,
         Core.Abstractions.Repositories.IDatasetRepository repository,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
+        // RequireAuthorization() on this route guarantees GetUserId() is non-null here.
         DatasetDto dataset = new()
         {
             Id = Guid.NewGuid(),
@@ -128,6 +150,7 @@ internal static class DatasetEndpoints
             SourceType = request.SourceType,
             SourceUri = request.SourceUri,
             IsStreaming = request.IsStreaming,
+            CreatedByUserId = httpContext.User.GetUserId(),
         };
 
         Guid createdId = await repository.CreateAsync(dataset, cancellationToken);
@@ -142,17 +165,31 @@ internal static class DatasetEndpoints
         return Results.Created($"/api/datasets/{createdId}", created.ToDetailDto());
     }
 
-    /// <summary>Deletes a dataset and all of its items.</summary>
+    /// <summary>Deletes a dataset and all of its items. Requires delete permission (owner, admin, or a granted CanDelete permission).</summary>
     public static async Task<IResult> DeleteDataset(
         Guid datasetId,
         Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         IDatasetItemRepository itemRepository,
+        IDatasetPermissionService permissionService,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
         if (dataset is null)
         {
             return Results.NotFound();
+        }
+        // A caller who can't even read this dataset (private, not theirs, no grant) must get
+        // the same 404 the read endpoints give -- otherwise a 403 here leaks "this private
+        // dataset exists" to anyone who has (or guesses) its id, defeating the point of the
+        // read side's not-found-means-hidden design.
+        if (!await permissionService.CanReadAsync(dataset, httpContext.User, cancellationToken))
+        {
+            return Results.NotFound();
+        }
+        if (!await permissionService.CanDeleteAsync(dataset, httpContext.User, cancellationToken))
+        {
+            return Results.Forbid();
         }
 
         await itemRepository.DeleteByDatasetAsync(datasetId, cancellationToken);
@@ -161,12 +198,14 @@ internal static class DatasetEndpoints
         return Results.NoContent();
     }
 
-    /// <summary>Uploads a file to a dataset</summary>
+    /// <summary>Uploads a file to a dataset. Requires write permission on the target dataset.</summary>
     public static async Task<IResult> UploadDatasetFile(
         Guid datasetId,
         IFormFile file,
         Core.Abstractions.Repositories.IDatasetRepository repository,
         IngestionQueue ingestionQueue,
+        IDatasetPermissionService permissionService,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
@@ -174,6 +213,16 @@ internal static class DatasetEndpoints
         if (dataset is null)
         {
             return Results.NotFound();
+        }
+        // See DeleteDataset's identical guard: without this, a private dataset's existence
+        // leaks to anyone who has its id via 403-vs-404, even though GetDataset hides it.
+        if (!await permissionService.CanReadAsync(dataset, httpContext.User, cancellationToken))
+        {
+            return Results.NotFound();
+        }
+        if (!await permissionService.CanWriteAsync(dataset, httpContext.User, cancellationToken))
+        {
+            return Results.Forbid();
         }
 
         if (file is null || file.Length == 0)
@@ -208,11 +257,12 @@ internal static class DatasetEndpoints
         Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         IDatasetItemRepository itemRepository,
         IHuggingFaceDatasetServerClient huggingFaceDatasetServerClient,
+        IDatasetPermissionService permissionService,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
-        if (dataset is null)
+        if (dataset is null || !await permissionService.CanReadAsync(dataset, httpContext.User, cancellationToken))
         {
             return Results.NotFound();
         }
@@ -538,12 +588,14 @@ internal static class DatasetEndpoints
                lowerPath.EndsWith(".bmp", StringComparison.Ordinal);
     }
 
-    /// <summary>Imports a dataset from HuggingFace Hub</summary>
+    /// <summary>Imports a dataset from HuggingFace Hub. Requires write permission on the target dataset.</summary>
     public static async Task<IResult> ImportFromHuggingFace(
         Guid datasetId,
         ImportHuggingFaceDatasetRequest request,
         Core.Abstractions.Repositories.IDatasetRepository repository,
         IngestionQueue ingestionQueue,
+        IDatasetPermissionService permissionService,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
@@ -551,6 +603,16 @@ internal static class DatasetEndpoints
         if (dataset is null)
         {
             return Results.NotFound(new { error = "Dataset not found" });
+        }
+        // See DeleteDataset's identical guard: without this, a private dataset's existence
+        // leaks to anyone who has its id via 403-vs-404, even though GetDataset hides it.
+        if (!await permissionService.CanReadAsync(dataset, httpContext.User, cancellationToken))
+        {
+            return Results.NotFound(new { error = "Dataset not found" });
+        }
+        if (!await permissionService.CanWriteAsync(dataset, httpContext.User, cancellationToken))
+        {
+            return Results.Forbid();
         }
 
         if (string.IsNullOrWhiteSpace(request.Repository))
@@ -598,10 +660,11 @@ internal static class DatasetEndpoints
     /// IngestFromFolderAsync has existed since before this endpoint did — it just had no route
     /// mapped to it, which is why the client's "Local folder" creation option was permanently
     /// labeled "(coming soon)".
-    /// No path allow-listing here: like every other endpoint in this API before auth lands
-    /// (see the auth phase in the production-readiness plan), this is open to anyone who can
-    /// reach the API. Restricting which server paths can be ingested is an authorization
-    /// concern, not an ingestion-logic one.
+    /// Still no path allow-listing at the ingestion layer -- this reads arbitrary server
+    /// filesystem paths, so the route itself is gated to the site-wide Admin role (see
+    /// MapDatasetEndpoints), not merely "authenticated". Requiring only authentication would
+    /// let any self-registered account (registration is open) use the server as a proxy to
+    /// read/enumerate any folder the API process can see.
     /// </summary>
     public static async Task<IResult> ImportFromFolder(
         Guid datasetId,
@@ -636,16 +699,18 @@ internal static class DatasetEndpoints
         });
     }
 
-    /// <summary>Serves a file from a dataset's folder (for locally stored images)</summary>
+    /// <summary>Serves a file from a dataset's folder (for locally stored images). Same read-visibility rule as GetDataset.</summary>
     public static async Task<IResult> ServeDatasetFile(
         Guid datasetId,
         string filePath,
         Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        IDatasetPermissionService permissionService,
+        HttpContext httpContext,
         IConfiguration configuration,
         CancellationToken cancellationToken)
     {
         DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
-        if (dataset is null)
+        if (dataset is null || !await permissionService.CanReadAsync(dataset, httpContext.User, cancellationToken))
         {
             return Results.NotFound();
         }
@@ -735,5 +800,14 @@ internal static class DatasetEndpoints
             cancellationToken);
 
         return Results.Ok(response);
+    }
+
+    /// <summary>Derives a listing/count visibility scope from the current request's principal (anonymous, regular user, or admin).</summary>
+    private static DatasetVisibilityFilter BuildVisibilityFilter(System.Security.Claims.ClaimsPrincipal user)
+    {
+        Guid? userId = user.GetUserId();
+        return userId is null
+            ? DatasetVisibilityFilter.ForAnonymous()
+            : DatasetVisibilityFilter.ForUser(userId.Value, user.IsSiteAdmin());
     }
 }
