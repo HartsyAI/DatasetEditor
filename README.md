@@ -2,10 +2,11 @@
 
 A desktop-grade web app for browsing, curating, and editing **billion-scale AI image datasets** — built with an ASP.NET Core API and a Blazor WebAssembly client.
 
-Dataset Studio has two data paths so you can work the way you need to:
+Dataset Studio has three data paths so you can work the way you need to:
 
 - **Stream from HuggingFace** — paste a repo and browse millions of images in seconds; rows are fetched on demand and **nothing is downloaded**.
-- **Import locally** — upload CSV/TSV/Parquet/ZIP (or drop files in the data folder) and the items are ingested into **Apache Parquet** (sharded) with metadata in **PostgreSQL**, so they're fully searchable and editable.
+- **Import locally** — upload CSV/TSV/Parquet/ZIP (or point at a folder already on the server) and the items are ingested into **Apache Parquet** (sharded) with metadata in **PostgreSQL**, so they're fully searchable and editable.
+- **Connect an S3-compatible bucket** — AWS S3, MinIO, R2, Backblaze; images are proxied through the API on demand, nothing is copied.
 
 The client never holds the whole dataset in memory: a virtualized viewer keeps only a few screenfuls of cards in the DOM at any scroll depth, so memory stays flat even on million-image datasets.
 
@@ -14,12 +15,13 @@ The client never holds the whole dataset in memory: a virtualized viewer keeps o
 ## ✨ Features
 
 - **Virtualized grid & list** — row-virtualized rendering (`<Virtualize>`); flat memory, no freeze on huge datasets.
-- **Perceived-instant images** — dominant-color (LQIP) placeholders show immediately, thumbnails fade in over them (zero layout shift), lazy + async decoding, width-bounded thumbnails.
-- **HuggingFace streaming** — live, zero-download browsing via the HF datasets-server, with API-key/token support for gated datasets.
-- **Local ingestion** — CSV/TSV/Parquet/JSON/JSONL/ZIP and image folders, parsed into Parquet; runs in the **background** so uploads return immediately and report status.
-- **Cursor pagination** — O(1)/page over sharded Parquet (`shard:row` cursors) and over HF offsets.
+- **Perceived-instant images** — dominant-color (LQIP) placeholders show immediately, real width-bounded thumbnails (SkiaSharp, disk-cached) fade in over them, lazy + async decoding, zero layout shift.
+- **Three ingestion sources** — stream from **HuggingFace** (zero-download, live via the datasets-server API), **upload** CSV/TSV/Parquet/JSON/JSONL/ZIP/image folders (parsed into Parquet in the background), or connect an **S3-compatible bucket** (AWS S3, MinIO, R2, Backblaze — proxied through the API, nothing copied).
+- **Cursor pagination** — sharded-Parquet `shard:row` cursors and HF offsets, cost bounded by a row group's size, not the full dataset (see `docs/architecture.md` §4).
 - **Editing & curation** — titles, descriptions, tags, favorites; single and bulk edits (shard-scoped writes).
-- **Extension system** — pluggable API + client extensions discovered from manifests (see `docs/`).
+- **Real multi-user accounts** — cookie-session auth, ownership + permission enforcement (owner/admin/granted-access, public vs. private datasets).
+- **Self-host production deployment** — one Docker container (API + published client), Postgres, and a Caddy reverse proxy with automatic TLS; see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+- **Extension system** — API-side plugins discovered from manifests; see [docs/architecture.md](docs/architecture.md) §6 for what's actually built today (one working example, the rest are stubs).
 
 ---
 
@@ -52,7 +54,7 @@ The client never holds the whole dataset in memory: a virtualized viewer keeps o
 | `src/ClientApp` | net8.0 | Blazor WASM UI (MudBlazor), caching, viewer |
 | `src/Extensions/SDK` | net8.0 | WASM-safe extension contracts (`IExtension`, manifest, context) |
 | `src/Extensions/SDK.Api` | net8.0 | API-only extension hooks (`IApiExtension`, `BaseApiExtension`) |
-| `src/Extensions/BuiltIn/*` | net8.0 | Built-in extensions (CoreViewer, Creator) |
+| `src/Extensions/BuiltIn/*` | net8.0 | Built-in extensions — only **CoreViewer** is functional; `Creator`/`Editor`/`AdvancedTools`/`AITools` are stubs or manifest-only (see `docs/architecture.md` §6) |
 
 ---
 
@@ -90,6 +92,12 @@ dotnet run --project src/ClientApp
 - **Docker + Docker Compose** (for PostgreSQL) — or your own Postgres reachable at the connection string below
 - A modern browser (Chrome, Firefox, Edge, Safari)
 
+### Production deployment
+
+The above is the dev workflow (two `dotnet run` processes + a dev Postgres container). For a
+real self-hosted deployment — one container serving both the API and the published client,
+behind a Caddy reverse proxy with automatic TLS — see **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
+
 ---
 
 ## 🗂️ Project structure
@@ -111,8 +119,9 @@ DatasetStudio/
 │   │   └── Services/         # Caching, API clients, state, interop
 │   └── Extensions/           # SDK, SDK.Api, and built-in extensions
 ├── tests/                    # APIBackend.Tests, ClientApp.Tests
-├── docs/                     # Architecture & extension docs
-├── docker-compose.yml        # Local PostgreSQL
+├── docs/                     # Architecture, deployment, and per-phase verification records
+├── docker-compose.yml        # Local PostgreSQL (+ MinIO, prod overlay in docker-compose.prod.yml)
+├── Dockerfile                # Production image (API + published client, one container)
 ├── start.sh / stop.sh        # Dev launchers
 └── DatasetStudio.sln
 ```
@@ -125,41 +134,32 @@ API settings live in `src/APIBackend/Configuration/appsettings*.json`:
 
 - **`ConnectionStrings:DatasetStudio`** — PostgreSQL connection. The Development value matches `docker-compose.yml` (`Host=localhost;Port=5432;Database=dataset_studio_dev;Username=postgres;Password=postgres`).
 - **`Urls`** — API bind address (`http://localhost:5000`).
-- **`Cors:AllowedOrigins`** — must include the client origin (`http://localhost:5002`).
-- **`Storage:*`** — local paths for Parquet shards, blobs, thumbnails, uploads.
+- **`Cors:AllowedOrigins`** — must include the client origin (`http://localhost:5002`); required (not optional) since cookie auth needs `AllowCredentials()`, which is incompatible with a wildcard origin.
+- **`Storage:*`** — local paths for Parquet shards, blobs, thumbnails, uploads, DataProtection keys, and optional `S3StorageProfiles` (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for wiring one up).
+- **`ADMIN_USERNAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD`** (env vars) — bootstraps/repairs the admin account on every startup; unset skips bootstrap and leaves the seeded placeholder admin row permanently unusable, by design.
 
-The client reads its API base address from `src/ClientApp/wwwroot/appsettings.json` (`DatasetApi:BaseAddress`).
+The client reads its API base address from `src/ClientApp/wwwroot/appsettings.json` (`DatasetApi:BaseAddress`) — left blank in the base file (same-origin, used by production) with a dev-only override in `appsettings.Development.json`.
 
 ---
 
 ## 🧪 Testing
 
 ```bash
-dotnet test                                   # all test projects
-dotnet test tests/ClientApp.Tests             # client unit tests
+dotnet test                                   # both test projects — 109 tests
+dotnet test tests/ClientApp.Tests             # client unit tests only
 ```
 
-`tests/APIBackend.Tests` exercises the Postgres/Parquet data layer and may require a database.
+`tests/APIBackend.Tests` includes real integration tests against Testcontainers-managed
+Postgres/MinIO instances — requires a working Docker daemon, not a manually-started database.
 
 ---
 
 ## 📚 Documentation
 
-- [docs/architecture.md](docs/architecture.md) — system architecture & data flows
-- [docs/EXTENSION_ARCHITECTURE.md](docs/EXTENSION_ARCHITECTURE.md) — extension system design
-- [docs/EXTENSION_QUICK_START.md](docs/EXTENSION_QUICK_START.md) — build your first extension
-- [docs/EXTENSION_SYSTEM_IMPLEMENTATION_PLAN.md](docs/EXTENSION_SYSTEM_IMPLEMENTATION_PLAN.md) — extension roadmap (partly implemented)
-
----
-
-## 🔌 Extensions (in progress)
-
-Extensions are self-describing plugins (a manifest + an assembly) discovered at startup on both the API and client. The contract is split so the Blazor client stays free of ASP.NET hosting types:
-
-- **`IExtension`** (in `Extensions.SDK`, WASM-safe) — lifecycle, `ConfigureServices`, health.
-- **`IApiExtension : IExtension`** (in `Extensions.SDK.Api`) — adds the API-only `ConfigureApp(IApplicationBuilder)` hook.
-
-Author API extensions by deriving from `BaseApiExtension`, and client extensions from `BaseClientExtension`. See the extension docs above. The loading infrastructure works; endpoint auto-registration and permission enforcement are still on the roadmap.
+- [docs/architecture.md](docs/architecture.md) — system architecture, data flows, and the
+  extension system's real state (§6)
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) — self-host production deployment (Docker Compose,
+  Caddy/TLS, backups, S3 opt-in)
 
 ---
 
