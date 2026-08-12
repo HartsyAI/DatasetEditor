@@ -117,7 +117,12 @@ public class ParquetItemWriter : IDisposable
         Dictionary<string, Array> columns,
         CancellationToken cancellationToken)
     {
-        using var stream = File.Open(filePath, FileMode.Append, FileAccess.Write);
+        // append: true needs to seek backward and rewrite the Parquet footer (row groups
+        // are added, but the file-level metadata at the end has to move); FileMode.Append
+        // opens a write-only, append-only stream that rejects any seek before the current
+        // end, so ParquetWriter's footer rewrite fails. FileMode.Open + ReadWrite lets it
+        // seek freely, same as opening any existing file for random-access modification.
+        using var stream = File.Open(filePath, FileMode.Open, FileAccess.ReadWrite);
         using var writer = await ParquetWriter.CreateAsync(
             ParquetSchemaDefinition.Schema,
             stream,

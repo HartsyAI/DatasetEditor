@@ -86,7 +86,15 @@ public sealed class DatasetRepository : IDatasetRepository
             throw new ArgumentNullException(nameof(dataset));
         }
 
+        // AsTracking(): the DbContext is configured with a NoTracking default (see
+        // ServiceCollectionExtensions — a deliberate read-performance win for the
+        // GetAllAsync/GetByIdAsync/SearchAsync paths), which silently no-ops this
+        // fetch-mutate-SaveChanges pattern without it — the entity comes back untracked, the
+        // property assignments below are invisible to the change tracker, and SaveChangesAsync
+        // has nothing to persist. Confirmed this was happening in practice: ingestion status
+        // updates were never reaching the database at all.
         var entity = await _dbContext.Datasets
+            .AsTracking()
             .FirstOrDefaultAsync(d => d.Id == dataset.Id, cancellationToken);
 
         if (entity == null)
@@ -122,7 +130,13 @@ public sealed class DatasetRepository : IDatasetRepository
 
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        // AsTracking() here too: Remove() attaches its argument, and attaching a second,
+        // separately-fetched (untracked) instance for a key the context is already tracking
+        // an instance of throws "cannot be tracked because another instance ... is already
+        // being tracked." A tracking query instead resolves to the existing tracked instance
+        // by identity when there is one, so Remove() has nothing to conflict with.
         var entity = await _dbContext.Datasets
+            .AsTracking()
             .FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
 
         if (entity == null)
@@ -160,7 +174,10 @@ public sealed class DatasetRepository : IDatasetRepository
 
     public async Task UpdateStatusAsync(Guid id, IngestionStatusDto status, string? errorMessage = null, CancellationToken cancellationToken = default)
     {
+        // See the AsTracking() comment in UpdateAsync — same fetch-mutate-SaveChanges pattern,
+        // same requirement to opt out of the DbContext's NoTracking default.
         var entity = await _dbContext.Datasets
+            .AsTracking()
             .FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
 
         if (entity == null)
@@ -178,6 +195,7 @@ public sealed class DatasetRepository : IDatasetRepository
     public async Task UpdateItemCountAsync(Guid id, long count, CancellationToken cancellationToken = default)
     {
         var entity = await _dbContext.Datasets
+            .AsTracking()
             .FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
 
         if (entity == null)

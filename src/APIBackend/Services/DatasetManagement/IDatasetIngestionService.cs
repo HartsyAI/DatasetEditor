@@ -6,5 +6,6 @@ internal interface IDatasetIngestionService
 {
     Task StartIngestionAsync(Guid datasetId, string? uploadLocation, CancellationToken cancellationToken = default);
     Task ImportFromHuggingFaceAsync(Guid datasetId, ImportHuggingFaceDatasetRequest request, CancellationToken cancellationToken = default);
+    Task IngestFromFolderAsync(Guid datasetId, string folderPath, CancellationToken cancellationToken = default);
 }
 

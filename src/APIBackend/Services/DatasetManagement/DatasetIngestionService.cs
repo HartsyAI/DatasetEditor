@@ -179,11 +179,15 @@ public class DatasetIngestionService : IDatasetIngestionService
             // Write to Parquet
             await _itemRepository.InsertItemsAsync(datasetId, items, cancellationToken);
 
-            // Update dataset metadata
-            await _datasetRepository.UpdateItemCountAsync(datasetId, items.Count, cancellationToken);
+            // Update dataset metadata with the TRUE total (not just this batch's count) — a
+            // second ingestion into an existing dataset (re-upload, re-import) would otherwise
+            // overwrite TotalItems with only the most recent batch's size, silently
+            // understating the dataset's real, cumulative item count.
+            long trueTotalCount = await _itemRepository.GetCountAsync(datasetId, cancellationToken);
+            await _datasetRepository.UpdateItemCountAsync(datasetId, trueTotalCount, cancellationToken);
             await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Completed, cancellationToken: cancellationToken);
 
-            Logs.Info($"[Ingestion] Successfully ingested {items.Count} items for dataset {datasetId}");
+            Logs.Info($"[Ingestion] Successfully ingested {items.Count} items for dataset {datasetId} (total now {trueTotalCount})");
         }
         catch (Exception ex)
         {
@@ -200,10 +204,23 @@ public class DatasetIngestionService : IDatasetIngestionService
             await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Processing, cancellationToken: cancellationToken);
             Logs.Info($"[Ingestion] Starting folder ingestion for dataset {datasetId}, folder: {folderPath}");
 
+            // Record where the source images actually live so ServeDatasetFile knows to serve
+            // straight from this folder — a dataset here can be an arbitrary, potentially huge
+            // folder on disk, and copying it into managed storage would defeat the point of
+            // "point at a folder" ingestion (and contradicts the flat-memory/no-materialization
+            // design elsewhere in this app).
+            DatasetDto? dataset = await _datasetRepository.GetByIdAsync(datasetId, cancellationToken);
+            if (dataset is null)
+            {
+                throw new InvalidOperationException($"Dataset {datasetId} not found");
+            }
+            string normalizedFolderPath = Path.GetFullPath(folderPath);
+            await _datasetRepository.UpdateAsync(dataset with { StoragePath = normalizedFolderPath }, cancellationToken);
+
             var items = new List<DatasetItemDto>();
             var supportedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif" };
 
-            var imageFiles = Directory.GetFiles(folderPath, "*.*", SearchOption.AllDirectories)
+            var imageFiles = Directory.GetFiles(normalizedFolderPath, "*.*", SearchOption.AllDirectories)
                 .Where(f => supportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
                 .ToList();
 
@@ -214,8 +231,12 @@ public class DatasetIngestionService : IDatasetIngestionService
 
             foreach (var imagePath in imageFiles)
             {
-                var relativePath = Path.GetRelativePath(folderPath, imagePath);
+                var relativePath = Path.GetRelativePath(normalizedFolderPath, imagePath);
                 var fileName = Path.GetFileName(imagePath);
+                // Server-relative API URL (ImageUrlHelper.ResolveImageUrl prepends the API base
+                // address client-side) — NOT a file:// URI, which points at the server's own
+                // filesystem and a browser has no way to fetch.
+                var apiUrl = BuildServeFileUrl(datasetId, relativePath);
 
                 // Image dimensions can be populated later or by client
                 int width = 0, height = 0;
@@ -226,7 +247,8 @@ public class DatasetIngestionService : IDatasetIngestionService
                     DatasetId = datasetId,
                     ExternalId = relativePath,
                     Title = Path.GetFileNameWithoutExtension(fileName),
-                    ImageUrl = $"file:///{imagePath.Replace("\\", "/")}",
+                    ImageUrl = apiUrl,
+                    ThumbnailUrl = apiUrl,
                     Width = width,
                     Height = height,
                     Tags = new List<string>(),
@@ -244,10 +266,12 @@ public class DatasetIngestionService : IDatasetIngestionService
             }
 
             await _itemRepository.InsertItemsAsync(datasetId, items, cancellationToken);
-            await _datasetRepository.UpdateItemCountAsync(datasetId, items.Count, cancellationToken);
+            // See IngestAsync's matching comment: use the true cumulative count, not this batch's.
+            long trueTotalCount = await _itemRepository.GetCountAsync(datasetId, cancellationToken);
+            await _datasetRepository.UpdateItemCountAsync(datasetId, trueTotalCount, cancellationToken);
             await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Completed, cancellationToken: cancellationToken);
 
-            Logs.Info($"[Ingestion] Successfully ingested {items.Count} images from folder for dataset {datasetId}");
+            Logs.Info($"[Ingestion] Successfully ingested {items.Count} images from folder for dataset {datasetId} (total now {trueTotalCount})");
         }
         catch (Exception ex)
         {
@@ -365,28 +389,67 @@ public class DatasetIngestionService : IDatasetIngestionService
     private async Task<List<DatasetItemDto>> ParseZipAsync(Guid datasetId, Stream stream, CancellationToken cancellationToken)
     {
         var items = new List<DatasetItemDto>();
-        var tempExtractPath = Path.Combine(_uploadPath, $"temp_{datasetId}");
+
+        // Extract into the dataset's own managed storage folder (ServeDatasetFile's
+        // {root}/{slug}-{shortId} convention) — NOT a temp directory. This used to extract to
+        // _uploadPath/temp_{datasetId} and then delete it in `finally` on every run, so a
+        // ZIP-imported dataset's images were deleted immediately after being catalogued and
+        // could never actually be served, regardless of what URL scheme they were given.
+        DatasetDto? dataset = await _datasetRepository.GetByIdAsync(datasetId, cancellationToken);
+        if (dataset is null)
+        {
+            throw new InvalidOperationException($"Dataset {datasetId} not found");
+        }
+        var extractPath = Services.Storage.DatasetStorageConventions.GetDatasetFolderPath(_datasetRootPath, datasetId, dataset.Name);
 
         try
         {
-            Directory.CreateDirectory(tempExtractPath);
+            Directory.CreateDirectory(extractPath);
+            string normalizedExtractRoot = Path.GetFullPath(extractPath);
+            string extractContainmentPrefix = normalizedExtractRoot.EndsWith(Path.DirectorySeparatorChar)
+                ? normalizedExtractRoot
+                : normalizedExtractRoot + Path.DirectorySeparatorChar;
 
-            // Extract ZIP
+            // Extract ZIP entry-by-entry with an explicit containment check per entry, rather
+            // than the one-line ZipArchive.ExtractToDirectory. .NET's own extraction already
+            // rejects ".."-based zip-slip, and doesn't reconstruct Unix symlink entries as
+            // real OS symlinks (it writes their "content" — which a symlink-aware tool would
+            // treat as the link target — as a plain file) — but validating containment
+            // explicitly here doesn't depend on either of those framework internals holding
+            // across versions, and matches the same trailing-separator-safe check used when
+            // serving these files back out (ServeDatasetFile).
             using (var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true))
             {
-                archive.ExtractToDirectory(tempExtractPath, overwriteFiles: true);
+                foreach (ZipArchiveEntry entry in archive.Entries)
+                {
+                    if (string.IsNullOrEmpty(entry.Name))
+                    {
+                        continue; // directory entry
+                    }
+
+                    string destinationPath = Path.GetFullPath(Path.Combine(normalizedExtractRoot, entry.FullName));
+                    if (!destinationPath.StartsWith(extractContainmentPrefix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Logs.Warning($"[Ingestion] Skipping ZIP entry that would extract outside the target directory: {entry.FullName}");
+                        continue;
+                    }
+
+                    Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+                    entry.ExtractToFile(destinationPath, overwrite: true);
+                }
             }
 
             // Process extracted images
             var supportedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif" };
-            var imageFiles = Directory.GetFiles(tempExtractPath, "*.*", SearchOption.AllDirectories)
+            var imageFiles = Directory.GetFiles(extractPath, "*.*", SearchOption.AllDirectories)
                 .Where(f => supportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
                 .ToList();
 
             foreach (var imagePath in imageFiles)
             {
-                var relativePath = Path.GetRelativePath(tempExtractPath, imagePath);
+                var relativePath = Path.GetRelativePath(extractPath, imagePath);
                 var fileName = Path.GetFileName(imagePath);
+                var apiUrl = BuildServeFileUrl(datasetId, relativePath);
 
                 // Image dimensions can be populated later or by client
                 int width = 0, height = 0;
@@ -397,7 +460,8 @@ public class DatasetIngestionService : IDatasetIngestionService
                     DatasetId = datasetId,
                     ExternalId = relativePath,
                     Title = Path.GetFileNameWithoutExtension(fileName),
-                    ImageUrl = $"file:///{imagePath.Replace("\\", "/")}",
+                    ImageUrl = apiUrl,
+                    ThumbnailUrl = apiUrl,
                     Width = width,
                     Height = height,
                     Tags = new List<string>(),
@@ -416,21 +480,34 @@ public class DatasetIngestionService : IDatasetIngestionService
 
             return items;
         }
-        finally
+        catch
         {
-            // Cleanup temp directory
-            if (Directory.Exists(tempExtractPath))
+            // Unlike the old temp-directory version, extraction failures shouldn't leave a
+            // half-written managed dataset folder behind for a dataset that's about to be
+            // marked Failed anyway.
+            if (Directory.Exists(extractPath))
             {
                 try
                 {
-                    Directory.Delete(tempExtractPath, recursive: true);
+                    Directory.Delete(extractPath, recursive: true);
                 }
-                catch (Exception ex)
+                catch (Exception cleanupEx)
                 {
-                    Logs.Warning($"[Ingestion] Failed to cleanup temp directory {tempExtractPath}: {ex.Message}");
+                    Logs.Warning($"[Ingestion] Failed to clean up partially-extracted ZIP contents at {extractPath}: {cleanupEx.Message}");
                 }
             }
+            throw;
         }
+    }
+
+    /// <summary>Builds the server-relative API URL ServeDatasetFile will resolve a stored file from.</summary>
+    private static string BuildServeFileUrl(Guid datasetId, string relativePath)
+    {
+        string encodedPath = string.Join('/', relativePath
+            .Replace('\\', '/')
+            .Split('/')
+            .Select(Uri.EscapeDataString));
+        return $"/api/datasets/{datasetId}/files/{encodedPath}";
     }
 
     /// <summary>

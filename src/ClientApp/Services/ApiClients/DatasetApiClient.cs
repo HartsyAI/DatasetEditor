@@ -102,6 +102,17 @@ public sealed class DatasetApiClient
         return response.IsSuccessStatusCode;
     }
 
+    public async Task<bool> ImportFromFolderAsync(Guid datasetId, ImportFolderRequest request, CancellationToken cancellationToken = default)
+    {
+        HttpResponseMessage response = await _httpClient.PostAsJsonAsync(
+            $"api/datasets/{datasetId}/import-folder",
+            request,
+            SerializerOptions,
+            cancellationToken);
+
+        return response.IsSuccessStatusCode;
+    }
+
     public async Task<HuggingFaceDiscoveryResponse?> DiscoverHuggingFaceDatasetAsync(HuggingFaceDiscoveryRequest request, CancellationToken cancellationToken = default)
     {
         HttpResponseMessage response = await _httpClient.PostAsJsonAsync(

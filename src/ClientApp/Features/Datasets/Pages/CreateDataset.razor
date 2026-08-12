@@ -42,11 +42,16 @@
                     </MudItem>
 
                     <MudItem xs="12" md="4">
-                        <MudCard Class="pa-3" Elevation="1" Disabled="true">
-                            <MudText Typo="Typo.subtitle1">Local folder (coming soon)</MudText>
+                        <MudCard Class="pa-3" Elevation="2">
+                            <MudText Typo="Typo.subtitle1">Local folder</MudText>
                             <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                                Point DatasetStudio at folders of images on disk.
+                                Point DatasetStudio at a folder of images already on the server's disk.
                             </MudText>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3"
+                                       StartIcon="@Icons.Material.Filled.Folder"
+                                       OnClick='@(() => SelectSource("folder"))'>
+                                Use Local Folder
+                            </MudButton>
                         </MudCard>
                     </MudItem>
                 </MudGrid>
@@ -68,6 +73,10 @@
                 else if (_selectedSource == "hf")
                 {
                     <DatasetUploader InitialTabIndex="1" />
+                }
+                else if (_selectedSource == "folder")
+                {
+                    <DatasetUploader InitialTabIndex="2" />
                 }
             </MudStack>
         </MudStep>

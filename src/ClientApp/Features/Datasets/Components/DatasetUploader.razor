@@ -6,7 +6,7 @@
         <MudText Typo="Typo.h6">Upload Dataset</MudText>
 
         @* Tab Selection *@
-        <MudTabs Elevation="0" @@bind-ActivePanelIndex="_activeTabIndex" ApplyEffectsToContainer="true">
+        <MudTabs Elevation="0" @bind-ActivePanelIndex="_activeTabIndex" ApplyEffectsToContainer="true">
             <MudTabPanel Text="Upload Files" Icon="@Icons.Material.Filled.CloudUpload">
                 @* File Upload Content *@
                 <MudStack Spacing="3" Class="mt-4">
@@ -186,7 +186,7 @@
                         Import datasets directly from HuggingFace Hub. Supports CSV, TSV, JSON, and Parquet formats.
                     </MudAlert>
 
-                    <MudTextField T="string" @@@bind-Value="_hfRepository"
+                    <MudTextField T="string" @bind-Value="_hfRepository"
                                  Label="Repository"
                                  Placeholder="username/dataset-name"
                                  HelperText="Enter HuggingFace dataset repository (e.g., 'imdb', 'squad', 'username/my-dataset')"
@@ -194,32 +194,32 @@
                                  Immediate="true"
                                  Required="true" />
 
-                    <MudTextField T="string" @@@bind-Value="_hfDatasetName"
+                    <MudTextField T="string" @bind-Value="_hfDatasetName"
                                  Label="Dataset Name (Optional)"
                                  Placeholder="My Dataset"
                                  HelperText="Override the default dataset name"
                                  Variant="Variant.Outlined" />
 
-                    <MudTextField T="string" @@@bind-Value="_hfDescription"
+                    <MudTextField T="string" @bind-Value="_hfDescription"
                                  Label="Description (Optional)"
                                  Placeholder="Dataset description"
                                  Lines="3"
                                  Variant="Variant.Outlined" />
 
-                    <MudTextField T="string" @@@bind-Value="_hfRevision"
+                    <MudTextField T="string" @bind-Value="_hfRevision"
                                  Label="Revision (Optional)"
                                  Placeholder="main"
                                  HelperText="Branch, tag, or commit (defaults to 'main')"
                                  Variant="Variant.Outlined" />
 
-                    <MudTextField T="string" @@@bind-Value="_hfAccessToken"
+                    <MudTextField T="string" @bind-Value="_hfAccessToken"
                                  Label="Access Token (Optional)"
                                  Placeholder="hf_..."
                                  HelperText="Required for private datasets"
                                  Variant="Variant.Outlined"
                                  InputType="InputType.Password" />
 
-                    <MudSwitch T="bool" @@@bind-Value="_hfIsStreaming"
+                    <MudSwitch T="bool" @bind-Value="_hfIsStreaming"
                               Label="Streaming Mode"
                               Color="Color.Primary">
                         <MudText Typo="Typo.caption" Class="mud-text-secondary">
@@ -259,6 +259,56 @@
                                                   Striped="true"
                                                   Class="my-2" />
 
+                                <MudText Typo="Typo.body2" Align="Align.Center">
+                                    @_uploadStatus
+                                </MudText>
+                            </MudStack>
+                        </MudPaper>
+                    }
+                </MudStack>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Local folder" Icon="@Icons.Material.Filled.Folder">
+                @* Local folder Import Content *@
+                <MudStack Spacing="3" Class="mt-4">
+                    <MudAlert Severity="Severity.Info" Dense="true">
+                        Point DatasetStudio at a folder of images already on the server's disk.
+                        Images are served directly from that folder — nothing is copied.
+                    </MudAlert>
+
+                    <MudTextField T="string" @bind-Value="_folderPath"
+                                 Label="Folder path"
+                                 Placeholder="/data/my-images"
+                                 HelperText="Absolute path on the server, scanned recursively for images"
+                                 Variant="Variant.Outlined"
+                                 Immediate="true"
+                                 Required="true" />
+
+                    <MudTextField T="string" @bind-Value="_folderDatasetName"
+                                 Label="Dataset Name (Optional)"
+                                 Placeholder="My Dataset"
+                                 HelperText="Defaults to the folder name"
+                                 Variant="Variant.Outlined" />
+
+                    <MudButton Variant="Variant.Filled"
+                              Color="Color.Primary"
+                              StartIcon="@Icons.Material.Filled.Folder"
+                              OnClick="@ImportFromFolderAsync"
+                              Disabled="@(_isUploading || string.IsNullOrWhiteSpace(_folderPath))"
+                              FullWidth="true">
+                        @(_isUploading && _activeTabIndex == 2 ? "Importing..." : "Import Folder")
+                    </MudButton>
+
+                    @if (_isUploading && _activeTabIndex == 2)
+                    {
+                        <MudPaper Class="pa-4" Elevation="3">
+                            <MudStack Spacing="3">
+                                <MudText Typo="Typo.h6" Align="Align.Center">Importing from Folder</MudText>
+                                <MudProgressLinear Color="Color.Primary"
+                                                  Indeterminate="true"
+                                                  Size="Size.Large"
+                                                  Striped="true"
+                                                  Class="my-2" />
                                 <MudText Typo="Typo.body2" Align="Align.Center">
                                     @_uploadStatus
                                 </MudText>

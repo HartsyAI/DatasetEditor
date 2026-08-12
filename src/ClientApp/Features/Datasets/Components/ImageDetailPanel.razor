@@ -22,7 +22,7 @@
             <MudStack Spacing="1">
                 @if (_isEditingTitle)
                 {
-                    <MudTextField T="string" @@@bind-Value="_editTitle"
+                    <MudTextField T="string" @bind-Value="_editTitle"
                                  Label="Title"
                                  Variant="Variant.Outlined"
                                  Immediate="true"
@@ -46,7 +46,7 @@
                 <MudText Typo="Typo.subtitle2">Description</MudText>
                 @if (_isEditingDescription)
                 {
-                    <MudTextField T="string" @@@bind-Value="_editDescription"
+                    <MudTextField T="string" @bind-Value="_editDescription"
                                  Lines="3"
                                  Variant="Variant.Outlined"
                                  Immediate="true"

@@ -1,3 +1,4 @@
+using System.IO;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Forms;
 using Microsoft.AspNetCore.Components.Web;
@@ -53,6 +54,10 @@ public partial class DatasetUploader
     public HuggingFaceDiscoveryResponse? _hfDiscoveryResponse = null;
     public bool _hfShowOptions = false;
     public bool _hfDiscovering = false;
+
+    // Local folder import fields
+    public string _folderPath = string.Empty;
+    public string? _folderDatasetName = null;
 
     private const string FileInputElementId = "fileInput";
 
@@ -917,6 +922,98 @@ public partial class DatasetUploader
             string userMessage = GetFriendlyErrorMessage(ex);
             _errorMessage = userMessage;
             Logs.Error("Failed to import from HuggingFace", ex);
+            DatasetState.SetError(userMessage);
+            NotificationService.ShowError(userMessage);
+        }
+        finally
+        {
+            _isUploading = false;
+            _uploadStatus = string.Empty;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>Creates a dataset from a folder of images already on the server's disk.</summary>
+    public async Task ImportFromFolderAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_folderPath))
+        {
+            _errorMessage = "Please enter a folder path.";
+            return;
+        }
+
+        _errorMessage = null;
+        _isUploading = true;
+        _uploadStatus = "Creating dataset...";
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            string datasetName = !string.IsNullOrWhiteSpace(_folderDatasetName)
+                ? _folderDatasetName
+                : new DirectoryInfo(_folderPath).Name;
+
+            DatasetDetailDto? dataset = await DatasetApiClient.CreateDatasetAsync(
+                new CreateDatasetRequest(datasetName, $"Imported from folder: {_folderPath}"));
+
+            if (dataset == null)
+            {
+                throw new Exception("Failed to create dataset on server.");
+            }
+
+            Guid datasetId = dataset.Id;
+            Logs.Info($"Dataset created with ID: {datasetId} for folder import");
+
+            _uploadStatus = "Scanning folder...";
+            await InvokeAsync(StateHasChanged);
+
+            bool success = await DatasetApiClient.ImportFromFolderAsync(
+                datasetId, new ImportFolderRequest(_folderPath));
+
+            if (!success)
+            {
+                throw new Exception("Folder import request failed.");
+            }
+
+            _uploadStatus = "Waiting for processing to complete...";
+            await InvokeAsync(StateHasChanged);
+            await Task.Delay(2000);
+
+            DatasetDetailDto? updatedDataset = await DatasetApiClient.GetDatasetAsync(datasetId);
+            if (updatedDataset is { Status: IngestionStatusDto.Completed, TotalItems: > 0 })
+            {
+                DatasetState.SetLoading(true);
+                await DatasetCacheService.LoadFirstPageAsync(datasetId);
+                DatasetState.SetLoading(false);
+
+                NotificationService.ShowSuccess($"Dataset '{datasetName}' imported successfully with {updatedDataset.TotalItems} items!");
+
+                _folderPath = string.Empty;
+                _folderDatasetName = null;
+
+                await Task.Delay(1000);
+                NavigationService.NavigateToDataset(datasetId.ToString());
+            }
+            else if (updatedDataset?.Status == IngestionStatusDto.Failed)
+            {
+                string errorDetail = !string.IsNullOrWhiteSpace(updatedDataset.ErrorMessage)
+                    ? $" Error: {updatedDataset.ErrorMessage}"
+                    : "";
+                throw new Exception($"Folder import failed.{errorDetail}");
+            }
+            else
+            {
+                NotificationService.ShowInfo(
+                    $"Dataset '{datasetName}' import started. Processing in background... Check the dashboard in a moment.");
+                _folderPath = string.Empty;
+                _folderDatasetName = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            string userMessage = GetFriendlyErrorMessage(ex);
+            _errorMessage = userMessage;
+            Logs.Error("Failed to import from folder", ex);
             DatasetState.SetError(userMessage);
             NotificationService.ShowError(userMessage);
         }

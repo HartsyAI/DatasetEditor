@@ -114,6 +114,51 @@ namespace DatasetStudio.Tests.APIBackend
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
 
+        // Regression test for the HF-import scope-capture bug: ImportFromHuggingFace used to
+        // do `_ = Task.Run(() => scopedIngestionService.ImportFromHuggingFaceAsync(...))`,
+        // racing the request's DI scope (and its scoped DbContext) being disposed right after
+        // the handler returns 202. Streaming mode reaches a real DbContext write
+        // (UpdateStatusAsync, twice) without any network call, so this deterministically
+        // exercises the fixed code path (routed through IngestionQueue/
+        // IngestionBackgroundService, each job getting its own scope) without depending on
+        // HuggingFace being reachable from the test environment.
+        [Fact]
+        public async Task ImportFromHuggingFace_StreamingMode_CompletesWithoutObjectDisposedException()
+        {
+            HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
+                "/api/datasets", new CreateDatasetRequest("HF Streaming Test", null));
+            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+
+            ImportHuggingFaceDatasetRequest importRequest = new()
+            {
+                Repository = "does-not-need-to-exist/for-streaming-mode",
+                IsStreaming = true,
+            };
+
+            HttpResponseMessage importResponse = await _client.PostAsJsonAsync(
+                $"/api/datasets/{created.Id}/import-huggingface", importRequest);
+            importResponse.StatusCode.Should().Be(HttpStatusCode.Accepted);
+
+            IngestionStatusDto finalStatus = IngestionStatusDto.Pending;
+            for (int i = 0; i < 50; i++)
+            {
+                await Task.Delay(200);
+                HttpResponseMessage pollResponse = await _client.GetAsync($"/api/datasets/{created.Id}");
+                DatasetDetailDto polled = (await pollResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+                finalStatus = polled.Status;
+                if (finalStatus is IngestionStatusDto.Completed or IngestionStatusDto.Failed)
+                {
+                    break;
+                }
+            }
+
+            // The scope-capture bug would either leave the dataset stuck on Pending/Processing
+            // forever (the background exception never got recorded because the DbContext used
+            // to record it was itself the thing throwing ObjectDisposedException) or crash the
+            // background service. Completed is the correct outcome for streaming mode.
+            finalStatus.Should().Be(IngestionStatusDto.Completed);
+        }
+
         private sealed record DatasetsListResponse(
             System.Collections.Generic.List<DatasetSummaryDto> Datasets,
             long TotalCount,

@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Npgsql;
@@ -19,12 +20,18 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
     public sealed class DatasetStudioApiFactory : WebApplicationFactory<Program>
     {
         private const string ConnectionStringEnvVar = "ConnectionStrings__DatasetStudio";
+        private const string DatasetRootPathEnvVar = "Storage__DatasetRootPath";
 
         private readonly string _baseConnectionString;
         private readonly string _databaseName = $"dataset_studio_test_{Guid.NewGuid():N}";
         private readonly string? _previousConnectionStringEnvVar;
+        private readonly string? _previousDatasetRootPathEnvVar;
         private string DatabaseConnectionString =>
             new NpgsqlConnectionStringBuilder(_baseConnectionString) { Database = _databaseName }.ConnectionString;
+
+        /// <summary>This factory's isolated dataset-file storage root (Storage:DatasetRootPath).</summary>
+        public string DatasetRootPath { get; } =
+            Path.Combine(Path.GetTempPath(), "DatasetStudioTests", "datasets", Guid.NewGuid().ToString("N"));
 
         public DatasetStudioApiFactory(string baseConnectionString)
         {
@@ -44,6 +51,12 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
             // runs) don't leak this across factory instances.
             _previousConnectionStringEnvVar = Environment.GetEnvironmentVariable(ConnectionStringEnvVar);
             Environment.SetEnvironmentVariable(ConnectionStringEnvVar, DatabaseConnectionString);
+
+            // Storage:DatasetRootPath IS read fresh per-request (unlike the connection
+            // string), so this override doesn't strictly need the same "before host
+            // construction" timing — but setting it here keeps both overrides in one place.
+            _previousDatasetRootPathEnvVar = Environment.GetEnvironmentVariable(DatasetRootPathEnvVar);
+            Environment.SetEnvironmentVariable(DatasetRootPathEnvVar, DatasetRootPath);
         }
 
         /// <summary>Creates this factory's throwaway database. Call once before the first request.</summary>
@@ -79,6 +92,18 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
         {
             base.Dispose(disposing);
             Environment.SetEnvironmentVariable(ConnectionStringEnvVar, _previousConnectionStringEnvVar);
+            Environment.SetEnvironmentVariable(DatasetRootPathEnvVar, _previousDatasetRootPathEnvVar);
+            try
+            {
+                if (Directory.Exists(DatasetRootPath))
+                {
+                    Directory.Delete(DatasetRootPath, recursive: true);
+                }
+            }
+            catch
+            {
+                // Best-effort cleanup; a leftover temp dir isn't worth failing test teardown over.
+            }
         }
     }
 }

@@ -64,6 +64,12 @@ internal static class DatasetEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .Produces(StatusCodes.Status400BadRequest);
 
+        group.MapPost("/{datasetId:guid}/import-folder", ImportFromFolder)
+            .WithName("ImportFromFolder")
+            .Produces(StatusCodes.Status202Accepted)
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status400BadRequest);
+
         group.MapGet("/{datasetId:guid}/files/{*filePath}", ServeDatasetFile)
             .WithName("ServeDatasetFile")
             .Produces<FileStreamResult>(StatusCodes.Status200OK, "image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp")
@@ -339,7 +345,11 @@ internal static class DatasetEndpoints
         string externalId = GetFirstNonEmptyString(values, "id", "image_id", "uid", "uuid", "__key", "sample_id") ?? string.Empty;
         string? title = GetFirstNonEmptyString(values, "title", "caption", "text", "description", "label", "name");
         string? description = GetFirstNonEmptyString(values, "description", "caption", "text");
-        string? imageUrl = GetFirstNonEmptyString(values, "image_url", "img_url", "url");
+        // "image" (and "img"/"picture") are HF's actual conventional column names for an
+        // image feature (e.g. ylecun/mnist uses "image") — image_url/img_url/url are the
+        // exception, not the rule, so real HF datasets fell through to the much weaker
+        // extension-sniffing fallback below almost every time.
+        string? imageUrl = GetFirstNonEmptyString(values, "image_url", "img_url", "url", "image", "img", "picture");
 
         if (string.IsNullOrWhiteSpace(imageUrl))
         {
@@ -501,18 +511,31 @@ internal static class DatasetEndpoints
             return false;
         }
 
-        string lower = value.ToLowerInvariant();
-        if (!lower.Contains("http", StringComparison.Ordinal))
+        if (!value.Contains("http", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
-        return lower.EndsWith(".jpg", StringComparison.Ordinal) ||
-               lower.EndsWith(".jpeg", StringComparison.Ordinal) ||
-               lower.EndsWith(".png", StringComparison.Ordinal) ||
-               lower.EndsWith(".webp", StringComparison.Ordinal) ||
-               lower.EndsWith(".gif", StringComparison.Ordinal) ||
-               lower.EndsWith(".bmp", StringComparison.Ordinal);
+        // Check the URL's path, not the raw string tail — signed/CDN URLs (S3 presigned,
+        // HF's own datasets-server cached-assets links, ...) are extremely common in the wild
+        // and put a query string after the extension (".../image.jpg?Expires=...&Signature=
+        // ..."), which a plain EndsWith check never matches. This is exactly what real
+        // HuggingFace datasets-server image URLs look like, so the naive version silently
+        // failed to recognize images on real datasets almost all the time.
+        string pathPart = value;
+        int queryIndex = pathPart.IndexOfAny(new[] { '?', '#' });
+        if (queryIndex >= 0)
+        {
+            pathPart = pathPart[..queryIndex];
+        }
+        string lowerPath = pathPart.ToLowerInvariant();
+
+        return lowerPath.EndsWith(".jpg", StringComparison.Ordinal) ||
+               lowerPath.EndsWith(".jpeg", StringComparison.Ordinal) ||
+               lowerPath.EndsWith(".png", StringComparison.Ordinal) ||
+               lowerPath.EndsWith(".webp", StringComparison.Ordinal) ||
+               lowerPath.EndsWith(".gif", StringComparison.Ordinal) ||
+               lowerPath.EndsWith(".bmp", StringComparison.Ordinal);
     }
 
     /// <summary>Imports a dataset from HuggingFace Hub</summary>
@@ -520,7 +543,7 @@ internal static class DatasetEndpoints
         Guid datasetId,
         ImportHuggingFaceDatasetRequest request,
         Core.Abstractions.Repositories.IDatasetRepository repository,
-        IDatasetIngestionService ingestionService,
+        IngestionQueue ingestionQueue,
         CancellationToken cancellationToken)
     {
         DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
@@ -535,33 +558,80 @@ internal static class DatasetEndpoints
             return Results.BadRequest(new { error = "Repository name is required" });
         }
 
-        // Update dataset name/description if provided
+        // Update dataset name/description if provided, and record the HF repository/config —
+        // GetDatasetItems' streaming branch reads dataset.HuggingFaceRepository to know where
+        // to stream rows from, so without this every streaming-mode dataset would complete
+        // ingestion successfully and then fail every subsequent items request with "missing
+        // repository metadata". This was invisible until DatasetRepository.UpdateAsync was
+        // fixed to actually persist (see the AsTracking fix) — before that, no UpdateAsync call
+        // anywhere persisted anything, so this specific gap couldn't manifest on its own.
         dataset = dataset with
         {
             Name = string.IsNullOrWhiteSpace(request.Name) ? dataset.Name : request.Name,
             Description = string.IsNullOrWhiteSpace(request.Description) ? dataset.Description : request.Description,
+            SourceType = request.IsStreaming ? DatasetSourceType.HuggingFaceStreaming : DatasetSourceType.HuggingFace,
+            IsStreaming = request.IsStreaming,
+            HuggingFaceRepository = request.Repository,
+            HuggingFaceConfig = request.Config,
+            HuggingFaceSplit = request.Split,
         };
 
         await repository.UpdateAsync(dataset, cancellationToken);
 
-        // Start import in background (don't await)
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                await ingestionService.ImportFromHuggingFaceAsync(datasetId, request, CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"HuggingFace import failed: {ex.Message}");
-            }
-        }, CancellationToken.None);
+        // Queued through the same background-worker path as file uploads, each job getting
+        // its own DI scope — not a fire-and-forget Task.Run against a scoped
+        // IDatasetIngestionService, which used to race the request's DI scope (and its
+        // scoped DbContext) being disposed right after this handler returns.
+        ingestionQueue.Enqueue(new IngestionJob(datasetId, FilePath: null, HuggingFaceRequest: request));
 
         return Results.Accepted($"/api/datasets/{datasetId}", new
         {
             datasetId,
             repository = request.Repository,
             isStreaming = request.IsStreaming,
+            message = "Import started. Check dataset status for progress."
+        });
+    }
+
+    /// <summary>
+    /// Imports a dataset from a folder already on the server's disk. DatasetIngestionService's
+    /// IngestFromFolderAsync has existed since before this endpoint did — it just had no route
+    /// mapped to it, which is why the client's "Local folder" creation option was permanently
+    /// labeled "(coming soon)".
+    /// No path allow-listing here: like every other endpoint in this API before auth lands
+    /// (see the auth phase in the production-readiness plan), this is open to anyone who can
+    /// reach the API. Restricting which server paths can be ingested is an authorization
+    /// concern, not an ingestion-logic one.
+    /// </summary>
+    public static async Task<IResult> ImportFromFolder(
+        Guid datasetId,
+        ImportFolderRequest request,
+        Core.Abstractions.Repositories.IDatasetRepository repository,
+        IngestionQueue ingestionQueue,
+        CancellationToken cancellationToken)
+    {
+        DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
+        if (dataset is null)
+        {
+            return Results.NotFound(new { error = "Dataset not found" });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.FolderPath))
+        {
+            return Results.BadRequest(new { error = "FolderPath is required" });
+        }
+
+        if (!Directory.Exists(request.FolderPath))
+        {
+            return Results.BadRequest(new { error = $"Folder not found: {request.FolderPath}" });
+        }
+
+        ingestionQueue.Enqueue(new IngestionJob(datasetId, FilePath: null, FolderPath: request.FolderPath));
+
+        return Results.Accepted($"/api/datasets/{datasetId}", new
+        {
+            datasetId,
+            folderPath = request.FolderPath,
             message = "Import started. Check dataset status for progress."
         });
     }
@@ -580,20 +650,36 @@ internal static class DatasetEndpoints
             return Results.NotFound();
         }
 
-        // Get dataset root path from configuration
-        string datasetRootPath = configuration["Storage:DatasetRootPath"]
-            ?? Path.Combine(AppContext.BaseDirectory, "data", "datasets");
-
-        // Build the dataset folder path
-        string datasetFolder = GetDatasetFolderPathForFile(dataset, datasetRootPath);
+        // Datasets ingested from a local folder (StoragePath set) are served straight from
+        // that folder — copying a potentially huge, arbitrarily-sized folder into managed
+        // storage would defeat the point of "point at a folder on disk" ingestion. Everything
+        // else (uploads, ZIP extraction) lives under the managed {root}/{slug}-{shortId}
+        // convention instead.
+        string datasetFolder;
+        if (!string.IsNullOrWhiteSpace(dataset.StoragePath))
+        {
+            datasetFolder = Path.GetFullPath(dataset.StoragePath);
+        }
+        else
+        {
+            string datasetRootPath = configuration["Storage:DatasetRootPath"]
+                ?? Path.Combine(AppContext.BaseDirectory, "data", "datasets");
+            datasetFolder = Services.Storage.DatasetStorageConventions.GetDatasetFolderPath(
+                datasetRootPath, dataset.Id, dataset.Name);
+        }
 
         // Build the full file path
         string fullPath = Path.Combine(datasetFolder, filePath);
         string normalizedFullPath = Path.GetFullPath(fullPath);
         string normalizedDatasetFolder = Path.GetFullPath(datasetFolder);
 
-        // Security check: ensure the file is within the dataset folder
-        if (!normalizedFullPath.StartsWith(normalizedDatasetFolder, StringComparison.OrdinalIgnoreCase))
+        // Security check: ensure the file is within the dataset folder. The trailing
+        // separator matters — without it, StartsWith("<root>/my-dataset-1234abcd") would also
+        // match a sibling folder like "<root>/my-dataset-1234abcdEXTRA".
+        string containmentPrefix = normalizedDatasetFolder.EndsWith(Path.DirectorySeparatorChar)
+            ? normalizedDatasetFolder
+            : normalizedDatasetFolder + Path.DirectorySeparatorChar;
+        if (!normalizedFullPath.StartsWith(containmentPrefix, StringComparison.OrdinalIgnoreCase))
         {
             return Results.NotFound();
         }
@@ -601,6 +687,20 @@ internal static class DatasetEndpoints
         if (!File.Exists(normalizedFullPath))
         {
             return Results.NotFound();
+        }
+
+        // GetFullPath resolves ".." segments but not symlinks — a symlink placed inside the
+        // dataset folder (e.g. by a malicious ZIP import; see the extraction-time guard in
+        // DatasetIngestionService) could still point outside it and pass the check above.
+        // Resolve the link chain and re-check containment against its real target.
+        FileSystemInfo? linkTarget = new FileInfo(normalizedFullPath).ResolveLinkTarget(returnFinalTarget: true);
+        if (linkTarget is not null)
+        {
+            string resolvedTargetPath = Path.GetFullPath(linkTarget.FullName);
+            if (!resolvedTargetPath.StartsWith(containmentPrefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.NotFound();
+            }
         }
 
         // Determine content type based on file extension
@@ -617,62 +717,6 @@ internal static class DatasetEndpoints
 
         FileStream fileStream = File.OpenRead(normalizedFullPath);
         return Results.File(fileStream, contentType, enableRangeProcessing: true);
-    }
-
-    /// <summary>Gets dataset folder path for file serving</summary>
-    private static string GetDatasetFolderPathForFile(DatasetDto dataset, string datasetRootPath)
-    {
-        string root = Path.GetFullPath(datasetRootPath);
-        Directory.CreateDirectory(root);
-
-        string slug = Slugify(dataset.Name);
-        string shortId = dataset.Id.ToString("N")[..8];
-        string folderName = $"{slug}-{shortId}";
-        string datasetFolder = Path.Combine(root, folderName);
-
-        return datasetFolder;
-    }
-
-    /// <summary>Converts a name to a URL-friendly slug</summary>
-    private static string Slugify(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return "dataset";
-        }
-
-        value = value.Trim().ToLowerInvariant();
-        System.Text.StringBuilder sb = new(value.Length);
-        bool previousDash = false;
-
-        foreach (char c in value)
-        {
-            if (char.IsLetterOrDigit(c))
-            {
-                sb.Append(c);
-                previousDash = false;
-            }
-            else if (c == ' ' || c == '-' || c == '_' || c == '.')
-            {
-                if (!previousDash && sb.Length > 0)
-                {
-                    sb.Append('-');
-                    previousDash = true;
-                }
-            }
-        }
-
-        if (sb.Length == 0)
-        {
-            return "dataset";
-        }
-
-        if (sb[^1] == '-')
-        {
-            sb.Length--;
-        }
-
-        return sb.ToString();
     }
 
     /// <summary>Discovers available configs, splits, and files for a HuggingFace dataset</summary>

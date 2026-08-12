@@ -62,7 +62,7 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
         try
         {
             // Get current count to determine starting index
-            long startIndex = GetOrInitializeItemCount(datasetId);
+            long startIndex = await GetOrInitializeItemCountAsync(datasetId, cancellationToken);
 
             _logger.LogInformation(
                 "Adding {Count} items to dataset {DatasetId} starting at index {StartIndex}",
@@ -359,28 +359,34 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
     }
 
     /// <summary>
-    /// Initializes item counts by scanning existing Parquet files.
+    /// Logs how many datasets have existing Parquet files on disk at startup. Does NOT
+    /// pre-populate <see cref="_datasetItemCounts"/> — it used to seed every discovered
+    /// dataset with a count of 0 "to be computed on first access", but that 0 IS the cached
+    /// value from then on: GetOrInitializeItemCountAsync/GetCountAsync's cache check is a
+    /// plain TryGetValue, which succeeds against that placeholder immediately, so the real
+    /// count from the Parquet files was never actually read. In production this meant every
+    /// dataset with existing data showed 0 items after every service restart, and any
+    /// subsequent AddRangeAsync computed new items' starting index from 0 too — silently
+    /// colliding with the dataset's existing item indices. Leaving the cache empty here lets
+    /// the lazy, on-demand count computation these methods already have work as intended.
     /// </summary>
     private void InitializeItemCounts()
     {
         try
         {
             var allFiles = Directory.GetFiles(_dataDirectory, "dataset_*.parquet");
+            var datasetIds = new HashSet<Guid>();
 
             foreach (var file in allFiles)
             {
                 var fileName = Path.GetFileName(file);
                 if (ParquetSchemaDefinition.TryParseFileName(fileName, out var datasetId, out _))
                 {
-                    if (!_datasetItemCounts.ContainsKey(datasetId))
-                    {
-                        // Count will be computed on first access
-                        _datasetItemCounts[datasetId] = 0;
-                    }
+                    datasetIds.Add(datasetId);
                 }
             }
 
-            _logger.LogInformation("Initialized repository with {Count} datasets", _datasetItemCounts.Count);
+            _logger.LogInformation("Initialized repository with {Count} datasets", datasetIds.Count);
         }
         catch (Exception ex)
         {
@@ -391,15 +397,17 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
     /// <summary>
     /// Gets or initializes the item count for a dataset.
     /// </summary>
-    private long GetOrInitializeItemCount(Guid datasetId)
+    private async Task<long> GetOrInitializeItemCountAsync(Guid datasetId, CancellationToken cancellationToken)
     {
         if (_datasetItemCounts.TryGetValue(datasetId, out var count))
             return count;
 
-        // Need to count existing items
-        var task = _reader.CountAsync(datasetId);
-        task.Wait();
-        count = task.Result;
+        // Need to count existing items. This used to be `task.Wait(); count = task.Result;`
+        // — a blocking sync-over-async call made from inside AddRangeAsync while that method
+        // holds the per-dataset SemaphoreSlim, risking thread-pool starvation/deadlock under
+        // concurrent ingestion load (the blocked thread can't service the async work the
+        // count itself depends on).
+        count = await _reader.CountAsync(datasetId, cancellationToken: cancellationToken);
 
         _datasetItemCounts[datasetId] = count;
         return count;

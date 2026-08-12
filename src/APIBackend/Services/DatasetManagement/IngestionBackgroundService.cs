@@ -43,7 +43,18 @@ public sealed class IngestionBackgroundService : BackgroundService
         try
         {
             _logger.LogInformation("Starting background ingestion for dataset {DatasetId}", job.DatasetId);
-            await ingestionService.StartIngestionAsync(job.DatasetId, job.FilePath, stoppingToken);
+            if (job.HuggingFaceRequest is not null)
+            {
+                await ingestionService.ImportFromHuggingFaceAsync(job.DatasetId, job.HuggingFaceRequest, stoppingToken);
+            }
+            else if (job.FolderPath is not null)
+            {
+                await ingestionService.IngestFromFolderAsync(job.DatasetId, job.FolderPath, stoppingToken);
+            }
+            else if (job.FilePath is not null)
+            {
+                await ingestionService.StartIngestionAsync(job.DatasetId, job.FilePath, stoppingToken);
+            }
             _logger.LogInformation("Completed background ingestion for dataset {DatasetId}", job.DatasetId);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -75,7 +86,7 @@ public sealed class IngestionBackgroundService : BackgroundService
         }
     }
 
-    private void TryDeleteTempFile(string path)
+    private void TryDeleteTempFile(string? path)
     {
         try
         {
