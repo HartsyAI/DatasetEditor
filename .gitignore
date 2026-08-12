@@ -77,3 +77,5 @@ dkms.conf
 /tests/ClientApp.Tests/bin
 /tests/APIBackend.Tests/obj
 /tests/APIBackend.Tests/bin
+/src/APIBackend/data
+/uploads

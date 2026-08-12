@@ -37,4 +37,11 @@
     <ProjectReference Include="..\Extensions\SDK.Api\Extensions.SDK.Api.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Lets the test project unit-test the streaming parsers directly (e.g. proving a
+         parser yields items before consuming its whole source stream) without making
+         them public API. -->
+    <InternalsVisibleTo Include="APIBackend.Tests" />
+  </ItemGroup>
+
 </Project>

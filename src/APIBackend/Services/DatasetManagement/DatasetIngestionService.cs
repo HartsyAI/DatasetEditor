@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.IO.Compression;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using CsvHelper;
 using CsvHelper.Configuration;
@@ -13,9 +14,19 @@ namespace DatasetStudio.APIBackend.Services.DatasetManagement;
 /// <summary>
 /// Production-ready service for ingesting datasets from multiple file formats.
 /// Supports: CSV, TSV, JSON, JSONL, ZIP archives, image folders, and HuggingFace.
+///
+/// Every source (file-based parsers below, and the folder scan) is a stream —
+/// IAsyncEnumerable&lt;DatasetItemDto&gt; — so a multi-gigabyte CSV or a folder with
+/// millions of images never sits fully materialized in memory. WriteInChunksAsync is
+/// the single place that turns a stream into bounded-size batches and writes them.
 /// </summary>
 public class DatasetIngestionService : IDatasetIngestionService
 {
+    // Bounds parser-side memory (CSV row buffers, JSON element trees, extracted image
+    // bytes) independently of ParquetSchemaDefinition.DefaultBatchSize, which governs
+    // the writer's own row-group sizing.
+    private const int ChunkSize = 2000;
+
     private readonly Core.Abstractions.Repositories.IDatasetRepository _datasetRepository;
     private readonly Core.Abstractions.Repositories.IDatasetItemRepository _itemRepository;
     private readonly IHuggingFaceClient _huggingFaceClient;
@@ -136,48 +147,29 @@ public class DatasetIngestionService : IDatasetIngestionService
 
     private async Task IngestAsync(Guid datasetId, Stream fileStream, string fileName, CancellationToken cancellationToken = default)
     {
+        long totalWritten = 0;
         try
         {
             await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Processing, cancellationToken: cancellationToken);
             Logs.Info($"[Ingestion] Starting ingestion for dataset {datasetId}, file: {fileName}");
 
             var extension = Path.GetExtension(fileName).ToLowerInvariant();
-            var items = new List<DatasetItemDto>();
-
-            switch (extension)
+            IAsyncEnumerable<DatasetItemDto> itemStream = extension switch
             {
-                case ".csv":
-                    items = await ParseCsvAsync(datasetId, fileStream, cancellationToken);
-                    break;
+                ".csv" => ParseCsvAsync(datasetId, fileStream, cancellationToken),
+                ".tsv" => ParseTsvAsync(datasetId, fileStream, cancellationToken),
+                ".json" => ParseJsonAsync(datasetId, fileStream, cancellationToken),
+                ".jsonl" or ".ndjson" => ParseJsonLinesAsync(datasetId, fileStream, cancellationToken),
+                ".zip" => ParseZipAsync(datasetId, fileStream, cancellationToken),
+                _ => throw new NotSupportedException($"File format '{extension}' is not supported")
+            };
 
-                case ".tsv":
-                    items = await ParseTsvAsync(datasetId, fileStream, cancellationToken);
-                    break;
+            totalWritten = await WriteInChunksAsync(datasetId, itemStream, cancellationToken);
 
-                case ".json":
-                    items = await ParseJsonAsync(datasetId, fileStream, cancellationToken);
-                    break;
-
-                case ".jsonl":
-                case ".ndjson":
-                    items = await ParseJsonLinesAsync(datasetId, fileStream, cancellationToken);
-                    break;
-
-                case ".zip":
-                    items = await ParseZipAsync(datasetId, fileStream, cancellationToken);
-                    break;
-
-                default:
-                    throw new NotSupportedException($"File format '{extension}' is not supported");
-            }
-
-            if (items.Count == 0)
+            if (totalWritten == 0)
             {
                 throw new InvalidOperationException("No items were parsed from the file");
             }
-
-            // Write to Parquet
-            await _itemRepository.InsertItemsAsync(datasetId, items, cancellationToken);
 
             // Update dataset metadata with the TRUE total (not just this batch's count) — a
             // second ingestion into an existing dataset (re-upload, re-import) would otherwise
@@ -187,18 +179,61 @@ public class DatasetIngestionService : IDatasetIngestionService
             await _datasetRepository.UpdateItemCountAsync(datasetId, trueTotalCount, cancellationToken);
             await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Completed, cancellationToken: cancellationToken);
 
-            Logs.Info($"[Ingestion] Successfully ingested {items.Count} items for dataset {datasetId} (total now {trueTotalCount})");
+            Logs.Info($"[Ingestion] Successfully ingested {totalWritten} items for dataset {datasetId} (total now {trueTotalCount})");
         }
         catch (Exception ex)
         {
-            Logs.Error($"[Ingestion] Failed to ingest dataset {datasetId}: {ex.Message}");
-            await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Failed, ex.Message, cancellationToken);
+            // Chunked writing means some chunks may already be committed to Parquet by the
+            // time a later row/entry fails to parse -- unlike the old all-or-nothing behavior.
+            // Deliberately NOT rolling back: deleting already-written items would also destroy
+            // any items from a PRIOR successful ingestion into this same dataset (the
+            // cumulative-count fix above exists precisely because re-ingestion into an existing
+            // dataset is a supported case), and a partial-but-real dataset is more useful than
+            // silently losing it. The honest thing is to leave what was written and say so.
+            string message = totalWritten > 0
+                ? $"Failed after writing {totalWritten} item(s): {ex.Message}"
+                : ex.Message;
+            Logs.Error($"[Ingestion] Failed to ingest dataset {datasetId}: {message}");
+            await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Failed, message, cancellationToken);
             throw;
         }
     }
 
+    /// <summary>
+    /// Drains an item stream in fixed-size batches, writing (and thus committing to Parquet)
+    /// each batch as soon as it fills, rather than buffering the whole source first. Shared by
+    /// every ingestion source (file parsers, folder scan) so they get identical chunking and
+    /// progress-logging behavior.
+    /// </summary>
+    private async Task<long> WriteInChunksAsync(Guid datasetId, IAsyncEnumerable<DatasetItemDto> items, CancellationToken cancellationToken)
+    {
+        long totalWritten = 0;
+        var chunk = new List<DatasetItemDto>(ChunkSize);
+
+        await foreach (DatasetItemDto item in items.WithCancellation(cancellationToken))
+        {
+            chunk.Add(item);
+            if (chunk.Count >= ChunkSize)
+            {
+                await _itemRepository.InsertItemsAsync(datasetId, chunk, cancellationToken);
+                totalWritten += chunk.Count;
+                Logs.Info($"[Ingestion] Wrote chunk of {chunk.Count} items for dataset {datasetId} (total so far: {totalWritten})");
+                chunk.Clear();
+            }
+        }
+
+        if (chunk.Count > 0)
+        {
+            await _itemRepository.InsertItemsAsync(datasetId, chunk, cancellationToken);
+            totalWritten += chunk.Count;
+        }
+
+        return totalWritten;
+    }
+
     public async Task IngestFromFolderAsync(Guid datasetId, string folderPath, CancellationToken cancellationToken = default)
     {
+        long totalWritten = 0;
         try
         {
             await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Processing, cancellationToken: cancellationToken);
@@ -215,78 +250,95 @@ public class DatasetIngestionService : IDatasetIngestionService
                 throw new InvalidOperationException($"Dataset {datasetId} not found");
             }
             string normalizedFolderPath = Path.GetFullPath(folderPath);
+            if (!Directory.Exists(normalizedFolderPath))
+            {
+                throw new InvalidOperationException($"Folder not found: {normalizedFolderPath}");
+            }
             await _datasetRepository.UpdateAsync(dataset with { StoragePath = normalizedFolderPath }, cancellationToken);
 
-            var items = new List<DatasetItemDto>();
-            var supportedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif" };
+            totalWritten = await WriteInChunksAsync(
+                datasetId, EnumerateFolderImagesAsync(datasetId, normalizedFolderPath, cancellationToken), cancellationToken);
 
-            var imageFiles = Directory.GetFiles(normalizedFolderPath, "*.*", SearchOption.AllDirectories)
-                .Where(f => supportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
-                .ToList();
-
-            if (imageFiles.Count == 0)
+            if (totalWritten == 0)
             {
                 throw new InvalidOperationException("No image files found in the specified folder");
             }
 
-            foreach (var imagePath in imageFiles)
-            {
-                var relativePath = Path.GetRelativePath(normalizedFolderPath, imagePath);
-                var fileName = Path.GetFileName(imagePath);
-                // Server-relative API URL (ImageUrlHelper.ResolveImageUrl prepends the API base
-                // address client-side) — NOT a file:// URI, which points at the server's own
-                // filesystem and a browser has no way to fetch.
-                var apiUrl = BuildServeFileUrl(datasetId, relativePath);
-
-                // Image dimensions can be populated later or by client
-                int width = 0, height = 0;
-
-                var item = new DatasetItemDto
-                {
-                    Id = Guid.NewGuid(),
-                    DatasetId = datasetId,
-                    ExternalId = relativePath,
-                    Title = Path.GetFileNameWithoutExtension(fileName),
-                    ImageUrl = apiUrl,
-                    ThumbnailUrl = apiUrl,
-                    Width = width,
-                    Height = height,
-                    Tags = new List<string>(),
-                    IsFavorite = false,
-                    Metadata = new Dictionary<string, string>
-                    {
-                        ["original_path"] = imagePath,
-                        ["relative_path"] = relativePath
-                    },
-                    CreatedAt = DateTime.UtcNow,
-                    UpdatedAt = DateTime.UtcNow
-                };
-
-                items.Add(item);
-            }
-
-            await _itemRepository.InsertItemsAsync(datasetId, items, cancellationToken);
             // See IngestAsync's matching comment: use the true cumulative count, not this batch's.
             long trueTotalCount = await _itemRepository.GetCountAsync(datasetId, cancellationToken);
             await _datasetRepository.UpdateItemCountAsync(datasetId, trueTotalCount, cancellationToken);
             await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Completed, cancellationToken: cancellationToken);
 
-            Logs.Info($"[Ingestion] Successfully ingested {items.Count} images from folder for dataset {datasetId} (total now {trueTotalCount})");
+            Logs.Info($"[Ingestion] Successfully ingested {totalWritten} images from folder for dataset {datasetId} (total now {trueTotalCount})");
         }
         catch (Exception ex)
         {
-            Logs.Error($"[Ingestion] Failed to ingest folder for dataset {datasetId}: {ex.Message}");
-            await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Failed, ex.Message, cancellationToken);
+            // Same partial-write policy as IngestAsync -- see its catch block for the reasoning.
+            string message = totalWritten > 0
+                ? $"Failed after writing {totalWritten} item(s): {ex.Message}"
+                : ex.Message;
+            Logs.Error($"[Ingestion] Failed to ingest folder for dataset {datasetId}: {message}");
+            await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Failed, message, cancellationToken);
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Lazily walks a folder for supported image files, yielding one item per match.
+    /// Directory.EnumerateFiles (not GetFiles) so a folder with millions of images is never
+    /// materialized into one big list before the first item is even written.
+    /// </summary>
+    private async IAsyncEnumerable<DatasetItemDto> EnumerateFolderImagesAsync(
+        Guid datasetId, string normalizedFolderPath, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var supportedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif" };
+
+        foreach (var imagePath in Directory.EnumerateFiles(normalizedFolderPath, "*.*", SearchOption.AllDirectories))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!supportedExtensions.Contains(Path.GetExtension(imagePath).ToLowerInvariant()))
+            {
+                continue;
+            }
+
+            var relativePath = Path.GetRelativePath(normalizedFolderPath, imagePath);
+            var fileName = Path.GetFileName(imagePath);
+            // Server-relative API URL (ImageUrlHelper.ResolveImageUrl prepends the API base
+            // address client-side) — NOT a file:// URI, which points at the server's own
+            // filesystem and a browser has no way to fetch.
+            var apiUrl = BuildServeFileUrl(datasetId, relativePath);
+
+            yield return new DatasetItemDto
+            {
+                Id = Guid.NewGuid(),
+                DatasetId = datasetId,
+                ExternalId = relativePath,
+                Title = Path.GetFileNameWithoutExtension(fileName),
+                ImageUrl = apiUrl,
+                ThumbnailUrl = apiUrl,
+                // Image dimensions can be populated later or by client
+                Width = 0,
+                Height = 0,
+                Tags = new List<string>(),
+                IsFavorite = false,
+                Metadata = new Dictionary<string, string>
+                {
+                    ["original_path"] = imagePath,
+                    ["relative_path"] = relativePath
+                },
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
         }
     }
 
     /// <summary>
     /// Parse CSV file (comma-delimited)
     /// </summary>
-    private async Task<List<DatasetItemDto>> ParseCsvAsync(Guid datasetId, Stream stream, CancellationToken cancellationToken)
+    internal async IAsyncEnumerable<DatasetItemDto> ParseCsvAsync(
+        Guid datasetId, Stream stream, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var items = new List<DatasetItemDto>();
         var config = new CsvConfiguration(CultureInfo.InvariantCulture)
         {
             HasHeaderRecord = true,
@@ -303,19 +355,17 @@ public class DatasetIngestionService : IDatasetIngestionService
 
         while (await csv.ReadAsync())
         {
-            var item = ParseRowToItem(datasetId, csv, headers);
-            items.Add(item);
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return ParseRowToItem(datasetId, csv, headers);
         }
-
-        return items;
     }
 
     /// <summary>
     /// Parse TSV file (tab-delimited)
     /// </summary>
-    private async Task<List<DatasetItemDto>> ParseTsvAsync(Guid datasetId, Stream stream, CancellationToken cancellationToken)
+    internal async IAsyncEnumerable<DatasetItemDto> ParseTsvAsync(
+        Guid datasetId, Stream stream, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var items = new List<DatasetItemDto>();
         var config = new CsvConfiguration(CultureInfo.InvariantCulture)
         {
             Delimiter = "\t",
@@ -333,63 +383,67 @@ public class DatasetIngestionService : IDatasetIngestionService
 
         while (await csv.ReadAsync())
         {
-            var item = ParseRowToItem(datasetId, csv, headers);
-            items.Add(item);
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return ParseRowToItem(datasetId, csv, headers);
         }
-
-        return items;
     }
 
     /// <summary>
-    /// Parse JSON array file
+    /// Parse JSON array file. JsonSerializer.DeserializeAsyncEnumerable requires (and enforces)
+    /// a top-level array — a non-array root surfaces as a JsonException during enumeration,
+    /// which IngestAsync's catch turns into a clear Failed status instead of silently buffering
+    /// the whole document the way DeserializeAsync&lt;JsonElement&gt; used to.
     /// </summary>
-    private async Task<List<DatasetItemDto>> ParseJsonAsync(Guid datasetId, Stream stream, CancellationToken cancellationToken)
+    internal async IAsyncEnumerable<DatasetItemDto> ParseJsonAsync(
+        Guid datasetId, Stream stream, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var items = new List<DatasetItemDto>();
-        var jsonArray = await JsonSerializer.DeserializeAsync<JsonElement>(stream, cancellationToken: cancellationToken);
-
-        if (jsonArray.ValueKind != JsonValueKind.Array)
+        IAsyncEnumerable<JsonElement> elements = JsonSerializer.DeserializeAsyncEnumerable<JsonElement>(stream, cancellationToken: cancellationToken);
+        await foreach (JsonElement element in elements.WithCancellation(cancellationToken))
         {
-            throw new InvalidOperationException("JSON file must contain an array of objects");
+            // Defensive: a JSON array can legally contain non-object entries (numbers, strings,
+            // null) even though every real dataset export uses objects. Skip rather than crash
+            // on EnumerateObject() -- streaming exposes us to messier real-world input than the
+            // old fully-materialized path effectively did before anyone tried a 50k-row file.
+            if (element.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+            yield return ParseJsonElementToItem(datasetId, element);
         }
-
-        foreach (var element in jsonArray.EnumerateArray())
-        {
-            var item = ParseJsonElementToItem(datasetId, element);
-            items.Add(item);
-        }
-
-        return items;
     }
 
     /// <summary>
     /// Parse JSONL/NDJSON file (newline-delimited JSON)
     /// </summary>
-    private async Task<List<DatasetItemDto>> ParseJsonLinesAsync(Guid datasetId, Stream stream, CancellationToken cancellationToken)
+    internal async IAsyncEnumerable<DatasetItemDto> ParseJsonLinesAsync(
+        Guid datasetId, Stream stream, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var items = new List<DatasetItemDto>();
-
         using var reader = new StreamReader(stream);
-        while (!reader.EndOfStream)
+        string? line;
+        while ((line = await reader.ReadLineAsync(cancellationToken)) is not null)
         {
-            var line = await reader.ReadLineAsync();
+            cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrWhiteSpace(line)) continue;
 
             var element = JsonSerializer.Deserialize<JsonElement>(line);
-            var item = ParseJsonElementToItem(datasetId, element);
-            items.Add(item);
+            yield return ParseJsonElementToItem(datasetId, element);
         }
-
-        return items;
     }
 
     /// <summary>
-    /// Parse ZIP archive containing images
+    /// Parse ZIP archive containing images, extracting and yielding entries one at a time
+    /// instead of extracting the whole archive before building the item list.
+    ///
+    /// This can't be a single try/catch around the yielding loop -- C# forbids `yield return`
+    /// inside a try block that has a catch clause (CS1626). Cleanup-on-failure is done via
+    /// try/finally instead (legal around yield return): `completedSuccessfully` only flips to
+    /// true after the loop finishes, so any exit that isn't a clean finish -- an exception, or
+    /// the caller disposing the enumerator early via cancellation -- deletes the partial
+    /// extraction, same as the old catch block did.
     /// </summary>
-    private async Task<List<DatasetItemDto>> ParseZipAsync(Guid datasetId, Stream stream, CancellationToken cancellationToken)
+    internal async IAsyncEnumerable<DatasetItemDto> ParseZipAsync(
+        Guid datasetId, Stream stream, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var items = new List<DatasetItemDto>();
-
         // Extract into the dataset's own managed storage folder (ServeDatasetFile's
         // {root}/{slug}-{shortId} convention) — NOT a temp directory. This used to extract to
         // _uploadPath/temp_{datasetId} and then delete it in `finally` on every run, so a
@@ -401,69 +455,62 @@ public class DatasetIngestionService : IDatasetIngestionService
             throw new InvalidOperationException($"Dataset {datasetId} not found");
         }
         var extractPath = Services.Storage.DatasetStorageConventions.GetDatasetFolderPath(_datasetRootPath, datasetId, dataset.Name);
+        Directory.CreateDirectory(extractPath);
+        string normalizedExtractRoot = Path.GetFullPath(extractPath);
+        string extractContainmentPrefix = normalizedExtractRoot.EndsWith(Path.DirectorySeparatorChar)
+            ? normalizedExtractRoot
+            : normalizedExtractRoot + Path.DirectorySeparatorChar;
+        var supportedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif" };
 
+        bool completedSuccessfully = false;
         try
         {
-            Directory.CreateDirectory(extractPath);
-            string normalizedExtractRoot = Path.GetFullPath(extractPath);
-            string extractContainmentPrefix = normalizedExtractRoot.EndsWith(Path.DirectorySeparatorChar)
-                ? normalizedExtractRoot
-                : normalizedExtractRoot + Path.DirectorySeparatorChar;
-
-            // Extract ZIP entry-by-entry with an explicit containment check per entry, rather
-            // than the one-line ZipArchive.ExtractToDirectory. .NET's own extraction already
-            // rejects ".."-based zip-slip, and doesn't reconstruct Unix symlink entries as
-            // real OS symlinks (it writes their "content" — which a symlink-aware tool would
-            // treat as the link target — as a plain file) — but validating containment
-            // explicitly here doesn't depend on either of those framework internals holding
-            // across versions, and matches the same trailing-separator-safe check used when
-            // serving these files back out (ServeDatasetFile).
-            using (var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true))
+            // Extract entry-by-entry with an explicit containment check per entry, rather than
+            // the one-line ZipArchive.ExtractToDirectory. .NET's own extraction already rejects
+            // ".."-based zip-slip, and doesn't reconstruct Unix symlink entries as real OS
+            // symlinks (it writes their "content" — which a symlink-aware tool would treat as
+            // the link target — as a plain file) — but validating containment explicitly here
+            // doesn't depend on either of those framework internals holding across versions,
+            // and matches the same trailing-separator-safe check used when serving these files
+            // back out (ServeDatasetFile). Only image entries get extracted at all (rather than
+            // extracting everything and filtering afterward) — one pass, no dead files left on
+            // disk for non-image archive members.
+            using ZipArchive archive = new(stream, ZipArchiveMode.Read, leaveOpen: true);
+            foreach (ZipArchiveEntry entry in archive.Entries)
             {
-                foreach (ZipArchiveEntry entry in archive.Entries)
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (string.IsNullOrEmpty(entry.Name))
                 {
-                    if (string.IsNullOrEmpty(entry.Name))
-                    {
-                        continue; // directory entry
-                    }
-
-                    string destinationPath = Path.GetFullPath(Path.Combine(normalizedExtractRoot, entry.FullName));
-                    if (!destinationPath.StartsWith(extractContainmentPrefix, StringComparison.OrdinalIgnoreCase))
-                    {
-                        Logs.Warning($"[Ingestion] Skipping ZIP entry that would extract outside the target directory: {entry.FullName}");
-                        continue;
-                    }
-
-                    Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
-                    entry.ExtractToFile(destinationPath, overwrite: true);
+                    continue; // directory entry
                 }
-            }
+                if (!supportedExtensions.Contains(Path.GetExtension(entry.Name).ToLowerInvariant()))
+                {
+                    continue; // not a supported image type
+                }
 
-            // Process extracted images
-            var supportedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif" };
-            var imageFiles = Directory.GetFiles(extractPath, "*.*", SearchOption.AllDirectories)
-                .Where(f => supportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()))
-                .ToList();
+                string destinationPath = Path.GetFullPath(Path.Combine(normalizedExtractRoot, entry.FullName));
+                if (!destinationPath.StartsWith(extractContainmentPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    Logs.Warning($"[Ingestion] Skipping ZIP entry that would extract outside the target directory: {entry.FullName}");
+                    continue;
+                }
 
-            foreach (var imagePath in imageFiles)
-            {
-                var relativePath = Path.GetRelativePath(extractPath, imagePath);
-                var fileName = Path.GetFileName(imagePath);
-                var apiUrl = BuildServeFileUrl(datasetId, relativePath);
+                Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+                entry.ExtractToFile(destinationPath, overwrite: true);
 
-                // Image dimensions can be populated later or by client
-                int width = 0, height = 0;
-
-                var item = new DatasetItemDto
+                string relativePath = Path.GetRelativePath(normalizedExtractRoot, destinationPath);
+                string fileName = Path.GetFileName(destinationPath);
+                yield return new DatasetItemDto
                 {
                     Id = Guid.NewGuid(),
                     DatasetId = datasetId,
                     ExternalId = relativePath,
                     Title = Path.GetFileNameWithoutExtension(fileName),
-                    ImageUrl = apiUrl,
-                    ThumbnailUrl = apiUrl,
-                    Width = width,
-                    Height = height,
+                    ImageUrl = BuildServeFileUrl(datasetId, relativePath),
+                    ThumbnailUrl = BuildServeFileUrl(datasetId, relativePath),
+                    Width = 0,
+                    Height = 0,
                     Tags = new List<string>(),
                     IsFavorite = false,
                     Metadata = new Dictionary<string, string>
@@ -474,18 +521,12 @@ public class DatasetIngestionService : IDatasetIngestionService
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
-
-                items.Add(item);
             }
-
-            return items;
+            completedSuccessfully = true;
         }
-        catch
+        finally
         {
-            // Unlike the old temp-directory version, extraction failures shouldn't leave a
-            // half-written managed dataset folder behind for a dataset that's about to be
-            // marked Failed anyway.
-            if (Directory.Exists(extractPath))
+            if (!completedSuccessfully && Directory.Exists(extractPath))
             {
                 try
                 {
@@ -496,7 +537,6 @@ public class DatasetIngestionService : IDatasetIngestionService
                     Logs.Warning($"[Ingestion] Failed to clean up partially-extracted ZIP contents at {extractPath}: {cleanupEx.Message}");
                 }
             }
-            throw;
         }
     }
 
