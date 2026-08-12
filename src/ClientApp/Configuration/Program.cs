@@ -30,10 +30,17 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 // HTTP Client for future API calls
 builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 
-// Dataset API client configuration
+// Dataset API client configuration. BaseAddress is intentionally optional: the dev-only
+// wwwroot/appsettings.Development.json overlay sets it to the API dev-server's cross-origin
+// address (client:5002 -> API:5000), but the base wwwroot/appsettings.json (which is what a
+// Release publish ships, with no environment overlay) leaves it blank, so a production
+// same-container deployment (the API self-hosts the published client -- see Program.cs's
+// UseBlazorFrameworkFiles) falls back to the page's own origin below, whatever host/port/
+// domain that turns out to be at deploy time, instead of baking in a dev-only absolute URL
+// that would silently 404/CORS-fail in any other environment (found via a real trimmed-Release
+// smoke test, not assumed).
 builder.Services.AddOptions<DatasetApiOptions>()
     .Bind(builder.Configuration.GetSection("DatasetApi"))
-    .Validate(options => !string.IsNullOrWhiteSpace(options.BaseAddress), "DatasetApi:BaseAddress must be configured.")
     .ValidateOnStart();
 
 // CookieCredentialsHandler makes every request through these typed clients opt into sending
@@ -42,16 +49,22 @@ builder.Services.AddOptions<DatasetApiOptions>()
 // site, so a new API method can't forget it.
 builder.Services.AddTransient<CookieCredentialsHandler>();
 
+Uri ResolveApiBaseAddress(IServiceProvider sp)
+{
+    DatasetApiOptions options = sp.GetRequiredService<IOptions<DatasetApiOptions>>().Value;
+    return string.IsNullOrWhiteSpace(options.BaseAddress)
+        ? new Uri(builder.HostEnvironment.BaseAddress)
+        : new Uri(options.BaseAddress, UriKind.Absolute);
+}
+
 builder.Services.AddHttpClient<DatasetApiClient>((sp, client) =>
 {
-    var options = sp.GetRequiredService<IOptions<DatasetApiOptions>>().Value;
-    client.BaseAddress = new Uri(options.BaseAddress!, UriKind.Absolute);
+    client.BaseAddress = ResolveApiBaseAddress(sp);
 }).AddHttpMessageHandler<CookieCredentialsHandler>();
 
 builder.Services.AddHttpClient<AuthApiClient>((sp, client) =>
 {
-    var options = sp.GetRequiredService<IOptions<DatasetApiOptions>>().Value;
-    client.BaseAddress = new Uri(options.BaseAddress!, UriKind.Absolute);
+    client.BaseAddress = ResolveApiBaseAddress(sp);
 }).AddHttpMessageHandler<CookieCredentialsHandler>();
 
 // MudBlazor services

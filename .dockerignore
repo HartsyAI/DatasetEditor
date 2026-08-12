@@ -1,0 +1,18 @@
+# Keeps the Docker build context small and avoids copying dev-only runtime state (which would
+# be pointless anyway -- these paths only exist on the host, never inside the built image).
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+.git/
+.claude/
+
+# Runtime-generated storage (blobs/, data/, uploads/) -- see .gitignore for the same paths;
+# these are never meant to ship inside the image, only mounted as volumes at deploy time.
+src/APIBackend/blobs/
+src/APIBackend/data/
+uploads/
+
+docs/
+*.md
+tests/

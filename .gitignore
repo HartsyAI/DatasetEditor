@@ -80,3 +80,4 @@ dkms.conf
 /src/APIBackend/data
 /src/APIBackend/blobs
 /uploads
+/.env

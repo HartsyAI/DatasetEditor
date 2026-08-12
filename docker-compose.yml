@@ -1,17 +1,26 @@
-# Local development database for DatasetStudio.
-# Matches ConnectionStrings:DatasetStudio in src/APIBackend/Configuration/appsettings.Development.json
-# (Host=localhost;Port=5432;Database=dataset_studio_dev;Username=postgres;Password=postgres).
+# Local development database for DatasetStudio, plus an `api` service that builds and runs the
+# whole app containerized (one container serves both the API and the published Blazor WASM
+# client -- see Dockerfile).
+#
+# Two ways to run this repo day to day, and they're deliberately kept from colliding:
+#   - `./start.sh` -- fast iteration: starts ONLY postgres+minio here (see the explicit service
+#     names in start.sh), then runs the API/client via `dotnet run` directly on the host.
+#   - `docker compose up -d` (this file, no override) -- starts EVERYTHING including `api`,
+#     letting the whole stack run from just a Docker install, no .NET SDK needed.
+# Running both at once would race the same migrations/admin-bootstrap and fight over ports.
 #
 # Also includes a dev-only MinIO service for exercising the S3 storage source locally --
-# NOT part of the production compose file (Phase 6). In production, operators bring their own
-# S3-compatible endpoint and configure it via a Storage:S3StorageProfiles environment-variable
-# profile, same as ADMIN_PASSWORD/ConnectionStrings.
+# NOT part of the production overlay (docker-compose.prod.yml). In production, operators bring
+# their own S3-compatible endpoint and configure it via a Storage:S3StorageProfiles
+# environment-variable profile, same as ADMIN_PASSWORD/ConnectionStrings.
 #
 # Usage:
-#   docker compose up -d        # start Postgres + MinIO
-#   dotnet run --project src/APIBackend   # API auto-applies EF migrations on startup
-#   docker compose down         # stop (keeps data in the named volumes)
-#   docker compose down -v      # stop and wipe data
+#   docker compose up -d --build   # build the api image + start the whole stack
+#   docker compose down            # stop (keeps data in the named volumes)
+#   docker compose down -v         # stop and wipe data
+#
+# Production: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+# (see docker-compose.prod.yml and docs/verification/phase-6/README.md for the full runbook).
 #
 # MinIO console: http://localhost:9001 (login: minioadmin / minioadmin)
 services:
@@ -37,6 +46,11 @@ services:
     image: minio/minio
     container_name: datasetstudio-minio
     restart: unless-stopped
+    # Dev-only: never starts from a bare `docker compose up -d` (this profile isn't active by
+    # default), only when named explicitly (start.sh's `up -d postgres minio`) or via
+    # `docker compose --profile dev up -d`. Keeps a plain `docker compose up -d` (the
+    # containerized-stack path) from also bringing up MinIO, which production doesn't use.
+    profiles: ["dev"]
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
@@ -54,6 +68,43 @@ services:
       timeout: 5s
       retries: 10
 
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: datasetstudio-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__DatasetStudio: "Host=postgres;Port=5432;Database=dataset_studio_dev;Username=postgres;Password=postgres;Include Error Detail=true"
+      # Same-origin in this deployment shape (the api container serves the client too), but
+      # CORS still needs an explicit entry matching whatever URL a browser actually loads --
+      # see Program.cs's fail-fast if this list is empty.
+      Cors__AllowedOrigins__0: "http://localhost:8080"
+      # Dev-only placeholder -- override via docker-compose.prod.yml's .env in any real
+      # deployment. The admin bootstrap re-syncs this password on every boot (see
+      # AdminBootstrapper), so changing it here and restarting the container is how you'd
+      # reset a forgotten admin password too.
+      ADMIN_USERNAME: admin
+      ADMIN_EMAIL: admin@localhost
+      ADMIN_PASSWORD: dev-only-change-me
+    ports:
+      - "8080:8080"
+    volumes:
+      # Storage:*Path defaults are all relative to the content root (/app in the container,
+      # see Dockerfile) -- one volume per top-level Storage directory, matching what
+      # ServiceCollectionExtensions.AddDatasetServices creates on startup, so ingested
+      # datasets/thumbnails/uploads and the DataProtection key ring (see Program.cs) all
+      # survive a container recreate, not just a restart.
+      - datasetstudio_api_data:/app/data
+      - datasetstudio_api_blobs:/app/blobs
+      - datasetstudio_api_uploads:/app/uploads
+
 volumes:
   datasetstudio_pgdata:
   datasetstudio_minio_data:
+  datasetstudio_api_data:
+  datasetstudio_api_blobs:
+  datasetstudio_api_uploads:

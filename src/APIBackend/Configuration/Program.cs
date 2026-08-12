@@ -9,6 +9,7 @@ using DatasetStudio.DTO.Datasets;
 using DatasetStudio.APIBackend.DataAccess.PostgreSQL;
 using DatasetStudio.Extensions.SDK;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -29,6 +30,16 @@ builder.Configuration.Sources.Clear();
 builder.Configuration
     .AddJsonFile("Configuration/appsettings.json", optional: true, reloadOnChange: true)
     .AddJsonFile($"Configuration/appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true)
+    // Two separate calls, not one: WebApplicationBuilder.CreateBuilder's own default chain
+    // (wiped by Sources.Clear() above) normally adds an ASPNETCORE_-prefixed environment
+    // provider specifically so ASPNETCORE_URLS maps to the "urls" config key Kestrel's address
+    // binding reads -- a plain AddEnvironmentVariables() call reads it as the literal key
+    // "ASPNETCORE_URLS" instead, which nothing looks up, so the standard Docker convention for
+    // setting the listen address silently did nothing (Kestrel kept binding to appsettings.json's
+    // hardcoded dev "Urls" value no matter what ASPNETCORE_URLS was set to). The plain call
+    // below still needs to stay for this app's own non-prefixed env vars
+    // (ConnectionStrings__DatasetStudio, ADMIN_PASSWORD, Storage__S3StorageProfiles__..., etc).
+    .AddEnvironmentVariables(prefix: "ASPNETCORE_")
     .AddEnvironmentVariables()
     .AddCommandLine(args);
 
@@ -45,6 +56,18 @@ builder.Services.Configure<FormOptions>(options =>
     options.ValueLengthLimit = int.MaxValue;
     options.MultipartHeadersLengthLimit = int.MaxValue;
 });
+
+// Without this, the cookie-auth encryption keys ASP.NET Core generates default to an
+// in-container path (found live: /root/.aspnet/DataProtection-Keys) that isn't persisted --
+// every container restart/redeploy generates a fresh key ring, silently invalidating every
+// existing session cookie and forcing every logged-in user to re-authenticate. Same
+// Storage:* config convention as the other storage paths; the Dockerfile's runtime stage
+// switches to a non-root "app" user (see below), so this can't just default to the ambient
+// /root path either way.
+string dataProtectionKeysPath = builder.Configuration["Storage:DataProtectionKeysPath"] ?? "./data/keys";
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath))
+    .SetApplicationName("DatasetStudio");
 
 builder.Services.AddDatasetServices(builder.Configuration, builder.Environment);
 builder.Services.AddAuthServices();

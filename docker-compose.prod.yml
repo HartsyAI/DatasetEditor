@@ -1,0 +1,49 @@
+# Production overlay -- run alongside the base compose file, never alone:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# All secrets come from a gitignored .env (copy .env.example -> .env and fill it in first) --
+# none hardcoded here, unlike the base file's dev-only inline postgres/postgres and
+# dev-only-change-me admin password. Adds a Caddy reverse proxy in front of the api service
+# (automatic TLS -- see Caddyfile) and stops publishing postgres/api ports directly to the
+# host, so Caddy is the only entry point.
+#
+# S3 storage (Phase 5) is opt-in and NOT wired here by default -- add
+# Storage__S3StorageProfiles__0__* environment entries to the api service below (see
+# .env.example's commented S3_PROFILE_* vars) if you want it; Storage:S3StorageProfiles simply
+# defaults to an empty array otherwise.
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports: []
+
+  api:
+    ports: []
+    environment:
+      ConnectionStrings__DatasetStudio: "Host=postgres;Port=5432;Database=dataset_studio_dev;Username=postgres;Password=${POSTGRES_PASSWORD};Include Error Detail=true"
+      # Must be the exact origin users' browsers load -- Program.cs fails fast at startup if
+      # this doesn't match, rather than the credentialed cookie silently never working.
+      Cors__AllowedOrigins__0: "https://${DOMAIN}"
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+
+  caddy:
+    image: caddy:2
+    container_name: datasetstudio-caddy
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - datasetstudio_caddy_data:/data
+      - datasetstudio_caddy_config:/config
+
+volumes:
+  datasetstudio_caddy_data:
+  datasetstudio_caddy_config:

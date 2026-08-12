@@ -1,0 +1,8 @@
+# DatasetStudio reverse proxy. {$DOMAIN} comes from .env (see .env.example) -- a real domain
+# (e.g. datasets.example.com) gets Caddy's automatic Let's Encrypt TLS with zero extra config;
+# left at the default "localhost", Caddy issues a locally-trusted self-signed certificate
+# instead of attempting real ACME (which needs a public domain + internet-reachable port 80/443)
+# -- exactly what the Phase 6 real-run verification exercises without owning a domain.
+{$DOMAIN:localhost} {
+	reverse_proxy api:8080
+}

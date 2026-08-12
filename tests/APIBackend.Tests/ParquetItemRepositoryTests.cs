@@ -423,5 +423,71 @@ namespace DatasetStudio.Tests.APIBackend
                 }
             }
         }
+
+        /// <summary>
+        /// Phase 6 real-run regression: AddRangeAsync's writer opens each shard with
+        /// File.Open(path, FileMode.Open, FileAccess.ReadWrite) -- that overload defaults to
+        /// FileShare.None (exclusive), needed for ParquetWriter's backward-seeking footer
+        /// rewrite. GetPageAsync/GetItemAsync/GetCountAsync/GetStatisticsAsync didn't take the
+        /// same per-dataset lock the writer does, so a read landing while a write held that
+        /// exclusive handle threw "the process cannot access the file because it is being used
+        /// by another process" -- hit live via a real background-ingestion-then-immediate-read
+        /// sequence through a production Docker deployment, not a synthetic worst case. This
+        /// fires many concurrent writes and reads against the same dataset to reproduce the
+        /// race reliably rather than relying on exact timing.
+        /// </summary>
+        [Fact]
+        public async Task ConcurrentWritesAndReads_SameDataset_NeverThrowFileShareException()
+        {
+            string dataDirectory = CreateUniqueDataDirectory();
+
+            try
+            {
+                ILogger<ParquetItemRepository> logger = NullLogger<ParquetItemRepository>.Instance;
+                using ParquetItemRepository repository = new ParquetItemRepository(dataDirectory, logger);
+
+                Guid datasetId = Guid.NewGuid();
+
+                static DatasetItemDto MakeItem(Guid datasetId, int i) => new DatasetItemDto
+                {
+                    Id = Guid.NewGuid(),
+                    DatasetId = datasetId,
+                    ExternalId = $"item-{i}",
+                    Title = $"Item {i}",
+                    Width = 10,
+                    Height = 10,
+                    Tags = new List<string>(),
+                    Metadata = new Dictionary<string, string>(),
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                // Seed once so the early reads have something real to read, not just an
+                // empty/not-yet-created shard.
+                await repository.AddRangeAsync(datasetId, new List<DatasetItemDto> { MakeItem(datasetId, -1) }, CancellationToken.None);
+
+                List<Task> operations = new();
+                for (int i = 0; i < 20; i++)
+                {
+                    int captured = i;
+                    operations.Add(repository.AddRangeAsync(datasetId, new List<DatasetItemDto> { MakeItem(datasetId, captured) }, CancellationToken.None));
+                    operations.Add(repository.GetPageAsync(datasetId, null, null, 50, CancellationToken.None));
+                    operations.Add(repository.GetCountAsync(datasetId, null, CancellationToken.None));
+                    operations.Add(repository.GetItemAsync(Guid.NewGuid(), CancellationToken.None)); // not found, but exercises the same locked read path
+                }
+
+                Func<Task> act = () => Task.WhenAll(operations);
+
+                await act.Should().NotThrowAsync(
+                    "reads must serialize against the writer's exclusive file handle instead of racing it");
+            }
+            finally
+            {
+                if (Directory.Exists(dataDirectory))
+                {
+                    Directory.Delete(dataDirectory, true);
+                }
+            }
+        }
     }
 }

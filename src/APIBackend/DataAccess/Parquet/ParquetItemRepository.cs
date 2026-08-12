@@ -108,6 +108,19 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
         int pageSize,
         CancellationToken cancellationToken = default)
     {
+        // AddRangeAsync's writer opens each shard with File.Open(path, FileMode.Open,
+        // FileAccess.ReadWrite) -- that 3-arg overload defaults to FileShare.None (exclusive),
+        // needed for ParquetWriter's backward-seeking footer rewrite (see ParquetItemWriter's
+        // own comment on this). Without also taking the same per-dataset lock here, a read
+        // landing while a write holds that handle throws "the process cannot access the file
+        // because it is being used by another process" -- confirmed live: a real-run gate hit
+        // this exact race (GetDatasetItems called right after a background ingestion's final
+        // write hadn't yet released the handle) and 500'd. Reads and writes for one dataset now
+        // fully serialize; acceptable since writes are already batched/infrequent relative to
+        // reads, and the alternative (shared-read access mid footer-rewrite) risks a torn read
+        // of a Parquet file, not just a thrown exception.
+        var datasetLock = GetDatasetLock(datasetId);
+        await datasetLock.WaitAsync(cancellationToken);
         try
         {
             _logger.LogDebug(
@@ -132,6 +145,10 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
             _logger.LogError(ex, "Failed to get page for dataset {DatasetId}", datasetId);
             throw;
         }
+        finally
+        {
+            datasetLock.Release();
+        }
     }
 
     /// <summary>
@@ -151,7 +168,19 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
 
             foreach (var datasetId in allDatasetIds)
             {
-                var item = await _reader.ReadItemAsync(datasetId, itemId, cancellationToken);
+                // Same shared-lock reasoning as GetPageAsync: the writer's exclusive file
+                // handle during a footer rewrite would otherwise throw here too.
+                var datasetLock = GetDatasetLock(datasetId);
+                await datasetLock.WaitAsync(cancellationToken);
+                DatasetItemDto? item;
+                try
+                {
+                    item = await _reader.ReadItemAsync(datasetId, itemId, cancellationToken);
+                }
+                finally
+                {
+                    datasetLock.Release();
+                }
                 if (item != null)
                 {
                     _logger.LogDebug("Found item {ItemId} in dataset {DatasetId}", itemId, datasetId);
@@ -300,8 +329,20 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
                 return count;
             }
 
-            // Need to count with filter or refresh count
-            var actualCount = await _reader.CountAsync(datasetId, filter, cancellationToken);
+            // Need to count with filter or refresh count. Same shared-lock reasoning as
+            // GetPageAsync -- this hits the Parquet files directly, unlike the cached fast
+            // path above.
+            var datasetLock = GetDatasetLock(datasetId);
+            await datasetLock.WaitAsync(cancellationToken);
+            long actualCount;
+            try
+            {
+                actualCount = await _reader.CountAsync(datasetId, filter, cancellationToken);
+            }
+            finally
+            {
+                datasetLock.Release();
+            }
 
             if (filter == null)
             {
@@ -331,7 +372,18 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
         {
             _logger.LogDebug("Computing statistics for dataset {DatasetId}", datasetId);
 
-            var allItems = await _reader.ReadAllAsync(datasetId, cancellationToken);
+            // Same shared-lock reasoning as GetPageAsync.
+            var datasetLock = GetDatasetLock(datasetId);
+            await datasetLock.WaitAsync(cancellationToken);
+            List<DatasetItemDto> allItems;
+            try
+            {
+                allItems = await _reader.ReadAllAsync(datasetId, cancellationToken);
+            }
+            finally
+            {
+                datasetLock.Release();
+            }
 
             var stats = new Dictionary<string, object>
             {

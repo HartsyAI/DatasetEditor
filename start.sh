@@ -93,8 +93,12 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 # ----- 1. database ---------------------------------------------------------
-info "Starting PostgreSQL via Compose ..."
-$COMPOSE up -d
+info "Starting PostgreSQL + MinIO via Compose ..."
+# Explicit service names, not a bare `up -d`: docker-compose.yml also defines an `api` service
+# (Phase 6) for running the whole stack containerized, which this script's own `dotnet run`
+# calls below would collide with (same ports, same migration/admin-bootstrap race) if compose
+# started it too.
+$COMPOSE up -d postgres minio
 
 info "Waiting for PostgreSQL to accept connections ..."
 DB_READY=0

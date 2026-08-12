@@ -1,4 +1,5 @@
 using DatasetStudio.ClientApp.Services.ApiClients;
+using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace DatasetStudio.ClientApp.Features.Datasets.Services;
@@ -8,11 +9,20 @@ namespace DatasetStudio.ClientApp.Features.Datasets.Services;
 /// </summary>
 public sealed class ImageUrlHelper
 {
-    private readonly string? _apiBaseAddress;
+    private readonly string _apiBaseAddress;
 
-    public ImageUrlHelper(IOptions<DatasetApiOptions> datasetApiOptions)
+    public ImageUrlHelper(IOptions<DatasetApiOptions> datasetApiOptions, IWebAssemblyHostEnvironment hostEnvironment)
     {
-        _apiBaseAddress = datasetApiOptions?.Value?.BaseAddress?.TrimEnd('/');
+        // Same fallback as Configuration/Program.cs's HttpClient factories: an unset
+        // DatasetApi:BaseAddress means same-origin production (the API self-hosts the
+        // published client), so fall back to the page's own origin instead of leaving this
+        // blank. Without this fallback, WithWidth's same-origin check below could never
+        // recognize our own API's URLs once BaseAddress stopped being a hardcoded dev value,
+        // and thumbnails would silently request full-res originals in production.
+        string? configured = datasetApiOptions?.Value?.BaseAddress?.TrimEnd('/');
+        _apiBaseAddress = string.IsNullOrWhiteSpace(configured)
+            ? hostEnvironment.BaseAddress.TrimEnd('/')
+            : configured;
     }
 
     /// <summary>
