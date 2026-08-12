@@ -78,4 +78,5 @@ dkms.conf
 /tests/APIBackend.Tests/obj
 /tests/APIBackend.Tests/bin
 /src/APIBackend/data
+/src/APIBackend/blobs
 /uploads

@@ -78,5 +78,33 @@ namespace DatasetStudio.Tests.APIBackend
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
+
+        // Phase 4 folded the thumbnail resize branch into this same handler specifically so it
+        // would inherit the containment/symlink checks above as-is, not a second copy of them.
+        // This proves that actually holds: the resize branch runs strictly after those checks,
+        // not before, so a ?w= request against a symlink escape must 404 exactly like a plain one.
+        [Fact]
+        public async Task ServeDatasetFile_SymlinkInsideDatasetFolder_WithWidthQuery_DoesNotLeakItsTarget()
+        {
+            HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
+                "/api/datasets", new CreateDatasetRequest("traversal-test-thumb", null));
+            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+
+            string shortId = created.Id.ToString("N")[..8];
+            string datasetFolder = Path.Combine(_factory.DatasetRootPath, $"traversal-test-thumb-{shortId}");
+            Directory.CreateDirectory(datasetFolder);
+
+            _secretDirectory = Path.Combine(Path.GetTempPath(), "DatasetStudioTests", "secrets", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(_secretDirectory);
+            string secretFilePath = Path.Combine(_secretDirectory, "secret.jpg");
+            await File.WriteAllTextAsync(secretFilePath, "TOP-SECRET-CONTENT");
+
+            string symlinkPath = Path.Combine(datasetFolder, "sneaky.jpg");
+            File.CreateSymbolicLink(symlinkPath, secretFilePath);
+
+            HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{created.Id}/files/sneaky.jpg?w=400");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
     }
 }

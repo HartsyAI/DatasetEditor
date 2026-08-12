@@ -19,6 +19,12 @@
     <!-- Authentication -->
     <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
 
+    <!-- Thumbnail generation. NoDependencies variant avoids a libfontconfig runtime
+         dependency headless Linux boxes frequently lack; we only decode/resize/encode
+         raster images, never text/font rendering. -->
+    <PackageReference Include="SkiaSharp" Version="4.151.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.151.1" />
+
     <!-- Entity Framework Core for PostgreSQL -->
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.11" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11">

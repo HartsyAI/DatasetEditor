@@ -90,6 +90,12 @@ internal static class DatasetEndpoints
             .WithName("ServeDatasetFile")
             .Produces<FileStreamResult>(StatusCodes.Status200OK, "image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp")
             .Produces(StatusCodes.Status404NotFound);
+
+        group.MapGet("/{datasetId:guid}/hf-thumbnail", GetHuggingFaceThumbnail)
+            .WithName("GetHuggingFaceThumbnail")
+            .Produces<FileStreamResult>(StatusCodes.Status200OK, "image/jpeg")
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status400BadRequest);
     }
 
     /// <summary>Gets all datasets with pagination, scoped to what the caller may see.</summary>
@@ -384,40 +390,12 @@ internal static class DatasetEndpoints
     /// <summary>Maps a streaming HuggingFace row to DatasetItemDto</summary>
     private static DatasetItemDto MapStreamingRowToDatasetItem(Guid datasetId, HuggingFaceRow row, string repository, string? config, string? split)
     {
-        Dictionary<string, object?> values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (KeyValuePair<string, System.Text.Json.JsonElement> column in row.Columns)
-        {
-            object? converted = ConvertJsonElementToObject(column.Value);
-            values[column.Key] = converted;
-        }
+        Dictionary<string, object?> values = RowToValueDictionary(row);
 
         string externalId = GetFirstNonEmptyString(values, "id", "image_id", "uid", "uuid", "__key", "sample_id") ?? string.Empty;
         string? title = GetFirstNonEmptyString(values, "title", "caption", "text", "description", "label", "name");
         string? description = GetFirstNonEmptyString(values, "description", "caption", "text");
-        // "image" (and "img"/"picture") are HF's actual conventional column names for an
-        // image feature (e.g. ylecun/mnist uses "image") — image_url/img_url/url are the
-        // exception, not the rule, so real HF datasets fell through to the much weaker
-        // extension-sniffing fallback below almost every time.
-        string? imageUrl = GetFirstNonEmptyString(values, "image_url", "img_url", "url", "image", "img", "picture");
-
-        if (string.IsNullOrWhiteSpace(imageUrl))
-        {
-            foreach (KeyValuePair<string, object?> entry in values)
-            {
-                if (entry.Value == null)
-                {
-                    continue;
-                }
-
-                string candidate = entry.Value.ToString() ?? string.Empty;
-                if (IsLikelyImageUrl(candidate))
-                {
-                    imageUrl = candidate;
-                    break;
-                }
-            }
-        }
+        string? imageUrl = ResolveStreamingImageUrl(values);
 
         int width = GetIntValue(values, "width", "image_width", "w");
         int height = GetIntValue(values, "height", "image_height", "h");
@@ -461,6 +439,16 @@ internal static class DatasetEndpoints
 
         DateTime now = DateTime.UtcNow;
 
+        // ThumbnailUrl points at our own hf-thumbnail endpoint (which re-fetches this exact
+        // row from HF's own trusted datasets-server rather than trusting a client-supplied
+        // URL -- see hf-thumbnail's doc comment) instead of the raw HF asset URL, so ImageCard
+        // gets a cached, width-bounded thumbnail instead of pulling the original every time.
+        // Streaming items have no stable id across requests (Id above is a fresh Guid on every
+        // single mapping call), so RowIndex is what makes the thumbnail cacheable/re-fetchable.
+        string? thumbnailUrl = string.IsNullOrWhiteSpace(imageUrl)
+            ? null
+            : $"/api/datasets/{datasetId}/hf-thumbnail?offset={row.RowIndex}";
+
         return new DatasetItemDto
         {
             Id = Guid.NewGuid(),
@@ -468,7 +456,7 @@ internal static class DatasetEndpoints
             Title = string.IsNullOrWhiteSpace(title) ? externalId : title,
             Description = description,
             ImageUrl = string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl,
-            ThumbnailUrl = string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl,
+            ThumbnailUrl = thumbnailUrl,
             Width = width,
             Height = height,
             Tags = tags,
@@ -477,6 +465,51 @@ internal static class DatasetEndpoints
             CreatedAt = now,
             UpdatedAt = now
         };
+    }
+
+    /// <summary>Converts a HuggingFace row's raw JSON columns into a flat, easily queried value dictionary.</summary>
+    private static Dictionary<string, object?> RowToValueDictionary(HuggingFaceRow row)
+    {
+        Dictionary<string, object?> values = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (KeyValuePair<string, System.Text.Json.JsonElement> column in row.Columns)
+        {
+            values[column.Key] = ConvertJsonElementToObject(column.Value);
+        }
+        return values;
+    }
+
+    /// <summary>
+    /// Resolves a streaming row's image URL the same way for both item mapping and the
+    /// hf-thumbnail endpoint, so a thumbnail request always re-derives the exact URL the grid
+    /// would have shown for that row.
+    /// </summary>
+    private static string? ResolveStreamingImageUrl(IReadOnlyDictionary<string, object?> values)
+    {
+        // "image" (and "img"/"picture") are HF's actual conventional column names for an
+        // image feature (e.g. ylecun/mnist uses "image") — image_url/img_url/url are the
+        // exception, not the rule, so real HF datasets fell through to the much weaker
+        // extension-sniffing fallback below almost every time.
+        string? imageUrl = GetFirstNonEmptyString(values, "image_url", "img_url", "url", "image", "img", "picture");
+
+        if (string.IsNullOrWhiteSpace(imageUrl))
+        {
+            foreach (KeyValuePair<string, object?> entry in values)
+            {
+                if (entry.Value == null)
+                {
+                    continue;
+                }
+
+                string candidate = entry.Value.ToString() ?? string.Empty;
+                if (IsLikelyImageUrl(candidate))
+                {
+                    imageUrl = candidate;
+                    break;
+                }
+            }
+        }
+
+        return imageUrl;
     }
 
     /// <summary>Converts JsonElement to object</summary>
@@ -699,14 +732,22 @@ internal static class DatasetEndpoints
         });
     }
 
-    /// <summary>Serves a file from a dataset's folder (for locally stored images). Same read-visibility rule as GetDataset.</summary>
+    /// <summary>
+    /// Serves a file from a dataset's folder (for locally stored images). Same read-visibility
+    /// rule as GetDataset. An optional <c>?w=</c> query param requests a cached, width-bounded
+    /// JPEG thumbnail instead of the full-res original -- folded into this handler rather than
+    /// a separate route so the resize path reuses the containment/symlink safety checks below
+    /// as-is instead of a second copy of them (see docs/verification/phase-4/README.md).
+    /// </summary>
     public static async Task<IResult> ServeDatasetFile(
         Guid datasetId,
         string filePath,
         Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         IDatasetPermissionService permissionService,
+        Services.Storage.IThumbnailService thumbnailService,
         HttpContext httpContext,
         IConfiguration configuration,
+        [FromQuery] int? w,
         CancellationToken cancellationToken)
     {
         DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
@@ -780,8 +821,133 @@ internal static class DatasetEndpoints
             _ => "application/octet-stream"
         };
 
+        if (w.HasValue && w.Value > 0)
+        {
+            Services.Storage.ThumbnailResult thumbnail = await thumbnailService.GetOrCreateJpegAsync(
+                normalizedFullPath,
+                w.Value,
+                async ct => await File.ReadAllBytesAsync(normalizedFullPath, ct),
+                cancellationToken);
+
+            // SourceNotFound can't happen here (File.Exists already confirmed above), but
+            // handle it rather than assume. Undecodable falls through to the full-res
+            // passthrough below with the file's real content type, not image/jpeg.
+            if (thumbnail.Outcome == Services.Storage.ThumbnailOutcome.SourceNotFound)
+            {
+                return Results.NotFound();
+            }
+            if (thumbnail.Outcome == Services.Storage.ThumbnailOutcome.Generated)
+            {
+                return Results.File(thumbnail.Bytes!, "image/jpeg");
+            }
+            // Undecodable: fall through to serve the original below.
+        }
+
         FileStream fileStream = File.OpenRead(normalizedFullPath);
         return Results.File(fileStream, contentType, enableRangeProcessing: true);
+    }
+
+    /// <summary>
+    /// Serves a cached, width-bounded JPEG thumbnail for a HuggingFace-streaming item.
+    /// Streaming items have no stable id across requests (a fresh Guid is minted on every
+    /// single row-mapping call — see MapStreamingRowToDatasetItem), so this takes a row
+    /// offset instead of an item id and re-fetches that exact row from HF's own trusted
+    /// datasets-server API (via IHuggingFaceRowPageCache, batched per page) to resolve the
+    /// image URL server-side. Deliberately does NOT accept a client-supplied image URL — that
+    /// would make this endpoint an open proxy an attacker could point at an arbitrary internal
+    /// or external host (SSRF); the only outbound fetch this handler ever makes is to a URL
+    /// that datasets-server itself returned for this exact dataset/offset.
+    /// </summary>
+    public static async Task<IResult> GetHuggingFaceThumbnail(
+        Guid datasetId,
+        [FromQuery] long? offset,
+        [FromQuery] int? w,
+        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        IDatasetPermissionService permissionService,
+        IHuggingFaceDatasetServerClient huggingFaceDatasetServerClient,
+        IHuggingFaceRowPageCache rowPageCache,
+        Services.Storage.IThumbnailService thumbnailService,
+        IHttpClientFactory httpClientFactory,
+        HttpContext httpContext,
+        CancellationToken cancellationToken)
+    {
+        if (offset is null || offset < 0)
+        {
+            return Results.BadRequest(new { error = "offset is required and must be >= 0" });
+        }
+
+        DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
+        if (dataset is null || !await permissionService.CanReadAsync(dataset, httpContext.User, cancellationToken))
+        {
+            return Results.NotFound();
+        }
+
+        if (dataset.SourceType != DatasetSourceType.HuggingFaceStreaming && !dataset.IsStreaming)
+        {
+            return Results.NotFound();
+        }
+
+        string? repository = dataset.HuggingFaceRepository;
+        string? split = dataset.HuggingFaceSplit;
+        if (string.IsNullOrWhiteSpace(repository) || string.IsNullOrWhiteSpace(split))
+        {
+            // GetDatasetItems' streaming branch resolves and persists config/split on first
+            // page load, before any item (and therefore any thumbnail URL) is ever handed to
+            // the client -- so this only happens if hf-thumbnail is hit directly, out of order.
+            return Results.NotFound();
+        }
+        string? config = dataset.HuggingFaceConfig;
+
+        StringValues headerValues = httpContext.Request.Headers["X-HF-Access-Token"];
+        string? accessToken = headerValues.Count > 0 ? headerValues[0] : null;
+
+        HuggingFaceRow? row = await rowPageCache.GetRowAsync(
+            huggingFaceDatasetServerClient, repository, config, split, offset.Value, accessToken, cancellationToken);
+        if (row is null)
+        {
+            return Results.NotFound();
+        }
+
+        Dictionary<string, object?> values = RowToValueDictionary(row);
+        string? imageUrl = ResolveStreamingImageUrl(values);
+        if (string.IsNullOrWhiteSpace(imageUrl) || !Uri.TryCreate(imageUrl, UriKind.Absolute, out Uri? sourceUri)
+            || (sourceUri.Scheme != Uri.UriSchemeHttp && sourceUri.Scheme != Uri.UriSchemeHttps))
+        {
+            return Results.NotFound();
+        }
+
+        int width = w.GetValueOrDefault(320);
+        // Cache key folds in repository/config/split, not just datasetId+offset -- an existing
+        // dataset row's HF repository/config can change on re-import (see
+        // ImportFromHuggingFace), which would otherwise leave a stale cached thumbnail (the
+        // old repository's image at this offset) permanently served under the new one.
+        string cacheKey = $"hf|{repository}|{config}|{split}|{offset.Value}";
+
+        Services.Storage.ThumbnailResult thumbnail = await thumbnailService.GetOrCreateJpegAsync(
+            cacheKey,
+            width,
+            async ct =>
+            {
+                using HttpClient client = httpClientFactory.CreateClient(nameof(GetHuggingFaceThumbnail));
+                client.Timeout = TimeSpan.FromSeconds(10);
+                using HttpRequestMessage request = new(HttpMethod.Get, sourceUri);
+                using HttpResponseMessage response = await client.SendAsync(request, ct);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return null;
+                }
+                return await response.Content.ReadAsByteArrayAsync(ct);
+            },
+            cancellationToken);
+
+        return thumbnail.Outcome switch
+        {
+            Services.Storage.ThumbnailOutcome.Generated => Results.File(thumbnail.Bytes!, "image/jpeg"),
+            // Undecodable: the upstream asset fetch succeeded but wasn't a real image (or HF
+            // returned an error page) -- no original content-type to fall back to here like
+            // ServeDatasetFile has, so surface it as not-found rather than guessing a type.
+            _ => Results.NotFound(),
+        };
     }
 
     /// <summary>Discovers available configs, splits, and files for a HuggingFace dataset</summary>

@@ -3,6 +3,7 @@ using DatasetStudio.APIBackend.DataAccess.PostgreSQL;
 using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.APIBackend.Services.Integration;
+using DatasetStudio.APIBackend.Services.Storage;
 using DatasetStudio.Core.Utilities.Logging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -75,6 +76,7 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient<IHuggingFaceClient, HuggingFaceClient>();
         services.AddHttpClient<IHuggingFaceDatasetServerClient, HuggingFaceDatasetServerClient>();
         services.AddScoped<IHuggingFaceDiscoveryService, HuggingFaceDiscoveryService>();
+        services.AddSingleton<IHuggingFaceRowPageCache, HuggingFaceRowPageCache>();
 
         // ========================================
         // Storage Directories
@@ -109,6 +111,16 @@ public static class ServiceCollectionExtensions
         Directory.CreateDirectory(thumbnailPath);
         Directory.CreateDirectory(uploadPath);
         Directory.CreateDirectory(datasetRootPath);
+
+        // ========================================
+        // Thumbnails
+        // ========================================
+
+        services.AddSingleton<IThumbnailService>(serviceProvider =>
+        {
+            ILogger<ThumbnailService> logger = serviceProvider.GetRequiredService<ILogger<ThumbnailService>>();
+            return new ThumbnailService(thumbnailPath, logger);
+        });
 
         Logs.Info($"Storage directories created:");
         Logs.Info($"  Parquet: {parquetPath}");

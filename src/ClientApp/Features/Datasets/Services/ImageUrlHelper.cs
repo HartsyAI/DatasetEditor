@@ -48,9 +48,11 @@ public sealed class ImageUrlHelper
     }
 
     /// <summary>
-    /// Requests a width-bounded variant for CDNs that support it (currently Unsplash),
-    /// so the grid renders small thumbnails instead of multi-megabyte originals.
-    /// Leaves unknown URLs untouched and never double-sizes an already-sized URL.
+    /// Requests a width-bounded variant for CDNs that support it (currently Unsplash) and for
+    /// our own API's thumbnail-serving routes (ServeDatasetFile's <c>?w=</c> branch and
+    /// hf-thumbnail), so the grid renders small cached thumbnails instead of multi-megabyte
+    /// originals. Leaves unknown (third-party, non-API) URLs untouched and never double-sizes
+    /// an already-sized URL.
     /// </summary>
     /// <param name="url">Resolved image URL.</param>
     /// <param name="width">Target width in pixels.</param>
@@ -61,13 +63,30 @@ public sealed class ImageUrlHelper
             return url ?? string.Empty;
         }
 
+        if (url.Contains("w=", StringComparison.OrdinalIgnoreCase))
+        {
+            return url;
+        }
+
         // Only rewrite CDNs known to honor width query params. Rewriting arbitrary
         // (possibly signed) URLs could break them, so we stay conservative.
-        if (url.Contains("images.unsplash.com", StringComparison.OrdinalIgnoreCase)
-            && !url.Contains("w=", StringComparison.OrdinalIgnoreCase))
+        if (url.Contains("images.unsplash.com", StringComparison.OrdinalIgnoreCase))
         {
             char separator = url.Contains('?') ? '&' : '?';
             return $"{url}{separator}w={width}&q=80&fit=crop";
+        }
+
+        // Any URL pointing back at our own API is a route we control (ServeDatasetFile's
+        // thumbnail branch, hf-thumbnail) and both honor ?w=. Compared by authority (not a
+        // string prefix) so this still matches whether the URL started out relative or
+        // absolute -- ResolveImageUrl above already normalized it to absolute by this point.
+        if (!string.IsNullOrWhiteSpace(_apiBaseAddress)
+            && Uri.TryCreate(_apiBaseAddress, UriKind.Absolute, out Uri? apiUri)
+            && Uri.TryCreate(url, UriKind.Absolute, out Uri? resolvedUri)
+            && string.Equals(apiUri.Authority, resolvedUri.Authority, StringComparison.OrdinalIgnoreCase))
+        {
+            char separator = url.Contains('?') ? '&' : '?';
+            return $"{url}{separator}w={width}";
         }
 
         return url;

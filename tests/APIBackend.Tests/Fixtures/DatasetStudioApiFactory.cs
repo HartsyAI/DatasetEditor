@@ -1,7 +1,9 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 namespace DatasetStudio.Tests.APIBackend.Fixtures
@@ -21,17 +23,46 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
     {
         private const string ConnectionStringEnvVar = "ConnectionStrings__DatasetStudio";
         private const string DatasetRootPathEnvVar = "Storage__DatasetRootPath";
+        private const string ThumbnailPathEnvVar = "Storage__ThumbnailPath";
 
         private readonly string _baseConnectionString;
         private readonly string _databaseName = $"dataset_studio_test_{Guid.NewGuid():N}";
         private readonly string? _previousConnectionStringEnvVar;
         private readonly string? _previousDatasetRootPathEnvVar;
+        private readonly string? _previousThumbnailPathEnvVar;
         private string DatabaseConnectionString =>
             new NpgsqlConnectionStringBuilder(_baseConnectionString) { Database = _databaseName }.ConnectionString;
 
         /// <summary>This factory's isolated dataset-file storage root (Storage:DatasetRootPath).</summary>
         public string DatasetRootPath { get; } =
             Path.Combine(Path.GetTempPath(), "DatasetStudioTests", "datasets", Guid.NewGuid().ToString("N"));
+
+        /// <summary>
+        /// This factory's isolated thumbnail cache root (Storage:ThumbnailPath). Without this
+        /// override, every test process writes into the repo's real ./blobs/thumbnails and a
+        /// stale cache entry from one test run can make a later test's "was this actually
+        /// generated" assertion pass for the wrong reason.
+        /// </summary>
+        public string ThumbnailPath { get; } =
+            Path.Combine(Path.GetTempPath(), "DatasetStudioTests", "thumbnails", Guid.NewGuid().ToString("N"));
+
+        /// <summary>
+        /// Optional test-supplied DI overrides (e.g. swapping IHuggingFaceDatasetServerClient
+        /// for a mock so a hf-thumbnail test never makes a real network call). Must be set
+        /// before the first CreateClient()/Services access, same timing constraint as the
+        /// constructor's env var overrides above -- WebApplicationFactory builds the host lazily
+        /// on first use and ConfigureWebHost only runs as part of that build.
+        /// </summary>
+        public Action<IServiceCollection>? ConfigureTestServices { get; set; }
+
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            base.ConfigureWebHost(builder);
+            if (ConfigureTestServices is not null)
+            {
+                builder.ConfigureServices(ConfigureTestServices);
+            }
+        }
 
         public DatasetStudioApiFactory(string baseConnectionString)
         {
@@ -57,6 +88,9 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
             // construction" timing — but setting it here keeps both overrides in one place.
             _previousDatasetRootPathEnvVar = Environment.GetEnvironmentVariable(DatasetRootPathEnvVar);
             Environment.SetEnvironmentVariable(DatasetRootPathEnvVar, DatasetRootPath);
+
+            _previousThumbnailPathEnvVar = Environment.GetEnvironmentVariable(ThumbnailPathEnvVar);
+            Environment.SetEnvironmentVariable(ThumbnailPathEnvVar, ThumbnailPath);
         }
 
         /// <summary>Creates this factory's throwaway database. Call once before the first request.</summary>
@@ -93,11 +127,16 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
             base.Dispose(disposing);
             Environment.SetEnvironmentVariable(ConnectionStringEnvVar, _previousConnectionStringEnvVar);
             Environment.SetEnvironmentVariable(DatasetRootPathEnvVar, _previousDatasetRootPathEnvVar);
+            Environment.SetEnvironmentVariable(ThumbnailPathEnvVar, _previousThumbnailPathEnvVar);
             try
             {
                 if (Directory.Exists(DatasetRootPath))
                 {
                     Directory.Delete(DatasetRootPath, recursive: true);
+                }
+                if (Directory.Exists(ThumbnailPath))
+                {
+                    Directory.Delete(ThumbnailPath, recursive: true);
                 }
             }
             catch
