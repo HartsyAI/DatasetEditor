@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -34,11 +35,14 @@ namespace DatasetStudio.Tests.APIBackend
     public sealed class StreamingIngestionTests
     {
         private static DatasetIngestionService CreateService(
-            IDatasetRepository datasetRepository, IDatasetItemRepository itemRepository)
+            IDatasetRepository datasetRepository,
+            IDatasetItemRepository itemRepository,
+            IHuggingFaceDatasetServerClient? datasetServerClient = null)
         {
             var hfClient = new Mock<IHuggingFaceClient>().Object;
+            datasetServerClient ??= new Mock<IHuggingFaceDatasetServerClient>().Object;
             IConfiguration config = new ConfigurationBuilder().Build();
-            return new DatasetIngestionService(datasetRepository, itemRepository, hfClient, config, NullLogger<DatasetIngestionService>.Instance);
+            return new DatasetIngestionService(datasetRepository, itemRepository, hfClient, datasetServerClient, config, NullLogger<DatasetIngestionService>.Instance);
         }
 
         private static string BuildCsv(int rowCount)
@@ -143,6 +147,65 @@ namespace DatasetStudio.Tests.APIBackend
             {
                 File.Delete(tempFile);
             }
+        }
+
+        [Fact]
+        public async Task ImportFromHuggingFaceAsync_Streaming_ResolvesRowCountFromDatasetServer()
+        {
+            var datasetRepoMock = new Mock<IDatasetRepository>();
+            var datasetServerMock = new Mock<IHuggingFaceDatasetServerClient>();
+            datasetServerMock
+                .Setup(c => c.GetAllSplitsAsync("AI-Lab-Makerere/beans", null, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<HuggingFaceDatasetSplitInfo>
+                {
+                    new() { Dataset = "AI-Lab-Makerere/beans", Config = "default", Split = "train", NumRows = 1_034 },
+                    new() { Dataset = "AI-Lab-Makerere/beans", Config = "default", Split = "test", NumRows = 128 },
+                });
+
+            var service = CreateService(datasetRepoMock.Object, new Mock<IDatasetItemRepository>().Object, datasetServerMock.Object);
+            var datasetId = Guid.NewGuid();
+            var request = new ImportHuggingFaceDatasetRequest
+            {
+                Repository = "AI-Lab-Makerere/beans",
+                IsStreaming = true,
+                Config = "default",
+                Split = "train",
+            };
+
+            await service.ImportFromHuggingFaceAsync(datasetId, request, CancellationToken.None);
+
+            datasetRepoMock.Verify(r => r.UpdateItemCountAsync(datasetId, 1_034, It.IsAny<CancellationToken>()), Times.Once);
+            datasetRepoMock.Verify(r => r.UpdateStatusAsync(
+                datasetId, IngestionStatusDto.Completed, null, It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task ImportFromHuggingFaceAsync_Streaming_RowCountLookupFailure_StillCompletes()
+        {
+            // A renamed/gated repo or a datasets-server outage must not turn an otherwise
+            // successful streaming import into a Failed one -- the count is a display nicety,
+            // not a correctness requirement for streaming (rows are still fetched on demand).
+            var datasetRepoMock = new Mock<IDatasetRepository>();
+            var datasetServerMock = new Mock<IHuggingFaceDatasetServerClient>();
+            datasetServerMock
+                .Setup(c => c.GetAllSplitsAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new HttpRequestException("dataset has been renamed"));
+
+            var service = CreateService(datasetRepoMock.Object, new Mock<IDatasetItemRepository>().Object, datasetServerMock.Object);
+            var datasetId = Guid.NewGuid();
+            var request = new ImportHuggingFaceDatasetRequest
+            {
+                Repository = "some/renamed-dataset",
+                IsStreaming = true,
+                Config = "default",
+                Split = "train",
+            };
+
+            await service.ImportFromHuggingFaceAsync(datasetId, request, CancellationToken.None);
+
+            datasetRepoMock.Verify(r => r.UpdateItemCountAsync(It.IsAny<Guid>(), It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
+            datasetRepoMock.Verify(r => r.UpdateStatusAsync(
+                datasetId, IngestionStatusDto.Completed, null, It.IsAny<CancellationToken>()), Times.Once);
         }
     }
 }

@@ -30,6 +30,7 @@ public class DatasetIngestionService : IDatasetIngestionService
     private readonly Core.Abstractions.Repositories.IDatasetRepository _datasetRepository;
     private readonly Core.Abstractions.Repositories.IDatasetItemRepository _itemRepository;
     private readonly IHuggingFaceClient _huggingFaceClient;
+    private readonly IHuggingFaceDatasetServerClient _huggingFaceDatasetServerClient;
     private readonly IConfiguration _configuration;
     private readonly string _uploadPath;
     private readonly string _datasetRootPath;
@@ -39,12 +40,14 @@ public class DatasetIngestionService : IDatasetIngestionService
         Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         Core.Abstractions.Repositories.IDatasetItemRepository itemRepository,
         IHuggingFaceClient huggingFaceClient,
+        IHuggingFaceDatasetServerClient huggingFaceDatasetServerClient,
         IConfiguration configuration,
         ILogger<DatasetIngestionService> logger)
     {
         _datasetRepository = datasetRepository ?? throw new ArgumentNullException(nameof(datasetRepository));
         _itemRepository = itemRepository ?? throw new ArgumentNullException(nameof(itemRepository));
         _huggingFaceClient = huggingFaceClient ?? throw new ArgumentNullException(nameof(huggingFaceClient));
+        _huggingFaceDatasetServerClient = huggingFaceDatasetServerClient ?? throw new ArgumentNullException(nameof(huggingFaceDatasetServerClient));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _uploadPath = configuration["Storage:UploadPath"] ?? "./uploads";
         _datasetRootPath = configuration["Storage:DatasetRootPath"] ?? "./data/datasets";
@@ -78,6 +81,38 @@ public class DatasetIngestionService : IDatasetIngestionService
                 // Dataset metadata is already saved by the endpoint
                 // Items will be fetched on-demand from HuggingFace Datasets Server API
                 await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Completed, cancellationToken: cancellationToken);
+
+                // Row count isn't known from the import request itself -- resolve it against
+                // the pinned config/split so the UI doesn't show "0 items" for a dataset that's
+                // actually fully browsable. Best-effort: a lookup failure (renamed/gated repo,
+                // datasets-server outage) leaves the count unset rather than failing an import
+                // that already succeeded.
+                try
+                {
+                    List<HuggingFaceDatasetSplitInfo>? splits = await _huggingFaceDatasetServerClient.GetAllSplitsAsync(
+                        request.Repository, request.AccessToken, cancellationToken);
+                    HuggingFaceDatasetSplitInfo? match = splits?.FirstOrDefault(s =>
+                        string.Equals(s.Config, request.Config, StringComparison.Ordinal) &&
+                        string.Equals(s.Split, request.Split, StringComparison.Ordinal));
+                    match ??= splits?.FirstOrDefault(s => string.Equals(s.Split, request.Split, StringComparison.Ordinal));
+
+                    if (match is { NumRows: > 0 })
+                    {
+                        await _datasetRepository.UpdateItemCountAsync(datasetId, match.NumRows, cancellationToken);
+                        _logger.LogInformation("[HF Import] Resolved streaming row count for {Repository} ({Config}/{Split}): {NumRows}",
+                            request.Repository, request.Config, request.Split, match.NumRows);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("[HF Import] Could not resolve row count for streaming dataset {Repository} ({Config}/{Split})",
+                            request.Repository, request.Config, request.Split);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "[HF Import] Row-count lookup failed for streaming dataset {Repository}; leaving count unset", request.Repository);
+                }
+
                 _logger.LogInformation("[HF Import] Streaming dataset configured successfully");
                 return;
             }
