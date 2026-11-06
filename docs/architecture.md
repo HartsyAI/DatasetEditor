@@ -8,7 +8,7 @@
 
 ## 1. Guiding principles
 
-1. **Two data paths.** Stream from HuggingFace (nothing stored) *or* import locally into Parquet + PostgreSQL.
+1. **Three data paths.** Stream from HuggingFace or an S3-compatible bucket (nothing stored) *or* import locally into Parquet + PostgreSQL.
 2. **Perceived performance first.** Instant color placeholders, eager first screen, true virtualization — then row-group-bounded paging underneath (see §4).
 3. **Flat client memory.** The browser never holds the whole dataset; only a few screenfuls of cards are in the DOM at any time.
 4. **Stream, don't buffer.** Server-side ingestion and paging avoid materializing whole files/datasets where possible.
@@ -90,7 +90,8 @@ dataset never blocks another.
 ### Ingestion
 Uploads are saved to a temp file and **queued** (`IngestionQueue`); the endpoint returns `202`
 immediately. A hosted `IngestionBackgroundService` drains the queue off the request thread, parses
-the file (CSV/TSV/Parquet/JSON/JSONL/ZIP/image folders) and writes items in batches. On failure it
+the file (CSV/TSV/JSON/JSONL/ZIP/image folders — Parquet upload is **not** supported, see
+`docs/refactor-audit.md` I-6) and writes items in batches. On failure it
 records `Failed` + an error message on the dataset, which the client's status poller surfaces.
 
 ---
@@ -162,8 +163,10 @@ as SDK surface/compile-checked scaffolding today.
 
 ## 7. Roadmap / known gaps
 
-- **Client filtering:** filter UI exists, but full-dataset filtering needs server-side query
-  support (today filtering applies to the buffered window).
+- **Client filtering:** filter UI exists, but nothing applies it — `DatasetViewer.ApplyFiltersQuiet`
+  passes the unfiltered window through, and the items endpoint accepts no filter parameters
+  (`docs/refactor-audit.md` U-6, G-2). Real filtering needs server-side query support.
+- **Full defect list and refactor sequencing:** `docs/refactor-audit.md`. UI target: `DESIGN.md`.
 - **Extensions:** only 1 of 5 built-in manifests (CoreViewer) has real, working code; endpoint
   auto-registration, permission enforcement for extension routes, and any client-side extension
   loading are all still unbuilt. See §6 above for the real state.
