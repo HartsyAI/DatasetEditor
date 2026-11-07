@@ -11,16 +11,16 @@ before changing anything. The three other documents you need:
 ## 1. What this is
 
 A self-hosted web app for browsing, curating and editing large AI image datasets.
-ASP.NET Core API (`src/APIBackend`, net10.0) + Blazor WebAssembly client (`src/ClientApp`,
-net8.0, MudBlazor 7). PostgreSQL holds users/datasets/permissions; dataset items live in
+ASP.NET Core API (`src/APIBackend`) + Blazor WebAssembly client (`src/ClientApp`), both on
+net10.0 with EF Core 10 and MudBlazor 7.8. PostgreSQL holds users/datasets/permissions; dataset items live in
 sharded Apache Parquet files on disk; HuggingFace and S3 datasets are streamed, not copied.
 Details: README §"How it works".
 
 ## 2. Repository map
 
 ```
-src/Core/          Domain models, parsers, shared business logic (net8.0; referenced by API and client)
-src/DTO/           Wire contracts shared by API and client (net8.0)
+src/Core/          Domain models, parsers, shared business logic (net10.0; referenced by API and client)
+src/DTO/           Wire contracts shared by API and client (net10.0)
 src/APIBackend/    ASP.NET Core minimal API: Endpoints/, Services/, DataAccess/{PostgreSQL,Parquet}, Configuration/
 src/ClientApp/     Blazor WASM: Features/<Feature>/{Pages,Components,Services}, Shared/{Layout,Components,Services}, Services/{ApiClients,Caching,Interop,StateManagement}, wwwroot/
 src/Extensions/    SDK, SDK.Api and BuiltIn/* manifests (only CoreViewer has code; see README)

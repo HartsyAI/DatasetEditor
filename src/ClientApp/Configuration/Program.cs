@@ -18,7 +18,6 @@ using DatasetStudio.Core.BusinessLogic.Parsers;
 using DatasetStudio.Core.BusinessLogic.ModalityProviders;
 using DatasetStudio.Core.Utilities;
 using DatasetStudio.Core.Utilities.Logging;
-using DatasetStudio.Extensions.SDK;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System.Threading.Tasks;

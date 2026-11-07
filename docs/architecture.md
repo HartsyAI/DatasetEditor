@@ -39,11 +39,11 @@
 
 | Project | Target | Responsibility |
 |---|---|---|
-| `Core` | net8.0 | Domain models, parsers, filtering, abstractions |
-| `DTO` | net8.0 | Shared contracts (`DatasetItemDto`, `PageResponse<T>`, …) |
+| `Core` | net10.0 | Domain models, parsers, filtering, abstractions |
+| `DTO` | net10.0 | Shared contracts (`DatasetItemDto`, `PageResponse<T>`, …) |
 | `APIBackend` | net10.0 | API endpoints, EF/Postgres, Parquet storage, ingestion, HF integration |
-| `ClientApp` | net8.0 | Blazor WASM viewer, caching, state, JS interop |
-| `Extensions/SDK` (+ `SDK.Api`) | net8.0 | Extension contracts (client-safe + API-only) |
+| `ClientApp` | net10.0 | Blazor WASM viewer, caching, state, JS interop |
+| `Extensions/SDK` (+ `SDK.Api`) | net10.0 | Extension contracts (client-safe + API-only) |
 
 ---
 

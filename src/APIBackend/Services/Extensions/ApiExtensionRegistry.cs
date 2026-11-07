@@ -288,16 +288,17 @@ public class ApiExtensionRegistry
 
     /// <summary>
     /// Finds the API assembly for an extension.
-    /// Searches in bin/Release/net8.0 and bin/Debug/net8.0 directories.
+    /// Searches in bin/Release/net10.0 and bin/Debug/net10.0 directories (the solution-wide
+    /// target, Directory.Build.props). Update this list when the target framework changes.
     /// </summary>
     private string? FindApiAssembly(string extensionDirectory, string extensionId)
     {
         var possiblePaths = new[]
         {
-            Path.Combine(extensionDirectory, "src", $"{extensionId}.Api", "bin", "Release", "net8.0", $"{extensionId}.Api.dll"),
-            Path.Combine(extensionDirectory, "src", $"{extensionId}.Api", "bin", "Debug", "net8.0", $"{extensionId}.Api.dll"),
-            Path.Combine(extensionDirectory, "bin", "Release", "net8.0", $"{extensionId}.Api.dll"),
-            Path.Combine(extensionDirectory, "bin", "Debug", "net8.0", $"{extensionId}.Api.dll"),
+            Path.Combine(extensionDirectory, "src", $"{extensionId}.Api", "bin", "Release", "net10.0", $"{extensionId}.Api.dll"),
+            Path.Combine(extensionDirectory, "src", $"{extensionId}.Api", "bin", "Debug", "net10.0", $"{extensionId}.Api.dll"),
+            Path.Combine(extensionDirectory, "bin", "Release", "net10.0", $"{extensionId}.Api.dll"),
+            Path.Combine(extensionDirectory, "bin", "Debug", "net10.0", $"{extensionId}.Api.dll"),
             Path.Combine(extensionDirectory, $"{extensionId}.Api.dll")
         };
 

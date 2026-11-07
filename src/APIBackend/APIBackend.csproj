@@ -10,10 +10,10 @@
   <ItemGroup>
     <!-- Web API -->
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.5.0" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="8.0.10" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.14" />
 
     <!-- Data Parsing -->
-    <PackageReference Include="CsvHelper" Version="33.*" />
+    <PackageReference Include="CsvHelper" Version="33.1.0" />
     <!-- 5.6.1, not the pinned-since-Phase-0 5.3.0: brings in Snappier 1.3.1, fixing
          GHSA-pggp-6c3x-2xmx (Snappier 1.1.6). Stayed within the 5.x major line deliberately,
          since the Phase 1 append-path fix (FileMode.Open/ReadWrite for ParquetWriter.CreateAsync's
@@ -34,13 +34,13 @@
     <PackageReference Include="AWSSDK.S3" Version="4.0.102.1" />
 
     <!-- Entity Framework Core for PostgreSQL -->
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.11" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.11">
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.4" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.4">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.11" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="8.0.11">
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.4">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>

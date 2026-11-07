@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <!-- Same namespace as the core SDK so existing `using DatasetStudio.Extensions.SDK;` resolves these API-only types. -->
     <RootNamespace>DatasetStudio.Extensions.SDK</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
