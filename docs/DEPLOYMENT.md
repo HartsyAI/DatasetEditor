@@ -61,12 +61,26 @@ point-in-time restores.
 DataProtection key ring `Program.cs` persists to `Storage:DataProtectionKeysPath`, default
 `./data/keys`) — not data-destroying, but every logged-in user has to log back in.
 
+## Upgrading an existing install
+
+The production database name changed from `dataset_studio_dev` to `dataset_studio`. An install that
+was created before this change keeps the old name, so set it in `.env` before the first start on
+this version:
+
+```bash
+grep -q '^POSTGRES_DB=' .env || echo 'POSTGRES_DB=dataset_studio_dev' >> .env
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+`POSTGRES_DB` only takes effect when Postgres creates a new data volume. For an existing volume it
+just tells the API which database to connect to. If the name is wrong, the API fails at startup
+with a "database does not exist" error and nothing is modified.
+
 ## S3 storage (opt-in)
 
 `Storage:S3StorageProfiles` defaults to an empty array — no S3 support is configured out of the
 box. To add a profile, add `Storage__S3StorageProfiles__0__*` environment entries to the `api`
-service in `docker-compose.prod.yml` (see the commented `S3_PROFILE_*` variables in
-`.env.example` for the values you'll need): `Name`, `ServiceUrl` (blank for real AWS S3, set for
+service in `docker-compose.prod.yml`. The keys are `Name`, `ServiceUrl` (blank for real AWS S3, set for
 MinIO/R2/Backblaze), `AccessKey`, `SecretKey`, `ForcePathStyle`, and
 `AllowedBuckets__0`/`__1`/... — the explicit allow-list a profile's credentials may actually
 reach (see `S3StorageProfileConfig`'s own doc comment for why this isn't just "whatever bucket

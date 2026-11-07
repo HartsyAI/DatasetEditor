@@ -14,60 +14,60 @@
           "Extensions.SDK.Api.dll": {}
         }
       },
-      "Microsoft.AspNetCore.Authorization/8.0.29": {
+      "Microsoft.AspNetCore.Authorization/8.0.33": {
         "dependencies": {
-          "Microsoft.AspNetCore.Metadata": "8.0.29",
+          "Microsoft.AspNetCore.Metadata": "8.0.33",
           "Microsoft.Extensions.Logging.Abstractions": "8.0.3",
           "Microsoft.Extensions.Options": "8.0.2"
         },
         "runtime": {
           "lib/net8.0/Microsoft.AspNetCore.Authorization.dll": {
             "assemblyVersion": "8.0.0.0",
-            "fileVersion": "8.0.2926.32517"
+            "fileVersion": "8.0.3326.52312"
           }
         }
       },
-      "Microsoft.AspNetCore.Components/8.0.29": {
+      "Microsoft.AspNetCore.Components/8.0.33": {
         "dependencies": {
-          "Microsoft.AspNetCore.Authorization": "8.0.29"
+          "Microsoft.AspNetCore.Authorization": "8.0.33"
         },
         "runtime": {
           "lib/net8.0/Microsoft.AspNetCore.Components.dll": {
             "assemblyVersion": "8.0.0.0",
-            "fileVersion": "8.0.2926.32517"
+            "fileVersion": "8.0.3326.52312"
           }
         }
       },
-      "Microsoft.AspNetCore.Components.Forms/8.0.29": {
+      "Microsoft.AspNetCore.Components.Forms/8.0.33": {
         "dependencies": {
-          "Microsoft.AspNetCore.Components": "8.0.29"
+          "Microsoft.AspNetCore.Components": "8.0.33"
         },
         "runtime": {
           "lib/net8.0/Microsoft.AspNetCore.Components.Forms.dll": {
             "assemblyVersion": "8.0.0.0",
-            "fileVersion": "8.0.2926.32517"
+            "fileVersion": "8.0.3326.52312"
           }
         }
       },
-      "Microsoft.AspNetCore.Components.Web/8.0.29": {
+      "Microsoft.AspNetCore.Components.Web/8.0.33": {
         "dependencies": {
-          "Microsoft.AspNetCore.Components": "8.0.29",
-          "Microsoft.AspNetCore.Components.Forms": "8.0.29",
+          "Microsoft.AspNetCore.Components": "8.0.33",
+          "Microsoft.AspNetCore.Components.Forms": "8.0.33",
           "Microsoft.Extensions.DependencyInjection": "8.0.1",
-          "Microsoft.JSInterop": "8.0.29"
+          "Microsoft.JSInterop": "8.0.33"
         },
         "runtime": {
           "lib/net8.0/Microsoft.AspNetCore.Components.Web.dll": {
             "assemblyVersion": "8.0.0.0",
-            "fileVersion": "8.0.2926.32517"
+            "fileVersion": "8.0.3326.52312"
           }
         }
       },
-      "Microsoft.AspNetCore.Metadata/8.0.29": {
+      "Microsoft.AspNetCore.Metadata/8.0.33": {
         "runtime": {
           "lib/net8.0/Microsoft.AspNetCore.Metadata.dll": {
             "assemblyVersion": "8.0.0.0",
-            "fileVersion": "8.0.2926.32517"
+            "fileVersion": "8.0.3326.52312"
           }
         }
       },
@@ -112,17 +112,17 @@
           }
         }
       },
-      "Microsoft.JSInterop/8.0.29": {
+      "Microsoft.JSInterop/8.0.33": {
         "runtime": {
           "lib/net8.0/Microsoft.JSInterop.dll": {
             "assemblyVersion": "8.0.0.0",
-            "fileVersion": "8.0.2926.32517"
+            "fileVersion": "8.0.3326.52312"
           }
         }
       },
       "Extensions.SDK/0.2.0-alpha": {
         "dependencies": {
-          "Microsoft.AspNetCore.Components.Web": "8.0.29",
+          "Microsoft.AspNetCore.Components.Web": "8.0.33",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "8.0.2",
           "Microsoft.Extensions.Logging.Abstractions": "8.0.3"
         },
@@ -141,40 +141,40 @@
       "serviceable": false,
       "sha512": ""
     },
-    "Microsoft.AspNetCore.Authorization/8.0.29": {
+    "Microsoft.AspNetCore.Authorization/8.0.33": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-IMVrMqYF7LASYMWVt/sL9f5vkA8qtfvsLEaxSchEc1Pk/zxdQt1fP1W3hN6Wxm0+wJjAKO+DhF/1mi22AtAfCQ==",
-      "path": "microsoft.aspnetcore.authorization/8.0.29",
-      "hashPath": "microsoft.aspnetcore.authorization.8.0.29.nupkg.sha512"
+      "sha512": "sha512-GlwlTQTTVYqicKRvOr8yOVqOq4y3ojuZV+2ya1pS8U6NsfcfdwYFnbmv+67ubw5yrEbjN0MR1X2DQo13ShwTgg==",
+      "path": "microsoft.aspnetcore.authorization/8.0.33",
+      "hashPath": "microsoft.aspnetcore.authorization.8.0.33.nupkg.sha512"
     },
-    "Microsoft.AspNetCore.Components/8.0.29": {
+    "Microsoft.AspNetCore.Components/8.0.33": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-1ZNdFYtEORG9LOYFJf0AtNMSAtkQ8WQ5XEGQXdEDvRMYBp4MS5t6mPAiWGVMb5aKpPfaeXOGHQqDcZHP3QfuAA==",
-      "path": "microsoft.aspnetcore.components/8.0.29",
-      "hashPath": "microsoft.aspnetcore.components.8.0.29.nupkg.sha512"
+      "sha512": "sha512-ePhi+Ot4nVjeCBQm1jxetB1YRUNq715HcrAhZjL2wynFRabBFteZsI1rEjQbeIsgun4uF8IP6RNaqLcBRm6cEg==",
+      "path": "microsoft.aspnetcore.components/8.0.33",
+      "hashPath": "microsoft.aspnetcore.components.8.0.33.nupkg.sha512"
     },
-    "Microsoft.AspNetCore.Components.Forms/8.0.29": {
+    "Microsoft.AspNetCore.Components.Forms/8.0.33": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-GXmEG6N30oDLZHvyxUmwKDPh/iQkcsktjUb3wffSV3Qi4DD1O37Zzz4EBIsgLQwTr4WtqjQ94yprJtKy+YSE1g==",
-      "path": "microsoft.aspnetcore.components.forms/8.0.29",
-      "hashPath": "microsoft.aspnetcore.components.forms.8.0.29.nupkg.sha512"
+      "sha512": "sha512-t/56l74DTCXMSQu8F7DbY55BuuixLbvnUw7YA5ODPokt+Dx9HHcm9hyCfWtUqFRpLdk2W7Ht19ym9vv+HC1dyA==",
+      "path": "microsoft.aspnetcore.components.forms/8.0.33",
+      "hashPath": "microsoft.aspnetcore.components.forms.8.0.33.nupkg.sha512"
     },
-    "Microsoft.AspNetCore.Components.Web/8.0.29": {
+    "Microsoft.AspNetCore.Components.Web/8.0.33": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-1El7nDceNvO07z3Wr8uYj9J5Y7KdtIEgpbyfb9r88BYFVuZxaDDA2F4n907mWib1iLbw+XoV25XbNcPH2rne/A==",
-      "path": "microsoft.aspnetcore.components.web/8.0.29",
-      "hashPath": "microsoft.aspnetcore.components.web.8.0.29.nupkg.sha512"
+      "sha512": "sha512-sEOHEan925WE9jmhBO0pOSxcu1bUTeVU3wva0X32kELMk5ae9u0rr7nHxwrNis3Zle2RaE6+fegXC7cESAvPiQ==",
+      "path": "microsoft.aspnetcore.components.web/8.0.33",
+      "hashPath": "microsoft.aspnetcore.components.web.8.0.33.nupkg.sha512"
     },
-    "Microsoft.AspNetCore.Metadata/8.0.29": {
+    "Microsoft.AspNetCore.Metadata/8.0.33": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-5Oyb4tncDGft/tXVJoyO7iWy1fnz1AzgycQfzPPSJqafmp3J+xLhgfDSTB+hzVVyG9mcb9z/8m9RDEx7bCj3Kw==",
-      "path": "microsoft.aspnetcore.metadata/8.0.29",
-      "hashPath": "microsoft.aspnetcore.metadata.8.0.29.nupkg.sha512"
+      "sha512": "sha512-68iAW7v2rr3zXiU3FsZ6MubpHmhn06k6MTQveg21GmYya+Jb7O1hQgmIy31BN4jhbyzxXIsOCUQqN+RocopJ6Q==",
+      "path": "microsoft.aspnetcore.metadata/8.0.33",
+      "hashPath": "microsoft.aspnetcore.metadata.8.0.33.nupkg.sha512"
     },
     "Microsoft.Extensions.DependencyInjection/8.0.1": {
       "type": "package",
@@ -204,12 +204,12 @@
       "path": "microsoft.extensions.options/8.0.2",
       "hashPath": "microsoft.extensions.options.8.0.2.nupkg.sha512"
     },
-    "Microsoft.JSInterop/8.0.29": {
+    "Microsoft.JSInterop/8.0.33": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-6N3e6a5YHcV53/jU63XBvLEOEV3ctWSFZi+hNl0HNRHYd3aJrTSA9Wl6tq7/9piO+pYRat4V6wPB2NEWMe3TnA==",
-      "path": "microsoft.jsinterop/8.0.29",
-      "hashPath": "microsoft.jsinterop.8.0.29.nupkg.sha512"
+      "sha512": "sha512-nOjF2upFS8llhAunPLsAEjkYp0hIAgNtwe8wz5tXobk7a2GPjAJb6mhAfvyun/yVQtjFZr1sUFn0U0yCEQlE/A==",
+      "path": "microsoft.jsinterop/8.0.33",
+      "hashPath": "microsoft.jsinterop.8.0.33.nupkg.sha512"
     },
     "Extensions.SDK/0.2.0-alpha": {
       "type": "project",

@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyCopyrightAttribute("Copyright © 2025")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("0.2.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.2.0-alpha+14fa355b0febff4390551940061093bc0fed3bef")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.2.0-alpha+f8c45bf29b1d74dec890124cc00c555fbfd491f2")]
 [assembly: System.Reflection.AssemblyProductAttribute("Hartsy\'s Dataset Editor")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Extensions.SDK")]
 [assembly: System.Reflection.AssemblyVersionAttribute("0.2.0.0")]

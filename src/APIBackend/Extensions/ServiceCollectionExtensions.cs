@@ -25,8 +25,10 @@ public static class ServiceCollectionExtensions
         string? connectionString = configuration.GetConnectionString("DatasetStudio");
         if (string.IsNullOrWhiteSpace(connectionString))
         {
+            // Program.cs checks this earlier with the same message; this guard covers any other
+            // host that calls AddDatasetServices without that check.
             throw new InvalidOperationException(
-                "PostgreSQL connection string 'DatasetStudio' is not configured in appsettings.json");
+                "PostgreSQL connection string 'DatasetStudio' is not configured. Set ConnectionStrings__DatasetStudio.");
         }
 
         services.AddDbContext<DatasetStudioDbContext>(options =>

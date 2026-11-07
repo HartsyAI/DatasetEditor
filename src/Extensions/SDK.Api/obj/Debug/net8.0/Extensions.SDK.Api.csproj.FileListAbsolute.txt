@@ -30,3 +30,19 @@
 /home/hartsy/Desktop/DatasetEditor/src/Extensions/SDK.Api/obj/Debug/net8.0/refint/Extensions.SDK.Api.dll
 /home/hartsy/Desktop/DatasetEditor/src/Extensions/SDK.Api/obj/Debug/net8.0/Extensions.SDK.Api.pdb
 /home/hartsy/Desktop/DatasetEditor/src/Extensions/SDK.Api/obj/Debug/net8.0/ref/Extensions.SDK.Api.dll
+C:\Users\AI Overlord\Desktop\Projects\DatasetEditor\src\Extensions\SDK.Api\bin\Debug\net8.0\Extensions.SDK.Api.deps.json
+C:\Users\AI Overlord\Desktop\Projects\DatasetEditor\src\Extensions\SDK.Api\bin\Debug\net8.0\Extensions.SDK.Api.dll
+C:\Users\AI Overlord\Desktop\Projects\DatasetEditor\src\Extensions\SDK.Api\bin\Debug\net8.0\Extensions.SDK.Api.pdb
+C:\Users\AI Overlord\Desktop\Projects\DatasetEditor\src\Extensions\SDK.Api\bin\Debug\net8.0\Extensions.SDK.dll
+C:\Users\AI Overlord\Desktop\Projects\DatasetEditor\src\Extensions\SDK.Api\bin\Debug\net8.0\Extensions.SDK.pdb
+C:\Users\AI Overlord\Desktop\Projects\DatasetEditor\src\Extensions\SDK.Api\obj\Debug\net8.0\Extensions.SDK.Api.csproj.AssemblyReference.cache
+C:\Users\AI Overlord\Desktop\Projects\DatasetEditor\src\Extensions\SDK.Api\obj\Debug\net8.0\Extensions.SDK.Api.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\AI Overlord\Desktop\Projects\DatasetEditor\src\Extensions\SDK.Api\obj\Debug\net8.0\Extensions.SDK.Api.AssemblyInfoInputs.cache
+C:\Users\AI Overlord\Desktop\Projects\DatasetEditor\src\Extensions\SDK.Api\obj\Debug\net8.0\Extensions.SDK.Api.AssemblyInfo.cs
+C:\Users\AI Overlord\Desktop\Projects\DatasetEditor\src\Extensions\SDK.Api\obj\Debug\net8.0\Extensions.SDK.Api.csproj.CoreCompileInputs.cache
+C:\Users\AI Overlord\Desktop\Projects\DatasetEditor\src\Extensions\SDK.Api\obj\Debug\net8.0\Extensions.SDK.Api.sourcelink.json
+C:\Users\AI Overlord\Desktop\Projects\DatasetEditor\src\Extensions\SDK.Api\obj\Debug\net8.0\Extensio.7958B919.Up2Date
+C:\Users\AI Overlord\Desktop\Projects\DatasetEditor\src\Extensions\SDK.Api\obj\Debug\net8.0\Extensions.SDK.Api.dll
+C:\Users\AI Overlord\Desktop\Projects\DatasetEditor\src\Extensions\SDK.Api\obj\Debug\net8.0\refint\Extensions.SDK.Api.dll
+C:\Users\AI Overlord\Desktop\Projects\DatasetEditor\src\Extensions\SDK.Api\obj\Debug\net8.0\Extensions.SDK.Api.pdb
+C:\Users\AI Overlord\Desktop\Projects\DatasetEditor\src\Extensions\SDK.Api\obj\Debug\net8.0\ref\Extensions.SDK.Api.dll
