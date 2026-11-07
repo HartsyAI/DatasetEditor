@@ -103,10 +103,11 @@ ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/APIBackend   # :5000
 dotnet run --project src/ClientApp                                       # :5002
 ```
 
-`ASPNETCORE_ENVIRONMENT=Development` matters: the base `appsettings.json` carries a
-placeholder database password, and only the Development overlay has the dev credentials
-(`postgres`/`postgres`, database `dataset_studio_dev`). `start.sh` and `launchSettings.json`
-set it for you; `--no-launch-profile` does not.
+`ASPNETCORE_ENVIRONMENT=Development` matters: the base `appsettings.json` has no database
+connection string, and only the Development overlay supplies the local one (`postgres`/`postgres`,
+database `dataset_studio_dev`). Outside Development the API refuses to start until
+`ConnectionStrings__DatasetStudio` is set. `start.sh` and `launchSettings.json` set the environment
+for you; `--no-launch-profile` does not, so set the variable yourself.
 
 To get an admin account, set `ADMIN_USERNAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` before starting
 the API. Anyone can register a normal account from the UI.
@@ -394,8 +395,8 @@ API settings: `src/APIBackend/Configuration/appsettings.json` + `appsettings.{En
 then environment variables (`ConnectionStrings__DatasetStudio`, `Cors__AllowedOrigins__0`,
 `ADMIN_*`, `Storage__S3StorageProfiles__0__*`), then command line. Keys:
 
-- `ConnectionStrings:DatasetStudio` — PostgreSQL.
-- `Urls` — bind address (`ASPNETCORE_URLS` overrides).
+- `ConnectionStrings:DatasetStudio` — PostgreSQL. Required outside Development; startup fails without it.
+- Listen address — `launchSettings.json` (`http://localhost:5000`) for `dotnet run`; `ASPNETCORE_URLS` in Docker.
 - `Cors:AllowedOrigins` — must list the client origin; empty is a startup error.
 - `Storage:DatasetRootPath|BlobPath|ThumbnailPath|UploadPath|DataProtectionKeysPath`.
 - `Storage:S3StorageProfiles[]` — `Name, ServiceUrl, AccessKey, SecretKey, Region, ForcePathStyle, AllowedBuckets[]`.

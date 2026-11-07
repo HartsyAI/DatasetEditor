@@ -62,10 +62,12 @@ dotnet test tests/ClientApp.Tests        # no Docker needed
 
 Gotchas:
 
-- **`ASPNETCORE_ENVIRONMENT=Development` is required** when running the API outside
-  `launchSettings.json` (e.g. `--no-launch-profile`). The base `appsettings.json` carries a
-  placeholder DB password and a different database name, so a non-Development run fails at
-  startup with `28P01 password authentication failed`.
+- **The database connection string comes from the environment outside Development.** The base
+  `Configuration/appsettings.json` has none, so a non-Development run without
+  `ConnectionStrings__DatasetStudio` fails at startup with a message saying so. Development gets
+  the local database from its overlay. Note that `dotnet run` applies `launchSettings.json`'s
+  `ASPNETCORE_ENVIRONMENT=Development` on top of your shell, so use `--no-launch-profile` to test
+  any other environment.
 - `Cors:AllowedOrigins` must contain the client origin; the API refuses to start with an empty
   list because cookie auth requires `AllowCredentials()`.
 - Register/login set an `HttpOnly` cookie. The client sends it cross-origin only because
