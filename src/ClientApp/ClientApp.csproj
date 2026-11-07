@@ -26,7 +26,7 @@
     <!-- Reference to Core and DTO libraries -->
     <ProjectReference Include="..\Core\Core.csproj" />
     <ProjectReference Include="..\DTO\DTO.csproj" />
-    <!-- Extension SDK (IExtension, ExtensionManifest) used by ClientExtensionRegistry -->
+    <!-- Extension SDK (IExtension, ExtensionManifest). No client-side extension loader exists yet; see docs/refactor-audit.md C-12 -->
     <ProjectReference Include="..\Extensions\SDK\Extensions.SDK.csproj" />
   </ItemGroup>
 

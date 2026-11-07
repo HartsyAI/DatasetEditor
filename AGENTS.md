@@ -137,7 +137,7 @@ Gotchas:
 - Small, single-purpose commits with an imperative summary line, e.g. `Resolve real row count
   for HF-streaming datasets instead of showing 0`. Body explains why and what was verified.
 - Don't commit `bin/`, `obj/`, `data/`, `blobs/`, `uploads/`, `.env`, or DataProtection keys.
-  (`.gitignore` has stale entries; see the audit.)
+  `.gitignore` covers these; if you add a runtime output folder, add it there.
 - Docs change in the same commit as the behaviour they describe. README feature table,
   DESIGN.md, and `docs/architecture.md` are living documents, not release notes.
 

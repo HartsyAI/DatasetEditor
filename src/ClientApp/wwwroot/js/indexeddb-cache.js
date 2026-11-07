@@ -1,5 +1,5 @@
 /**
- * IndexedDB Cache Manager for Hartsy Dataset Editor
+ * IndexedDB Cache Manager for Dataset Studio
  * Uses Dexie.js for simplified IndexedDB operations
  */
 window.indexedDbCache = {
@@ -10,7 +10,7 @@ window.indexedDbCache = {
      */
     async initialize() {
         try {
-            this.db = new Dexie('HartsyDatasetEditor');
+            this.db = new Dexie('DatasetStudio');
             
             this.db.version(1).stores({
                 // Dataset items keyed by id

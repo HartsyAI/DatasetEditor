@@ -3,13 +3,13 @@ using Microsoft.Extensions.Logging;
 namespace DatasetStudio.Core.Utilities.Logging;
 
 /// <summary>
-/// Thin static wrapper around a real <see cref="ILogger"/>, used by the ~40 call sites across
+/// Thin static wrapper around a real <see cref="ILogger"/>, used by the call sites across
 /// Core/ClientApp that predate this project's real logging pipeline. Call <see cref="Initialize"/>
 /// once at startup (both APIBackend's and ClientApp's Program.cs do) so these calls route
 /// through the app's actual configured logging (respects Logging:LogLevel, and in WASM goes to
 /// the browser console via the built-in provider) instead of a hardcoded Console.WriteLine.
 /// Converting every call site to constructor-injected ILogger&lt;T&gt; instead of this wrapper
-/// was considered and rejected for Core/ClientApp specifically: ~280 call sites across ~35
+/// was considered and rejected for Core/ClientApp specifically: ~250 call sites across ~36
 /// files, many of them static utility classes with no DI-constructed instance to inject into --
 /// out of proportion to what a hardening pass should touch. APIBackend's own services use real
 /// ILogger&lt;T&gt; injection; this wrapper is only for the shared/client side.

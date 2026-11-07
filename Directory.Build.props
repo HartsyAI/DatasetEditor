@@ -6,7 +6,7 @@
     <LangVersion>latest</LangVersion>
     <Authors>Hartsy</Authors>
     <Company>Hartsy</Company>
-    <Product>Hartsy's Dataset Editor</Product>
+    <Product>Dataset Studio</Product>
     <Copyright>Copyright © 2025</Copyright>
     <Version>0.2.0-alpha</Version>
   </PropertyGroup>
