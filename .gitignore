@@ -1,86 +1,34 @@
-# Prerequisites
-*.d
+# Build output (every project, including extensions under src/Extensions)
+**/bin/
+**/obj/
+TestResults/
 
-# Object files
-*.o
-*.ko
-*.obj
-*.elf
+# Visual Studio / JetBrains / VS Code local state
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
 
-# Linker output
-*.ilk
-*.map
-*.exp
+# NuGet
+*.nupkg
+packages/
 
-# Precompiled Headers
-*.gch
-*.pch
+# Runtime data written by the API when run from the repo (see Storage:* in
+# src/APIBackend/Configuration/appsettings*.json). Anchored so that source folders
+# with the same names elsewhere in the tree are never ignored.
+/data/
+/blobs/
+/uploads/
+/src/APIBackend/data/
+/src/APIBackend/blobs/
+/src/APIBackend/uploads/
 
-# Libraries
-*.lib
-*.a
-*.la
-*.lo
+# Local secrets and environment overrides (keep .env.example tracked)
+.env
+.env.local
 
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
-
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
-
-# Debug files
-*.dSYM/
-*.su
-*.idb
-*.pdb
-
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
-
-# debug information files
-*.dwo
-
-/src/HartsysDatasetEditor.Api/obj
-/src/HartsysDatasetEditor.Api/bin
-/src/HartsysDatasetEditor.Client/bin
-/src/HartsysDatasetEditor.Client/obj
-/src/HartsysDatasetEditor.Contracts/bin
-/src/HartsysDatasetEditor.Contracts/obj
-/src/HartsysDatasetEditor.Core/bin
-/src/HartsysDatasetEditor.Core/obj
-/.vs
-/src/HartsysDatasetEditor.Api/data
-/src/DTO/obj
-/src/DTO/bin
-/src/Core/obj
-/src/ClientApp/obj
-/.claude
-/src/APIBackend/obj
-/src/APIBackend/bin
-/src/ClientApp/bin
-/src/Core/bin
-/tests/ClientApp.Tests/obj
-/tests/ClientApp.Tests/bin
-/tests/APIBackend.Tests/obj
-/tests/APIBackend.Tests/bin
-/src/APIBackend/data
-/src/APIBackend/blobs
-/uploads
-/.env
-/src/Extensions
-/src/Extensions/BuiltIn/Creator/Creator.Client/obj
-/src/Extensions
+# Local tooling and per-user Claude Code state
+/.claude/

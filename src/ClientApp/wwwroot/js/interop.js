@@ -1,4 +1,4 @@
-// Hartsy's Dataset Editor - JavaScript Interop
+// Dataset Studio - JavaScript Interop
 // Provides browser-specific functionality to Blazor via JS Interop
 
 window.interop = {
@@ -220,7 +220,7 @@ window.fileReader = {
 };
 
 // Console logging for debugging (can be removed in production)
-console.log('Hartsy\'s Dataset Editor - Interop loaded');
+console.log('Dataset Studio - Interop loaded');
 
 // TODO: Add zoom/pan functionality for image viewer
 // TODO: Add keyboard shortcut handling

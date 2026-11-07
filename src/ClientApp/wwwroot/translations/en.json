@@ -1,6 +1,6 @@
 {
   "app": {
-    "title": "Hartsy's Dataset Editor",
+    "title": "Dataset Studio",
     "subtitle": "View and manage AI image datasets",
     "version": "v1.0.0-MVP"
   },
