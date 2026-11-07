@@ -128,8 +128,8 @@ Gotchas:
 
 ### Tests
 
-- API integration tests use `DatasetStudioApiFactory` + Testcontainers Postgres (and MinIO
-  for S3). Prefer an integration test over mocking the repository.
+- API integration tests use `DatasetStudioApiFactory` + Testcontainers Postgres (and an S3-compatible
+  container, Adobe S3Mock, for S3 tests only). Prefer an integration test over mocking the repository.
 - Every bug fix gets a test that fails before the fix.
 - `dotnet test` must be green before a PR; say explicitly if a suite could not run (e.g. no
   Docker) rather than implying it passed.

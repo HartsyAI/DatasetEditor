@@ -75,7 +75,7 @@ cleanup() {
   [[ -n "$API_PID"    ]] && pkill -P "$API_PID"    2>/dev/null || true
   if [[ "$STOP_DB" -eq 1 ]]; then
     info "Stopping database container ..."
-    $COMPOSE down || true
+    $COMPOSE --profile dev down || true
   else
     info "Database left running. Stop it with: ./stop.sh  (or '$COMPOSE down')."
   fi
@@ -93,12 +93,19 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 # ----- 1. database ---------------------------------------------------------
-info "Starting PostgreSQL + MinIO via Compose ..."
+info "Starting PostgreSQL via Compose ..."
 # Explicit service names, not a bare `up -d`: docker-compose.yml also defines an `api` service
 # (Phase 6) for running the whole stack containerized, which this script's own `dotnet run`
 # calls below would collide with (same ports, same migration/admin-bootstrap race) if compose
 # started it too.
-$COMPOSE up -d postgres minio
+$COMPOSE up -d postgres
+
+# MinIO is a dev-only S3 fixture behind the `dev` profile. It is best-effort: if its image cannot
+# be pulled (the upstream registry has refused anonymous MinIO pulls before -- audit R-5), the
+# database and API must still start, so this failure is a warning, not an exit (audit R-6).
+if ! $COMPOSE --profile dev up -d minio; then
+  warn "MinIO did not start, so the S3 dev profile is unavailable. Continuing without it."
+fi
 
 info "Waiting for PostgreSQL to accept connections ..."
 DB_READY=0

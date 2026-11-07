@@ -52,15 +52,6 @@
           "Castle.Core": "5.1.1"
         }
       },
-      "Testcontainers.Minio": {
-        "type": "Direct",
-        "requested": "[4.13.0, )",
-        "resolved": "4.13.0",
-        "contentHash": "+F/eakizk3Pb6M0/YMoQ1LsQkjTAjtOvhwWYR0wo6/TXhAPK+wP59zukR3/P2+02ft6nPCsTTige9+yCpR1Aeg==",
-        "dependencies": {
-          "Testcontainers": "4.13.0"
-        }
-      },
       "Testcontainers.PostgreSql": {
         "type": "Direct",
         "requested": "[4.13.0, )",

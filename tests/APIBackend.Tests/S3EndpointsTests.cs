@@ -24,29 +24,30 @@ using Xunit;
 namespace DatasetStudio.Tests.APIBackend
 {
     /// <summary>
-    /// End-to-end coverage for Phase 5's S3 pipeline against a real MinIO container: connect a
-    /// dataset to a bucket, list items live (no bulk ingestion), serve/thumbnail objects through
-    /// the proxy endpoint, and confirm the bucket allow-list + S3KeySafety guards actually block
-    /// what they're supposed to. Uses the real AWS S3 SDK against MinIO, not a mock -- this is
-    /// exactly the layer a mock would hide the AWS SDK v4 / MinIO checksum incompatibility found
-    /// while building this (see S3StorageService's RequestChecksumCalculation comment).
+    /// End-to-end coverage for Phase 5's S3 pipeline against a real S3-compatible container
+    /// (Adobe S3Mock, see <see cref="S3ContainerFixture"/>): connect a dataset to a bucket, list
+    /// items live (no bulk ingestion), serve/thumbnail objects through the proxy endpoint, and
+    /// confirm the bucket allow-list + S3KeySafety guards actually block what they're supposed
+    /// to. Uses the real AWS S3 SDK against a live server, not a mock -- this is exactly the layer
+    /// a mock would hide the AWS SDK v4 checksum incompatibility found while building this (see
+    /// S3StorageService's RequestChecksumCalculation comment).
     /// </summary>
     [Collection(PostgresCollection.Name)]
-    public sealed class S3EndpointsTests : IAsyncLifetime
+    public sealed class S3EndpointsTests : IClassFixture<S3ContainerFixture>, IAsyncLifetime
     {
-        private const string ProfileName = "test-minio";
+        private const string ProfileName = "test-s3";
         private const string Bucket = "test-bucket";
 
         private readonly PostgresContainerFixture _postgres;
-        private readonly MinioContainerFixture _minio;
+        private readonly S3ContainerFixture _s3;
         private DatasetStudioApiFactory _factory = default!;
         private HttpClient _client = default!;
         private AmazonS3Client _s3SeedClient = default!;
 
-        public S3EndpointsTests(PostgresContainerFixture postgres, MinioContainerFixture minio)
+        public S3EndpointsTests(PostgresContainerFixture postgres, S3ContainerFixture s3)
         {
             _postgres = postgres;
-            _minio = minio;
+            _s3 = s3;
         }
 
         public async Task InitializeAsync()
@@ -60,9 +61,9 @@ namespace DatasetStudio.Tests.APIBackend
                 S3StorageProfileConfig profile = new()
                 {
                     Name = ProfileName,
-                    ServiceUrl = _minio.ServiceUrl,
-                    AccessKey = _minio.AccessKey,
-                    SecretKey = _minio.SecretKey,
+                    ServiceUrl = _s3.ServiceUrl,
+                    AccessKey = _s3.AccessKey,
+                    SecretKey = _s3.SecretKey,
                     ForcePathStyle = true,
                     AllowedBuckets = new() { Bucket },
                 };
@@ -77,15 +78,15 @@ namespace DatasetStudio.Tests.APIBackend
 
             AmazonS3Config s3Config = new()
             {
-                ServiceURL = _minio.ServiceUrl,
+                ServiceURL = _s3.ServiceUrl,
                 ForcePathStyle = true,
                 RequestChecksumCalculation = RequestChecksumCalculation.WHEN_REQUIRED,
                 ResponseChecksumValidation = ResponseChecksumValidation.WHEN_REQUIRED,
             };
-            _s3SeedClient = new AmazonS3Client(new BasicAWSCredentials(_minio.AccessKey, _minio.SecretKey), s3Config);
+            _s3SeedClient = new AmazonS3Client(new BasicAWSCredentials(_s3.AccessKey, _s3.SecretKey), s3Config);
             try
             {
-                // The MinIO container (and this bucket) is shared across every test in this
+                // The S3 container (and this bucket) is shared across every test in this
                 // collection -- xUnit creates a fresh S3EndpointsTests instance per [Fact], so
                 // this runs once per test, not once total.
                 await _s3SeedClient.PutBucketAsync(new PutBucketRequest { BucketName = Bucket });

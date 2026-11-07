@@ -36,10 +36,10 @@ fi
 
 if [[ "$WIPE" -eq 1 ]]; then
   info "Stopping database and DELETING its data volume ..."
-  $COMPOSE down -v
+  $COMPOSE --profile dev down -v
 else
   info "Stopping database container (data preserved) ..."
-  $COMPOSE down
+  $COMPOSE --profile dev down
 fi
 
 info "Done."
