@@ -11,20 +11,21 @@
 # Storage__S3StorageProfiles__0__* environment entries to the api service below if you want it
 # (docs/DEPLOYMENT.md, "S3 storage"); Storage:S3StorageProfiles simply defaults to an empty array.
 #
-# POSTGRES_DB names the production database. It defaults to dataset_studio. An install created
-# before this change used dataset_studio_dev: set POSTGRES_DB=dataset_studio_dev in .env before
-# upgrading, or the API will fail to find its database (docs/DEPLOYMENT.md, "Upgrading").
+# POSTGRES_DB names the production database. It keeps the name every existing install uses
+# (dataset_studio_dev) unless .env overrides it. Change it only on a fresh install: the API creates
+# a missing database on startup, so changing the name on an existing install silently starts an
+# empty database (docs/DEPLOYMENT.md, "Database name").
 services:
   postgres:
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-dataset_studio}
+      POSTGRES_DB: ${POSTGRES_DB:-dataset_studio_dev}
     ports: []
 
   api:
     ports: []
     environment:
-      ConnectionStrings__DatasetStudio: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-dataset_studio};Username=postgres;Password=${POSTGRES_PASSWORD};Include Error Detail=true"
+      ConnectionStrings__DatasetStudio: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-dataset_studio_dev};Username=postgres;Password=${POSTGRES_PASSWORD};Include Error Detail=true"
       # Must be the exact origin users' browsers load -- Program.cs fails fast at startup if
       # this doesn't match, rather than the credentialed cookie silently never working.
       Cors__AllowedOrigins__0: "https://${DOMAIN}"

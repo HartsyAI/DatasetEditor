@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+using DatasetStudio.APIBackend.Configuration;
 using DatasetStudio.APIBackend.Endpoints;
 using DatasetStudio.APIBackend.Extensions;
 using DatasetStudio.APIBackend.Models;
@@ -61,12 +61,10 @@ if (string.IsNullOrWhiteSpace(databaseConnectionString))
 // Request bodies are capped at 10 MB for every endpoint. Only the dataset upload route accepts files
 // larger than that: the middleware below raises the cap for that one path before the body is read.
 // Before this, every endpoint accepted 5 GB bodies (audit C-6).
-const long DefaultMaxRequestBodyBytes = 10L * 1024 * 1024;
-const long MaxUploadBodyBytes = 5L * 1024 * 1024 * 1024;
 
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
-    serverOptions.Limits.MaxRequestBodySize = DefaultMaxRequestBodyBytes;
+    serverOptions.Limits.MaxRequestBodySize = UploadRequestBodyLimit.DefaultMaxRequestBodyBytes;
 });
 
 // Form parsing is only reached by the upload route, so this limit applies only to it. The value and
@@ -74,7 +72,7 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 // guard that no upload needs (audit C-6).
 builder.Services.Configure<FormOptions>(options =>
 {
-    options.MultipartBodyLengthLimit = MaxUploadBodyBytes;
+    options.MultipartBodyLengthLimit = UploadRequestBodyLimit.MaxUploadBodyBytes;
 });
 
 // Without this, the cookie-auth encryption keys ASP.NET Core generates default to an
@@ -246,16 +244,14 @@ if (app.Environment.IsDevelopment())
 }
 // Raises the request-body cap for the dataset upload route and no other. ASP.NET Core only allows the
 // cap to change until the body is first read, so this runs before routing and model binding.
-Regex datasetUploadRoute = new(@"^/api/datasets/[0-9a-f-]{36}/upload/?$",
-    RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 app.Use(async (HttpContext context, RequestDelegate next) =>
 {
-    if (datasetUploadRoute.IsMatch(context.Request.Path.Value ?? string.Empty))
+    if (UploadRequestBodyLimit.IsDatasetUploadPath(context.Request.Path.Value ?? string.Empty))
     {
         IHttpMaxRequestBodySizeFeature? bodySizeLimit = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
         if (bodySizeLimit is { IsReadOnly: false })
         {
-            bodySizeLimit.MaxRequestBodySize = MaxUploadBodyBytes;
+            bodySizeLimit.MaxRequestBodySize = UploadRequestBodyLimit.MaxUploadBodyBytes;
         }
     }
 

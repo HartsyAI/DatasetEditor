@@ -61,20 +61,18 @@ point-in-time restores.
 DataProtection key ring `Program.cs` persists to `Storage:DataProtectionKeysPath`, default
 `./data/keys`) — not data-destroying, but every logged-in user has to log back in.
 
-## Upgrading an existing install
+## Database name
 
-The production database name changed from `dataset_studio_dev` to `dataset_studio`. An install that
-was created before this change keeps the old name, so set it in `.env` before the first start on
-this version:
+The production database is `dataset_studio_dev` by default, the name every existing install uses.
+`POSTGRES_DB` in `.env` overrides it:
 
-```bash
-grep -q '^POSTGRES_DB=' .env || echo 'POSTGRES_DB=dataset_studio_dev' >> .env
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-```
-
-`POSTGRES_DB` only takes effect when Postgres creates a new data volume. For an existing volume it
-just tells the API which database to connect to. If the name is wrong, the API fails at startup
-with a "database does not exist" error and nothing is modified.
+- **Existing installs:** leave `POSTGRES_DB` unset or set it to `dataset_studio_dev`. Nothing changes on upgrade.
+- **Fresh installs:** you may pick another name before the first `up`. Postgres creates the database
+  when it first initialises the data volume.
+- **Do not change the name on an existing install.** The API runs EF Core migrations on startup, and
+  EF creates a missing database before applying them. A changed name therefore starts an empty
+  database and leaves the real data behind, with no error. To move to another name, dump the old
+  database and restore it into the new one first.
 
 ## S3 storage (opt-in)
 
