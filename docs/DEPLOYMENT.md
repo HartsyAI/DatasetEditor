@@ -61,12 +61,24 @@ point-in-time restores.
 DataProtection key ring `Program.cs` persists to `Storage:DataProtectionKeysPath`, default
 `./data/keys`) — not data-destroying, but every logged-in user has to log back in.
 
+## Database name
+
+The production database is `dataset_studio_dev` by default, the name every existing install uses.
+`POSTGRES_DB` in `.env` overrides it:
+
+- **Existing installs:** leave `POSTGRES_DB` unset or set it to `dataset_studio_dev`. Nothing changes on upgrade.
+- **Fresh installs:** you may pick another name before the first `up`. Postgres creates the database
+  when it first initialises the data volume.
+- **Do not change the name on an existing install.** The API runs EF Core migrations on startup, and
+  EF creates a missing database before applying them. A changed name therefore starts an empty
+  database and leaves the real data behind, with no error. To move to another name, dump the old
+  database and restore it into the new one first.
+
 ## S3 storage (opt-in)
 
 `Storage:S3StorageProfiles` defaults to an empty array — no S3 support is configured out of the
 box. To add a profile, add `Storage__S3StorageProfiles__0__*` environment entries to the `api`
-service in `docker-compose.prod.yml` (see the commented `S3_PROFILE_*` variables in
-`.env.example` for the values you'll need): `Name`, `ServiceUrl` (blank for real AWS S3, set for
+service in `docker-compose.prod.yml`. The keys are `Name`, `ServiceUrl` (blank for real AWS S3, set for
 MinIO/R2/Backblaze), `AccessKey`, `SecretKey`, `ForcePathStyle`, and
 `AllowedBuckets__0`/`__1`/... — the explicit allow-list a profile's credentials may actually
 reach (see `S3StorageProfileConfig`'s own doc comment for why this isn't just "whatever bucket

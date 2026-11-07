@@ -1,3 +1,4 @@
+using DatasetStudio.APIBackend.Configuration;
 using DatasetStudio.APIBackend.Endpoints;
 using DatasetStudio.APIBackend.Extensions;
 using DatasetStudio.APIBackend.Models;
@@ -43,18 +44,35 @@ builder.Configuration
     .AddEnvironmentVariables()
     .AddCommandLine(args);
 
-// Configure Kestrel to allow large file uploads (5GB)
+// Fail fast when no database connection string is configured. The base appsettings.json used to
+// carry a placeholder password, so any run outside Development started and then died at the first
+// query with Npgsql 28P01 (audit C-1). The base file no longer has a connection string: Development
+// gets its local database from the overlay, and every other environment must supply
+// ConnectionStrings__DatasetStudio explicitly.
+string? databaseConnectionString = builder.Configuration.GetConnectionString("DatasetStudio");
+if (string.IsNullOrWhiteSpace(databaseConnectionString))
+{
+    throw new InvalidOperationException(
+        "Connection string 'DatasetStudio' is not configured. Set ConnectionStrings__DatasetStudio " +
+        "(see .env.example and docs/DEPLOYMENT.md), or run with ASPNETCORE_ENVIRONMENT=Development " +
+        "to use the local development database.");
+}
+
+// Request bodies are capped at 10 MB for every endpoint. Only the dataset upload route accepts files
+// larger than that: the middleware below raises the cap for that one path before the body is read.
+// Before this, every endpoint accepted 5 GB bodies (audit C-6).
+
 builder.WebHost.ConfigureKestrel(serverOptions =>
 {
-    serverOptions.Limits.MaxRequestBodySize = 5L * 1024 * 1024 * 1024; // 5GB
+    serverOptions.Limits.MaxRequestBodySize = UploadRequestBodyLimit.DefaultMaxRequestBodyBytes;
 });
 
-// Configure form options to allow large multipart uploads (5GB)
+// Form parsing is only reached by the upload route, so this limit applies only to it. The value and
+// header length guards stay at ASP.NET Core's defaults: setting them to int.MaxValue removed a DoS
+// guard that no upload needs (audit C-6).
 builder.Services.Configure<FormOptions>(options =>
 {
-    options.MultipartBodyLengthLimit = 5L * 1024 * 1024 * 1024; // 5GB
-    options.ValueLengthLimit = int.MaxValue;
-    options.MultipartHeadersLengthLimit = int.MaxValue;
+    options.MultipartBodyLengthLimit = UploadRequestBodyLimit.MaxUploadBodyBytes;
 });
 
 // Without this, the cookie-auth encryption keys ASP.NET Core generates default to an
@@ -224,6 +242,22 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+// Raises the request-body cap for the dataset upload route and no other. ASP.NET Core only allows the
+// cap to change until the body is first read, so this runs before routing and model binding.
+app.Use(async (HttpContext context, RequestDelegate next) =>
+{
+    if (UploadRequestBodyLimit.IsDatasetUploadPath(context.Request.Path.Value ?? string.Empty))
+    {
+        IHttpMaxRequestBodySizeFeature? bodySizeLimit = context.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (bodySizeLimit is { IsReadOnly: false })
+        {
+            bodySizeLimit.MaxRequestBodySize = UploadRequestBodyLimit.MaxUploadBodyBytes;
+        }
+    }
+
+    await next(context);
+});
+
 app.UseBlazorFrameworkFiles();
 app.UseStaticFiles();
 app.UseRouting();
@@ -283,7 +317,16 @@ app.MapAuthEndpoints();
 app.MapDatasetEndpoints();
 app.MapItemEditEndpoints();
 
-app.MapFallbackToFile("index.html");
+// Unknown /api routes answer 404 instead of falling through to the SPA shell (audit C-8). These are
+// ordinary endpoints, so they take precedence over the file fallback below.
+app.MapMethods(
+        "/api/{*path}",
+        [HttpMethods.Get, HttpMethods.Head, HttpMethods.Post, HttpMethods.Put, HttpMethods.Patch, HttpMethods.Delete, HttpMethods.Options],
+        () => Results.NotFound())
+    .ExcludeFromDescription();
+
+// Everything that is neither an API route nor a real static file gets the Blazor app shell.
+app.MapFallbackToFile("{*path:nonfile}", "index.html");
 
 app.Run();
 
