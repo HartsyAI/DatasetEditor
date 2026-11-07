@@ -12,8 +12,8 @@ WORKDIR /src
 # explicit `using System;`-style directives. Miss this COPY and the build fails with every
 # basic BCL type ("List<>", "Task", "DateTime", ...) reported as unresolved -- a genuinely
 # confusing error to debug blind, since it looks exactly like a missing target-framework
-# reference pack (a real, much rarer possibility for a repo mixing net10.0/net8.0 projects like
-# this one) rather than a missing implicit-usings source file. Confirmed by reproducing the
+# reference pack (a real, much rarer possibility) rather than a missing implicit-usings source
+# file. Confirmed by reproducing the
 # failure with this file absent and fixing it by adding just this one line, nothing else.
 COPY Directory.Build.props .
 COPY src/ src/

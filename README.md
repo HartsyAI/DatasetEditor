@@ -377,11 +377,13 @@ via `docker-compose.prod.yml`; secrets via `.env`. See [docs/DEPLOYMENT.md](docs
 
 | Path | Target | Role |
 |---|---|---|
-| `src/Core` | net8.0 | Domain models, shared abstractions, a client-era parser/filter library (largely unused by the API) |
-| `src/DTO` | net8.0 | Wire contracts shared by API and client |
-| `src/APIBackend` | net10.0 | Minimal API, EF Core/Npgsql, Parquet storage, ingestion, HF/S3 integration |
-| `src/ClientApp` | net8.0 | Blazor WASM UI (MudBlazor 7) |
-| `src/Extensions` | net8.0 | SDK, SDK.Api, built-in manifests |
+| `src/Core` | net10.0 | Domain models, shared abstractions, a client-era parser/filter library (largely unused by the API) |
+| `src/DTO` | net10.0 | Wire contracts shared by API and client |
+| `src/APIBackend` | net10.0 | Minimal API, EF Core 10/Npgsql, Parquet storage, ingestion, HF/S3 integration |
+| `src/ClientApp` | net10.0 | Blazor WASM UI (MudBlazor 7.8) |
+| `src/Extensions` | net10.0 | SDK, SDK.Api, built-in manifests |
+
+All projects target net10.0 (audit C-4). Package versions are pinned, and each project keeps a committed `packages.lock.json` (audit C-9). Restore with `dotnet restore` and review the lock-file diff when you change a package.
 | `tests/` | — | `APIBackend.Tests` (xUnit, Testcontainers Postgres/MinIO), `ClientApp.Tests` |
 
 ---

@@ -78,12 +78,11 @@ the request names").
   `<ImplicitUsings>enable</ImplicitUsings>`, which most of this repo's source relies on instead
   of explicit `using System;`-style directives. Miss it and the build fails with every basic
   BCL type reported as unresolved — a genuinely confusing error that looks like a missing
-  net8.0/net10.0 multi-targeting reference pack (a real, much rarer possibility given this repo
-  mixes TFMs) rather than a missing implicit-usings source file.
+  reference pack rather than a missing implicit-usings source file.
 - **Don't split `dotnet restore` (with only `.csproj` files) from the full-source `publish`
   step** as a Docker layer-caching optimization -- confirmed live that doing so left the SDK in
-  a state where the later publish failed on the net8.0 projects with the same symptom as above,
-  even with `Directory.Build.props` present. A single restore+publish after the full source
+  a state where the later publish failed with the same symptom as above, even with
+  `Directory.Build.props` present. A single restore+publish after the full source
   copy works; the cost is a full restore on every source change, not just dependency changes.
 - **Docker named volumes mount root-owned**, regardless of what the image had baked in at that
   path via a build-time `chown`. The `api` container's entrypoint (`docker-entrypoint.sh`)

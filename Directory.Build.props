@@ -1,9 +1,14 @@
 <Project>
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <!-- One target for the whole solution (audit C-4). The API host, Blazor client, shared
+         libraries, extensions and tests all build for net10.0, the same SDK the Dockerfile uses. -->
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <!-- Commit packages.lock.json next to each project, so every restore resolves the same
+         package graph (audit C-9). Update with `dotnet restore` and review the diff. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <Authors>Hartsy</Authors>
     <Company>Hartsy</Company>
     <Product>Dataset Studio</Product>
