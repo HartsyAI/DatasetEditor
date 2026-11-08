@@ -191,14 +191,30 @@ public class DatasetState
         return SelectedItems.Contains(item);
     }
     
-    /// <summary>Updates an item in the dataset.</summary>
-    /// <param name="item">Item to update.</param>
+    /// <summary>Replaces an item in the dataset and in any selection that holds it.</summary>
+    /// <param name="item">Edited item; matched to the existing entry by <see cref="DatasetItemDto.Id"/>.</param>
+    /// <remarks>
+    /// Selection holds the DTO that was selected, and DTO equality is by value, so a stale entry no
+    /// longer matches the edited item. Without swapping the selection too, the checkbox unchecks and
+    /// a second toggle adds a duplicate for the same id.
+    /// </remarks>
     public void UpdateItem(DatasetItemDto item)
     {
         int index = Items.FindIndex(i => i.Id == item.Id);
         if (index >= 0)
         {
             Items[index] = item;
+            for (int i = 0; i < SelectedItems.Count; i++)
+            {
+                if (SelectedItems[i].Id == item.Id)
+                {
+                    SelectedItems[i] = item;
+                }
+            }
+            if (SelectedItem?.Id == item.Id)
+            {
+                SelectedItem = item;
+            }
             NotifyStateChanged();
             Logs.Info($"Item updated: {item.Id}");
         }

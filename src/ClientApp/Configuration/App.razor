@@ -1,32 +1,33 @@
 <CascadingAuthenticationState>
-    <Router AppAssembly="@typeof(App).Assembly">
-        <Found Context="routeData">
-            <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
-                <NotAuthorized>
-                    <RedirectToLogin />
-                </NotAuthorized>
-                <Authorizing>
+    <DatasetStudio.ClientApp.Shared.Components.ErrorBoundary FriendlyErrorMessage="Something went wrong while loading this page. Try again, or reload the app if it keeps happening.">
+        <Router AppAssembly="@typeof(App).Assembly">
+            <Found Context="routeData">
+                <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)">
+                    <NotAuthorized>
+                        <RedirectToLogin />
+                    </NotAuthorized>
+                    <Authorizing>
+                        <MudContainer Class="mt-8">
+                            <MudText>Checking access...</MudText>
+                        </MudContainer>
+                    </Authorizing>
+                </AuthorizeRouteView>
+                <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+            </Found>
+            <NotFound>
+                <PageTitle>Not found</PageTitle>
+                <LayoutView Layout="@typeof(MainLayout)">
                     <MudContainer Class="mt-8">
-                        <MudText>Checking access...</MudText>
+                        <MudText Typo="Typo.h4" GutterBottom="true">Page not found</MudText>
+                        <MudText>The requested page could not be found.</MudText>
+                        <MudButton Href="/" Variant="Variant.Filled" Color="Color.Primary" Class="mt-4">
+                            Go to Home
+                        </MudButton>
                     </MudContainer>
-                </Authorizing>
-            </AuthorizeRouteView>
-            <FocusOnNavigate RouteData="@routeData" Selector="h1" />
-        </Found>
-        <NotFound>
-            <PageTitle>Not found</PageTitle>
-            <LayoutView Layout="@typeof(MainLayout)">
-                <MudContainer Class="mt-8">
-                    <MudText Typo="Typo.h4" GutterBottom="true">Page not found</MudText>
-                    <MudText>The requested page could not be found.</MudText>
-                    <MudButton Href="/" Variant="Variant.Filled" Color="Color.Primary" Class="mt-4">
-                        Go to Home
-                    </MudButton>
-                </MudContainer>
-            </LayoutView>
-        </NotFound>
-    </Router>
+                </LayoutView>
+            </NotFound>
+        </Router>
+    </DatasetStudio.ClientApp.Shared.Components.ErrorBoundary>
 </CascadingAuthenticationState>
 
-@* TODO: Add error boundary for global error handling *@
 @* TODO: Add loading indicator for initial app load *@

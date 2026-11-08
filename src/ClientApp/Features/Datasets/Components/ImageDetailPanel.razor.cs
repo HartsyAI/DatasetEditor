@@ -36,7 +36,7 @@ public partial class ImageDetailPanel
         if (Item != null)
         {
             _editTitle = Item.Title;
-            _editDescription = Item.Description;
+            _editDescription = Item.Description ?? string.Empty;
         }
     }
 

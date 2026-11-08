@@ -53,9 +53,9 @@
         }
         else
         {
-            @foreach (string datasetName in _recentDatasets)
+            @foreach (var (datasetId, datasetName) in _recentDatasets)
             {
-                <MudNavLink Href="@GetDatasetUrl(datasetName)" 
+                <MudNavLink Href="@GetDatasetUrl(datasetId)"
                            Icon="@Icons.Material.Filled.Folder">
                     @datasetName
                 </MudNavLink>

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using MudBlazor;
 using DatasetStudio.ClientApp.Features.Auth.Services;
 using DatasetStudio.ClientApp.Services.StateManagement;
 using DatasetStudio.Core.Utilities;
@@ -13,15 +14,28 @@ public partial class NavMenu : IDisposable
     [Inject] private AuthApiClient AuthApiClient { get; set; } = default!;
     [Inject] private CookieAuthenticationStateProvider AuthStateProvider { get; set; } = default!;
     [Inject] private NavigationManager Navigation { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
 
     private async Task LogoutAsync()
     {
-        await AuthApiClient.LogoutAsync();
+        try
+        {
+            await AuthApiClient.LogoutAsync();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
+        {
+            // The server may still hold the session, so do not report a sign-out that did not
+            // happen (audit U-28). The user can retry.
+            Logs.Warning($"Logout request did not complete: {ex.GetType().Name}");
+            Snackbar.Add("Could not sign out because the server is unreachable. Try again.", Severity.Error);
+            return;
+        }
+
         AuthStateProvider.NotifyUserLoggedOut();
         Navigation.NavigateTo("/", forceLoad: false);
     }
 
-    public List<string> _recentDatasets = new();
+    public List<(string Id, string Name)> _recentDatasets = new();
 
     /// <summary>Initializes component and loads recent datasets.</summary>
     protected override void OnInitialized()
@@ -36,7 +50,7 @@ public partial class NavMenu : IDisposable
     {
         // TODO: Load from LocalStorage
         // For now, use placeholder data
-        _recentDatasets = new List<string>
+        _recentDatasets = new List<(string Id, string Name)>
         {
             // Will be populated from LocalStorage in future
         };
@@ -44,10 +58,11 @@ public partial class NavMenu : IDisposable
         // If a dataset is currently loaded, add it to recent
         if (DatasetState.CurrentDataset != null)
         {
-            string datasetName = DatasetState.CurrentDataset.Name;
-            if (!_recentDatasets.Contains(datasetName))
+            // Keep the id with the name: the viewer loads by id, so a name-only link cannot open it.
+            (string Id, string Name) current = (DatasetState.CurrentDataset.Id, DatasetState.CurrentDataset.Name);
+            if (!_recentDatasets.Contains(current))
             {
-                _recentDatasets.Insert(0, datasetName);
+                _recentDatasets.Insert(0, current);
                 
                 // Keep only last 5 recent datasets
                 if (_recentDatasets.Count > 5)
@@ -59,11 +74,11 @@ public partial class NavMenu : IDisposable
     }
 
     /// <summary>Generates the URL for navigating to a specific dataset.</summary>
-    /// <param name="datasetName">Name of the dataset.</param>
-    /// <returns>URL with dataset name as query parameter.</returns>
-    public string GetDatasetUrl(string datasetName)
+    /// <param name="datasetId">Id of the dataset. The viewer reads only the <c>id</c> query parameter.</param>
+    /// <returns>URL with the dataset id as query parameter.</returns>
+    public string GetDatasetUrl(string datasetId)
     {
-        return $"/dataset-viewer?name={Uri.EscapeDataString(datasetName)}";
+        return $"/dataset-viewer?id={Uri.EscapeDataString(datasetId)}";
     }
 
     /// <summary>Unsubscribes from state changes on disposal.</summary>

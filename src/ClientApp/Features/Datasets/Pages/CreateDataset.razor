@@ -6,8 +6,8 @@
 <MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
     <MudText Typo="Typo.h4" Class="mb-4">Create Dataset</MudText>
 
-    <MudStepper ActiveIndex="_activeStep" ActiveIndexChanged="OnActiveStepChanged" Elevation="1">
-        <MudStep Label="Source">
+    <MudTabs ActivePanelIndex="_activeStep" ActivePanelIndexChanged="OnActiveStepChanged" Elevation="1">
+        <MudTabPanel Text="Source">
             <MudStack Spacing="3" Class="mt-4">
                 <MudText Typo="Typo.body1" Class="mud-text-secondary">
                     Choose how you want to create or import your dataset.
@@ -71,9 +71,9 @@
                     </MudItem>
                 </MudGrid>
             </MudStack>
-        </MudStep>
+        </MudTabPanel>
 
-        <MudStep Label="Configure &amp; Ingest" Disabled="@string.IsNullOrEmpty(_selectedSource)">
+        <MudTabPanel Text="Configure &amp; Ingest" Disabled="@string.IsNullOrEmpty(_selectedSource)">
             <MudStack Spacing="3" Class="mt-4">
                 @if (string.IsNullOrEmpty(_selectedSource))
                 {
@@ -98,8 +98,8 @@
                     <DatasetUploader InitialTabIndex="3" />
                 }
             </MudStack>
-        </MudStep>
-    </MudStepper>
+        </MudTabPanel>
+    </MudTabs>
 </MudContainer>
 
 @code {

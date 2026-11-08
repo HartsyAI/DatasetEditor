@@ -1,11 +1,13 @@
 @* Rendered by AuthorizeRouteView's <NotAuthorized> when an anonymous visitor hits an
    [Authorize]-gated page (e.g. Create Dataset). Immediately navigates to /login rather than
-   showing a dead-end "not authorized" page. *@
+   showing a dead-end "not authorized" page. The return target is passed as a same-site path
+   (leading slash, no scheme or host); Login.razor.cs rejects anything else (audit A-8). *@
 @inject NavigationManager Navigation
 
 @code {
     protected override void OnInitialized()
     {
-        Navigation.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(Navigation.Uri)}");
+        string returnPath = "/" + Navigation.ToBaseRelativePath(Navigation.Uri);
+        Navigation.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(returnPath)}");
     }
 }

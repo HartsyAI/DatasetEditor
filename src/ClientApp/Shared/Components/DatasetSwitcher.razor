@@ -1,17 +1,16 @@
 @using DatasetStudio.DTO.Datasets
 @using DatasetStudio.Core.Utilities
+@using DatasetStudio.ClientApp.Services.ApiClients
 @using DatasetStudio.ClientApp.Services.StateManagement
-@using System.Net.Http.Json
-@using System.Text.Json
 @inject DatasetState DatasetState
 @inject NavigationManager Navigation
-@inject HttpClient HttpClient
+@inject DatasetApiClient DatasetApiClient
 
-<MudMenu Icon="@Icons.Material.Filled.Dataset" 
+<MudMenu Icon="@Icons.Material.Filled.Dataset"
          Label="@GetCurrentDatasetName()"
          Color="Color.Inherit"
          Dense="true">
-    
+
     @if (_recentDatasets.Any())
     {
         <MudText Typo="Typo.subtitle2" Class="px-4 py-2">Recent Datasets</MudText>
@@ -27,12 +26,12 @@
         }
         <MudDivider />
     }
-    
+
     <MudMenuItem OnClick="BrowseAll"
                 Icon="@Icons.Material.Filled.FolderOpen">
         Browse All Datasets
     </MudMenuItem>
-    
+
     <MudMenuItem OnClick="UploadNew"
                 Icon="@Icons.Material.Filled.CloudUpload">
         Upload New Dataset
@@ -47,55 +46,20 @@
         await LoadRecentDatasetsAsync();
     }
 
+    /// <summary>
+    /// Loads the five most recent datasets through the typed client, which attaches the session
+    /// cookie. A raw HttpClient call here was unauthenticated and failed in dev (audit U-2).
+    /// </summary>
     private async Task LoadRecentDatasetsAsync()
     {
         try
         {
-            // Load recent datasets (first 5)
-            HttpResponseMessage response = await HttpClient.GetAsync("/api/datasets?page=0&pageSize=5");
-            
-            if (response.IsSuccessStatusCode)
-            {
-                // Check if response is JSON
-                string? contentType = response.Content.Headers.ContentType?.MediaType;
-                if (contentType != null && !contentType.Contains("json", StringComparison.OrdinalIgnoreCase))
-                {
-                    Logs.Warning($"API returned non-JSON content: {contentType}");
-                    return;
-                }
-                
-                string json = await response.Content.ReadAsStringAsync();
-                
-                // Handle empty or invalid JSON
-                if (string.IsNullOrWhiteSpace(json) || json.StartsWith("<"))
-                {
-                    Logs.Warning("API returned empty or HTML response (likely no datasets exist yet)");
-                    _recentDatasets = new List<DatasetSummaryDto>();
-                    return;
-                }
-                
-                using JsonDocument doc = JsonDocument.Parse(json);
-                
-                if (doc.RootElement.TryGetProperty("datasets", out JsonElement datasetsElement))
-                {
-                    _recentDatasets = JsonSerializer.Deserialize<List<DatasetSummaryDto>>(
-                        datasetsElement.GetRawText(),
-                        new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
-                }
-                else
-                {
-                    _recentDatasets = new List<DatasetSummaryDto>();
-                }
-            }
-            else
-            {
-                Logs.Warning($"Failed to load recent datasets: {response.StatusCode}");
-                _recentDatasets = new List<DatasetSummaryDto>();
-            }
+            IReadOnlyList<DatasetSummaryDto> datasets = await DatasetApiClient.GetAllDatasetsAsync(page: 0, pageSize: 5);
+            _recentDatasets = datasets.ToList();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
         {
-            Logs.Error("Failed to load recent datasets", ex);
+            Logs.Warning($"Failed to load recent datasets: {ex.GetType().Name}");
             _recentDatasets = new List<DatasetSummaryDto>();
         }
     }
@@ -117,6 +81,6 @@
 
     private void UploadNew()
     {
-        Navigation.NavigateTo("/upload");
+        Navigation.NavigateTo("/datasets/create");
     }
 }

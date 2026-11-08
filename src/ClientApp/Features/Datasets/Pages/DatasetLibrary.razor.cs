@@ -15,6 +15,7 @@ public partial class DatasetLibrary : ComponentBase
     [Inject] public DatasetApiClient DatasetApiClient { get; set; } = default!;
     [Inject] public NavigationManager Navigation { get; set; } = default!;
     [Inject] public ISnackbar Snackbar { get; set; } = default!;
+    [Inject] public IDialogService DialogService { get; set; } = default!;
 
     [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
 
@@ -114,6 +115,17 @@ public partial class DatasetLibrary : ComponentBase
 
     private async Task DeleteDatasetAsync(DatasetSummaryDto dataset)
     {
+        // Deletion removes the dataset's shards and cannot be undone, so the user confirms first.
+        bool? confirmed = await DialogService.ShowMessageBox(
+            "Delete dataset",
+            $"Delete '{dataset.Name}'? This cannot be undone.",
+            yesText: "Delete",
+            noText: "Cancel");
+        if (confirmed != true)
+        {
+            return;
+        }
+
         try
         {
             bool success = await DatasetApiClient.DeleteDatasetAsync(dataset.Id, CancellationToken.None);
