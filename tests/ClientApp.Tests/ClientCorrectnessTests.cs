@@ -8,6 +8,7 @@ using DatasetStudio.ClientApp.Features.Auth.Services;
 using DatasetStudio.ClientApp.Features.Datasets.Services;
 using DatasetStudio.ClientApp.Services.ApiClients;
 using DatasetStudio.ClientApp.Services.StateManagement;
+using DatasetStudio.Core.DomainModels.Datasets;
 using DatasetStudio.DTO.Datasets;
 using Microsoft.AspNetCore.Components.Authorization;
 using Xunit;
@@ -117,6 +118,28 @@ namespace DatasetStudio.Tests.ClientApp
             bool saved = await service.UpdateItemAsync(new DatasetItemDto { Id = Guid.NewGuid() }, title: "x");
 
             Assert.False(saved);
+        }
+
+        [Fact]
+        public void DatasetState_UpdateItem_KeepsEditedItemSelected()
+        {
+            // Codex P2 on PR #6: replacing the item left the old DTO in SelectedItems, so the edited
+            // item read as unselected and a second toggle added a duplicate. It fails on that code.
+            Guid itemId = Guid.NewGuid();
+            DatasetItemDto original = new() { Id = itemId, Title = "before" };
+            DatasetState state = new();
+            state.LoadDataset(new Dataset { Id = "ds", Name = "test" }, new List<DatasetItemDto> { original });
+            state.ToggleSelection(original);
+
+            DatasetItemDto edited = new() { Id = itemId, Title = "after" };
+            state.UpdateItem(edited);
+
+            Assert.True(state.IsSelected(edited));
+            Assert.Equal(1, state.SelectedCount);
+
+            state.ToggleSelection(edited);
+
+            Assert.Equal(0, state.SelectedCount);
         }
     }
 }
