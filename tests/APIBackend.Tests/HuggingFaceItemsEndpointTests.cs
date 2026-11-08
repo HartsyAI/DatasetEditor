@@ -145,5 +145,22 @@ namespace DatasetStudio.Tests.APIBackend
             long stored = (await db.Datasets.AsNoTracking().FirstAsync(d => d.Id == dataset.Id)).TotalItems;
             stored.Should().Be(70_000);
         }
+
+        [Fact]
+        public async Task GetItems_SizeDiscoveryFails_StillServesRowsFromTrainSplit()
+        {
+            // Codex P2 on PR #7: /size is best-effort. A failed discovery must not block a dataset whose
+            // /rows can still be read; only a failed rows request is an error.
+            DatasetDetailDto dataset = await CreateStreamingDatasetAsync(split: null);
+            _hfServerClientMock
+                .Setup(c => c.GetDatasetSizeAsync(Repo, null, null, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new HuggingFaceUpstreamException("size unavailable", HttpStatusCode.NotFound));
+            SetupRows(numRowsTotal: 42);
+
+            HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{dataset.Id}/items?pageSize=10");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            _hfServerClientMock.Verify(c => c.GetRowsAsync(Repo, It.IsAny<string?>(), "train", 0, 10, It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
+        }
     }
 }

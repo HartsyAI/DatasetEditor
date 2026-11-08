@@ -354,9 +354,11 @@ internal static class DatasetEndpoints
                         accessToken,
                         cancellationToken);
                 }
-                catch (HuggingFaceUpstreamException ex)
+                catch (HuggingFaceUpstreamException)
                 {
-                    return HuggingFaceUpstreamFailure(ex, repository);
+                    // /size is best-effort: some datasets (and imports from before it was read) have none.
+                    // Keep the train fallback and let the rows request report a real upstream failure.
+                    sizeInfo = null;
                 }
 
                 if (sizeInfo != null)

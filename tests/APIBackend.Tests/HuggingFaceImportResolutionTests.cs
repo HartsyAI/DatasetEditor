@@ -74,5 +74,29 @@ namespace DatasetStudio.Tests.APIBackend
                 It.Is<DatasetDto>(d => d.Id == datasetId && d.HuggingFaceConfig == "default" && d.HuggingFaceSplit == "train"),
                 It.IsAny<CancellationToken>()), Times.Once);
         }
+
+        [Fact]
+        public async Task ImportStreaming_ExplicitConfigWithoutItsSplit_DoesNotBorrowAnotherConfigsSplit()
+        {
+            // Codex P2 on PR #7: the match is persisted as the dataset's source, so a split that exists
+            // only under another config must not be recorded for an explicitly requested config.
+            Guid datasetId = Guid.NewGuid();
+            var datasetRepoMock = new Mock<IDatasetRepository>();
+            var datasetServerMock = new Mock<IHuggingFaceDatasetServerClient>();
+            datasetServerMock
+                .Setup(c => c.GetAllSplitsAsync("org/ds", null, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<HuggingFaceDatasetSplitInfo>
+                {
+                    new() { Dataset = "org/ds", Config = "B", Split = "validation", NumRows = 50 },
+                });
+
+            await CreateService(datasetRepoMock.Object, datasetServerMock.Object).ImportFromHuggingFaceAsync(
+                datasetId,
+                new ImportHuggingFaceDatasetRequest { Repository = "org/ds", IsStreaming = true, Config = "A", Split = "validation" },
+                CancellationToken.None);
+
+            datasetRepoMock.Verify(r => r.UpdateItemCountAsync(It.IsAny<Guid>(), It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
+            datasetRepoMock.Verify(r => r.UpdateAsync(It.IsAny<DatasetDto>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
     }
 }

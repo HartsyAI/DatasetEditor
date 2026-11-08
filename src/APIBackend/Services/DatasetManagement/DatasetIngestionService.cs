@@ -68,9 +68,10 @@ public class DatasetIngestionService : IDatasetIngestionService
     }
 
     /// <summary>
-    /// Chooses the config/split a streaming import counts. An explicit config and split must match
-    /// exactly, with the split name alone as a fallback (as before). With no split given, the default
-    /// is the "train" split of the requested config, or the first split datasets-server lists.
+    /// Chooses the config/split a streaming import counts. A requested split must match exactly
+    /// within the requested config. It is never swapped for another config's split, because the match
+    /// is persisted as the dataset's source. With no split given, the default is the "train" split of
+    /// the requested config, or the first split datasets-server lists.
     /// </summary>
     private static HuggingFaceDatasetSplitInfo? PickStreamingSplit(
         IReadOnlyList<HuggingFaceDatasetSplitInfo>? splits,
@@ -88,8 +89,7 @@ public class DatasetIngestionService : IDatasetIngestionService
 
         if (!string.IsNullOrWhiteSpace(split))
         {
-            return inConfig.FirstOrDefault(s => string.Equals(s.Split, split, StringComparison.Ordinal))
-                ?? splits.FirstOrDefault(s => string.Equals(s.Split, split, StringComparison.Ordinal));
+            return inConfig.FirstOrDefault(s => string.Equals(s.Split, split, StringComparison.Ordinal));
         }
 
         return inConfig.FirstOrDefault(s => string.Equals(s.Split, "train", StringComparison.Ordinal))
