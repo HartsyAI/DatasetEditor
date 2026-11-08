@@ -385,7 +385,7 @@ via `docker-compose.prod.yml`; secrets via `.env`. See [docs/DEPLOYMENT.md](docs
 | `src/Extensions` | net10.0 | SDK, SDK.Api, built-in manifests |
 
 All projects target net10.0 (audit C-4). Package versions are pinned, and each project keeps a committed `packages.lock.json` (audit C-9). Restore with `dotnet restore` and review the lock-file diff when you change a package.
-| `tests/` | — | `APIBackend.Tests` (xUnit, Testcontainers Postgres/MinIO), `ClientApp.Tests` |
+| `tests/` | — | `APIBackend.Tests` (xUnit, Testcontainers Postgres and S3Mock), `ClientApp.Tests` |
 
 ---
 
@@ -414,7 +414,8 @@ dotnet test                          # both projects; APIBackend.Tests needs Doc
 dotnet test tests/ClientApp.Tests    # no Docker
 ```
 
-Integration tests spin up real Postgres and MinIO containers. Coverage is strongest on
+Integration tests spin up a real Postgres container and, for the S3 tests only, an Adobe S3Mock
+container (`adobe/s3mock`, pinned; MinIO is no longer pullable anonymously). Coverage is strongest on
 endpoints, security checks (`ServeDatasetFileSecurityTests`, `S3KeySafetyTests`) and
 streaming ingestion; the client has almost no tests (see the audit).
 
