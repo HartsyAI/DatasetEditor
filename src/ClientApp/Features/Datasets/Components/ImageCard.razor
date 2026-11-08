@@ -62,7 +62,7 @@
         {
             <MudTextField T="string" @bind-Value="_editTitle"
                           Variant="Variant.Outlined"
-                          Dense="true"
+                          Margin="Margin.Dense"
                           Class="card-title-input"
                           Immediate="true"
                           AutoFocus="true"
@@ -74,11 +74,13 @@
             <div class="d-flex align-center justify-space-between">
                 <MudText Typo="Typo.body2" Class="card-title">@GetDisplayTitle()</MudText>
                 <div @onclick:stopPropagation="true">
-                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
-                                   Size="Size.Small"
-                                   Color="Color.Default"
-                                   OnClick="StartEditTitle"
-                                   Title="Edit title" />
+                    <MudTooltip Text="Edit title">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                       Size="Size.Small"
+                                       Color="Color.Default"
+                                       OnClick="StartEditTitle"
+                                       aria-label="Edit title" />
+                    </MudTooltip>
                 </div>
             </div>
         }
@@ -119,21 +121,27 @@
             
             @* Quick actions *@
             <div class="hover-actions" @onclick:stopPropagation="true">
-                <MudIconButton Icon="@Icons.Material.Outlined.Fullscreen" 
-                              Size="Size.Small" 
-                              Color="Color.Surface"
-                              Title="View fullscreen"
-                              OnClick="@(() => HandleClick())" />
-                <MudIconButton Icon="@Icons.Material.Outlined.Edit" 
-                              Size="Size.Small" 
-                              Color="Color.Surface"
-                              Title="Edit"
-                              OnClick="HandleEditClick" />
-                <MudIconButton Icon="@Icons.Material.Outlined.Download" 
-                              Size="Size.Small" 
-                              Color="Color.Surface"
-                              Title="Download"
-                              OnClick="HandleDownload" />
+                <MudTooltip Text="View fullscreen">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Fullscreen"
+                                   Size="Size.Small"
+                                   Color="Color.Surface"
+                                   aria-label="View fullscreen"
+                                   OnClick="@(() => HandleClick())" />
+                </MudTooltip>
+                <MudTooltip Text="Edit">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Edit"
+                                   Size="Size.Small"
+                                   Color="Color.Surface"
+                                   aria-label="Edit"
+                                   OnClick="HandleEditClick" />
+                </MudTooltip>
+                <MudTooltip Text="Download">
+                    <MudIconButton Icon="@Icons.Material.Outlined.Download"
+                                   Size="Size.Small"
+                                   Color="Color.Surface"
+                                   aria-label="Download"
+                                   OnClick="HandleDownload" />
+                </MudTooltip>
             </div>
         </div>
     }

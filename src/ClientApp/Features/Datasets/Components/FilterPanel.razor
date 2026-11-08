@@ -32,7 +32,7 @@
         
         @* Tags Filter *@
         <MudExpansionPanels MultiExpansion="true">
-            <MudExpansionPanel Text="Tags" IsInitiallyExpanded="true">
+            <MudExpansionPanel Text="Tags" Expanded="true">
                 @if (_availableTags.Count == 0)
                 {
                     <MudText Typo="Typo.body2" Class="mud-text-secondary">No tags available</MudText>
@@ -43,8 +43,8 @@
                         @foreach (string tag in _availableTags.Take(10))
                         {
                             <MudCheckBox T="bool"
-                                         Checked="@_selectedTags[tag]"
-                                         CheckedChanged="@((bool value) => HandleTagChanged(tag, value))"
+                                         Value="@_selectedTags[tag]"
+                                         ValueChanged="@((bool value) => HandleTagChanged(tag, value))"
                                          Label="@tag"
                                          Color="Color.Primary"
                                          Dense="true" />

@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using DatasetStudio.DTO.Auth;
+using DatasetStudio.Core.Utilities.Logging;
 using Microsoft.AspNetCore.Components.Authorization;
 
 namespace DatasetStudio.ClientApp.Features.Auth.Services;
@@ -25,9 +26,20 @@ public sealed class CookieAuthenticationStateProvider : AuthenticationStateProvi
 
     public override async Task<AuthenticationState> GetAuthenticationStateAsync()
     {
-        AuthUserDto? user = await _authApiClient.GetMeAsync();
-        ClaimsPrincipal principal = user is null ? Anonymous : BuildPrincipal(user);
-        return new AuthenticationState(principal);
+        try
+        {
+            AuthUserDto? user = await _authApiClient.GetMeAsync();
+            ClaimsPrincipal principal = user is null ? Anonymous : BuildPrincipal(user);
+            return new AuthenticationState(principal);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
+        {
+            // API unreachable or timed out. Treat the visitor as anonymous so the login page renders
+            // instead of the fatal "unhandled error" banner (audit U-9). Not an authentication
+            // result, so it is logged rather than reported as "logged out".
+            Logs.Warning($"Auth check failed; treating visitor as anonymous: {ex.GetType().Name}");
+            return new AuthenticationState(Anonymous);
+        }
     }
 
     public void NotifyUserAuthenticated(AuthUserDto user) =>

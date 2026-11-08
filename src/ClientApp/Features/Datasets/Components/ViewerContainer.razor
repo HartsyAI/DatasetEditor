@@ -41,7 +41,9 @@
 }
 else if (_modality == Modality.Text)
 {
-    <TextGrid OnItemSelected="@OnItemSelected" />
+    <MudAlert Severity="Severity.Info">
+        Text viewer is not available yet.
+    </MudAlert>
 }
 else if (_modality == Modality.Video)
 {

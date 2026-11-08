@@ -1,31 +1,41 @@
 @inherits ErrorBoundaryBase
 
-@* TODO: Replace placeholder visuals once error-state visual language is approved. *@
-<MudPaper Class="pa-6" Elevation="1">
-    <MudStack Spacing="2">
-        <MudIcon Size="Size.Large" Color="Color.Error">@Icons.Material.Filled.ErrorOutline</MudIcon>
-        <MudText Typo="Typo.h5">Something went wrong</MudText>
-        <MudText Typo="Typo.body1" Class="mud-text-secondary">
-            @_friendlyErrorMessage
-        </MudText>
+@* Renders its children normally and swaps in the error panel only after a child throws.
+   This follows the ErrorBoundaryBase pattern: the panel is shown when CurrentException is set,
+   otherwise ChildContent is rendered. Before this, the panel was the only markup, so wrapping the
+   router hid every page (found while verifying PR 1.5). *@
+@if (CurrentException is null)
+{
+    @ChildContent
+}
+else
+{
+    <MudPaper Class="pa-6" Elevation="1">
+        <MudStack Spacing="2">
+            <MudIcon Icon="@Icons.Material.Filled.ErrorOutline" Size="Size.Large" Color="Color.Error" />
+            <MudText Typo="Typo.h5">Something went wrong</MudText>
+            <MudText Typo="Typo.body1" Class="mud-text-secondary">
+                @_friendlyErrorMessage
+            </MudText>
 
-        <MudStack Direction="Row" Spacing="2">
-            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="@OnRetryAsync">
-                Try again
-            </MudButton>
-            <MudButton Color="Color.Secondary" Variant="Variant.Text" OnClick="@LogAndReportAsync">
-                Report issue
-            </MudButton>
+            <MudStack Row="true" Spacing="2">
+                <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="@OnRetryAsync">
+                    Try again
+                </MudButton>
+                <MudButton Color="Color.Secondary" Variant="Variant.Text" OnClick="@LogAndReportAsync">
+                    Report issue
+                </MudButton>
+            </MudStack>
+
+            @if (ShowTechnicalDetails && CurrentException is not null)
+            {
+                <MudExpansionPanel Text="Technical details" Class="mt-2" Expanded="false">
+                    <MudText Typo="Typo.caption">@CurrentException.ToString()</MudText>
+                </MudExpansionPanel>
+            }
         </MudStack>
-
-        @if (ShowTechnicalDetails && CurrentException is not null)
-        {
-            <MudExpansionPanel Text="Technical details" Class="mt-2" IsInitiallyExpanded="false">
-                <MudText Typo="Typo.caption">@CurrentException.ToString()</MudText>
-            </MudExpansionPanel>
-        }
-    </MudStack>
-</MudPaper>
+    </MudPaper>
+}
 
 @code {
     // TODO: Wire up telemetry/logging once Application Insights or chosen provider is configured.
@@ -66,7 +76,14 @@
     private async Task LogAndReportAsync()
     {
         // TODO: Integrate with NotificationService to show feedback and send telemetry via Logs.Error/NotificationService.
-        Logs.Error("ErrorBoundary captured exception", CurrentException);
+        if (CurrentException is null)
+        {
+            Logs.Error("ErrorBoundary report requested with no captured exception");
+        }
+        else
+        {
+            Logs.Error("ErrorBoundary captured exception", CurrentException);
+        }
         await Task.CompletedTask;
     }
 

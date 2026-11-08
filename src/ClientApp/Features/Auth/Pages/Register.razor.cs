@@ -1,4 +1,5 @@
 using DatasetStudio.ClientApp.Features.Auth.Services;
+using DatasetStudio.Core.Utilities.Logging;
 using Microsoft.AspNetCore.Components;
 
 namespace DatasetStudio.ClientApp.Features.Auth.Pages;
@@ -27,7 +28,20 @@ public partial class Register : ComponentBase
 
         // Register auto-logs-in on success (see AuthEndpoints.Register), so no separate login
         // round trip is needed here.
-        AuthOutcome outcome = await AuthApiClient.RegisterAsync(_username, _email, _password, displayName: null);
+        AuthOutcome outcome;
+        try
+        {
+            outcome = await AuthApiClient.RegisterAsync(_username, _email, _password, displayName: null);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
+        {
+            // Network failure or timeout. Reset the form so the user can retry (audit U-28).
+            Logs.Warning($"Registration request did not complete: {ex.GetType().Name}");
+            _errorMessage = "Could not reach the server. Check your connection and try again.";
+            _isSubmitting = false;
+            return;
+        }
+
         if (!outcome.Succeeded || outcome.User is null)
         {
             _errorMessage = outcome.Error ?? "Registration failed.";

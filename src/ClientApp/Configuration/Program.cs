@@ -26,8 +26,8 @@ WebAssemblyHostBuilder builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
-// HTTP Client for future API calls
-builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
+// No bare HttpClient is registered on purpose: every API call goes through a typed client
+// (DatasetApiClient / AuthApiClient) so the session cookie handler is attached (audit U-2).
 
 // Dataset API client configuration. BaseAddress is intentionally optional: the dev-only
 // wwwroot/appsettings.Development.json overlay sets it to the API dev-server's cross-origin
@@ -64,6 +64,10 @@ builder.Services.AddHttpClient<DatasetApiClient>((sp, client) =>
 builder.Services.AddHttpClient<AuthApiClient>((sp, client) =>
 {
     client.BaseAddress = ResolveApiBaseAddress(sp);
+    // Auth calls run on every page load from the auth state provider. HttpClient's default
+    // 100 s timeout leaves the "Checking access..." screen hanging when the API is down
+    // (audit U-9). Dataset calls keep the default because uploads are legitimately long.
+    client.Timeout = TimeSpan.FromSeconds(15);
 }).AddHttpMessageHandler<CookieCredentialsHandler>();
 
 // MudBlazor services

@@ -77,10 +77,10 @@
                     <MudPaper Elevation="1" Class="pa-3">
                         <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
                             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                                <MudIconButton Icon="@Icons.Material.Filled.FilterList" 
+                                <MudTooltip Text="Toggle filters"><MudIconButton Icon="@Icons.Material.Filled.FilterList" 
                                              Color="Color.Primary" 
                                              OnClick="@_viewState.ToggleFilterPanel"
-                                             Title="Toggle filters" />
+                                             aria-label="Toggle filters" /></MudTooltip>
                                 <MudText Typo="Typo.h6">@_datasetState.CurrentDataset.Name</MudText>
                                 <MudChip T="string" Value="@GetItemCountLabel()"
                                          Size="Size.Small"
@@ -105,29 +105,29 @@
                             
                             <MudStack Row="true" Spacing="1">
                                 <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
-                                    <MudIconButton Icon="@Icons.Material.Filled.GridView" 
+                                    <MudTooltip Text="Grid view"><MudIconButton Icon="@Icons.Material.Filled.GridView" 
                                                  Color="@(_viewMode == ViewMode.Grid ? Color.Primary : Color.Default)"
                                                  OnClick="@(() => SetViewMode(ViewMode.Grid))"
-                                                 Title="Grid view" />
-                                    <MudIconButton Icon="@Icons.Material.Filled.ViewList" 
+                                                 aria-label="Grid view" /></MudTooltip>
+                                    <MudTooltip Text="List view"><MudIconButton Icon="@Icons.Material.Filled.ViewList" 
                                                  Color="@(_viewMode == ViewMode.List ? Color.Primary : Color.Default)"
                                                  OnClick="@(() => SetViewMode(ViewMode.List))"
-                                                 Title="List view" />
-                                    <MudIconButton Icon="@Icons.Material.Filled.ViewModule" 
+                                                 aria-label="List view" /></MudTooltip>
+                                    <MudTooltip Text="Gallery view"><MudIconButton Icon="@Icons.Material.Filled.ViewModule" 
                                                  Color="@(_viewMode == ViewMode.Gallery ? Color.Primary : Color.Default)"
                                                  OnClick="@(() => SetViewMode(ViewMode.Gallery))"
-                                                 Title="Gallery view" />
+                                                 aria-label="Gallery view" /></MudTooltip>
                                 </MudButtonGroup>
                                 
-                                <MudIconButton Icon="@Icons.Material.Filled.Info" 
+                                <MudTooltip Text="Toggle details"><MudIconButton Icon="@Icons.Material.Filled.Info" 
                                              Color="Color.Default" 
                                              OnClick="@_viewState.ToggleDetailPanel"
-                                             Title="Toggle details" />
+                                             aria-label="Toggle details" /></MudTooltip>
 
                                 <MudTooltip Text="Store paged results locally so paging is faster when you revisit the dataset.">
                                     <MudSwitch T="bool"
-                                               Checked="@_isIndexedDbEnabled"
-                                               CheckedChanged="@((bool enabled) => ToggleOfflineCacheAsync(enabled))"
+                                               Value="@_isIndexedDbEnabled"
+                                               ValueChanged="@((bool enabled) => ToggleOfflineCacheAsync(enabled))"
                                                Color="Color.Primary"
                                                Label="IndexedDB cache (beta)" />
                                 </MudTooltip>

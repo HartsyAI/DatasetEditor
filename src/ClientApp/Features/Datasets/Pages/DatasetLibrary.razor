@@ -32,13 +32,13 @@
                 <MudButton Variant="Variant.Filled"
                           Color="Color.Primary"
                           StartIcon="@Icons.Material.Filled.Add"
-                          Href="/upload">
+                          Href="/datasets/create">
                     Upload New Dataset
                 </MudButton>
             </MudStack>
 
             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                <MudSelect T="IngestionStatusDto?" Label="Status" Value="@_statusFilter" ValueChanged="OnStatusFilterChanged" ValueExpression="@(() => _statusFilter)" Dense="true" Variant="Variant.Outlined" Class="mr-2" Style="min-width: 180px;">
+                <MudSelect T="IngestionStatusDto?" Label="Status" Value="@_statusFilter" ValueChanged="OnStatusFilterChanged" Dense="true" Variant="Variant.Outlined" Class="mr-2" Style="min-width: 180px;">
                     <MudSelectItem T="IngestionStatusDto?" Value="@(null)">All statuses</MudSelectItem>
                     <MudSelectItem T="IngestionStatusDto?" Value="IngestionStatusDto.Pending">Pending</MudSelectItem>
                     <MudSelectItem T="IngestionStatusDto?" Value="IngestionStatusDto.Processing">Processing</MudSelectItem>
@@ -46,7 +46,7 @@
                     <MudSelectItem T="IngestionStatusDto?" Value="IngestionStatusDto.Failed">Failed</MudSelectItem>
                 </MudSelect>
 
-                <MudSelect T="DatasetSourceType?" Label="Source" Value="@_sourceFilter" ValueChanged="OnSourceFilterChanged" ValueExpression="@(() => _sourceFilter)" Dense="true" Variant="Variant.Outlined" Class="mr-2" Style="min-width: 200px;">
+                <MudSelect T="DatasetSourceType?" Label="Source" Value="@_sourceFilter" ValueChanged="OnSourceFilterChanged" Dense="true" Variant="Variant.Outlined" Class="mr-2" Style="min-width: 200px;">
                     <MudSelectItem T="DatasetSourceType?" Value="@(null)">All sources</MudSelectItem>
                     <MudSelectItem T="DatasetSourceType?" Value="DatasetSourceType.LocalUpload">Local upload</MudSelectItem>
                     <MudSelectItem T="DatasetSourceType?" Value="DatasetSourceType.HuggingFaceDownload">HuggingFace download</MudSelectItem>
@@ -54,7 +54,7 @@
                     <MudSelectItem T="DatasetSourceType?" Value="DatasetSourceType.ExternalS3Streaming">External S3 streaming</MudSelectItem>
                 </MudSelect>
 
-                <MudSwitch T="bool" @bind-Value="_onlyReady" Color="Color.Primary" Class="ml-2" DisableRipple="true">
+                <MudSwitch T="bool" @bind-Value="_onlyReady" Color="Color.Primary" Class="ml-2" Ripple="false">
                     <MudText Typo="Typo.caption">Only ready datasets</MudText>
                 </MudSwitch>
             </MudStack>
@@ -147,7 +147,7 @@
                 <MudButton Variant="Variant.Filled"
                           Color="Color.Primary"
                           StartIcon="@Icons.Material.Filled.CloudUpload"
-                          Href="/upload">
+                          Href="/datasets/create">
                     Upload Dataset
                 </MudButton>
             </MudStack>

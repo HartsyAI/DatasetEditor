@@ -3,6 +3,10 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>DatasetStudio.ClientApp</RootNamespace>
+    <!-- These are the MudBlazor v6-vs-v7 mismatches and missing-component diagnostics that
+         hid broken controls (audit U-3, U-4). Errors, so a new one fails the build rather than
+         shipping a silently ignored parameter. See DESIGN.md section 1.1. -->
+    <WarningsAsErrors>$(WarningsAsErrors);MUD0001;MUD0002;RZ10012</WarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,11 +1,12 @@
 @* Allows users to toggle between light and dark modes. *@
 <MudStack Spacing="2">
     <MudText Typo="Typo.subtitle1">Theme</MudText>
-    <MudToggleIconButton CheckedIcon="@Icons.Material.Filled.DarkMode"
-                         UncheckedIcon="@Icons.Material.Filled.LightMode"
+    <MudToggleIconButton ToggledIcon="@Icons.Material.Filled.DarkMode"
+                         Icon="@Icons.Material.Filled.LightMode"
                          Color="Color.Primary"
-                         Checked="@_isDark"
-                         CheckedChanged="OnThemeChangedAsync" />
+                         Toggled="@_isDark"
+                         ToggledChanged="OnThemeChangedAsync"
+                         aria-label="Dark mode" />
     <MudText Typo="Typo.caption" Class="mud-text-secondary">
         TODO: Bind to ViewState.Settings.ThemeMode to reflect persisted preference.
     </MudText>

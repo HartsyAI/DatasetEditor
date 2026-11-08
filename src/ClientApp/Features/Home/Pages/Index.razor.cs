@@ -35,11 +35,11 @@ public partial class Index : IDisposable
         StateHasChanged();
     }
 
-    /// <summary>Navigates to dataset viewer page for uploading new dataset.</summary>
+    /// <summary>Navigates to the create-dataset page (the only upload entry point).</summary>
     public void NavigateToUpload()
     {
-        NavigationService.NavigateToDataset();
-        Logs.Info("Navigating to upload dataset");
+        NavigationService.NavigateTo("/datasets/create");
+        Logs.Info("Navigating to create dataset");
     }
 
     /// <summary>Navigates to dataset viewer page.</summary>

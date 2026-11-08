@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
+using DatasetStudio.DTO.Items;
 
 namespace DatasetStudio.ClientApp.Services.ApiClients;
 
@@ -50,6 +51,29 @@ public sealed class DatasetApiClient
     {
         using HttpResponseMessage response = await _httpClient.DeleteAsync($"api/datasets/{datasetId}", cancellationToken);
         return response.IsSuccessStatusCode;
+    }
+
+    /// <summary>
+    /// Patches one item. Goes through this client so the cookie handler is attached; a raw
+    /// HttpClient hits the client origin and every edit fails (audit U-2).
+    /// </summary>
+    public async Task<bool> UpdateItemAsync(Guid itemId, UpdateItemRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await _httpClient.PatchAsJsonAsync($"api/items/{itemId}", request, SerializerOptions, cancellationToken);
+        return response.IsSuccessStatusCode;
+    }
+
+    /// <summary>Patches many items. Returns the server's updated count, or null when the request failed.</summary>
+    public async Task<int?> BulkUpdateItemsAsync(BulkUpdateItemsRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await _httpClient.PatchAsJsonAsync("api/items/bulk", request, SerializerOptions, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        BulkUpdateItemsResponse? body = await response.Content.ReadFromJsonAsync<BulkUpdateItemsResponse>(SerializerOptions, cancellationToken);
+        return body?.UpdatedCount ?? 0;
     }
 
     public async Task UploadDatasetAsync(Guid datasetId, Stream fileStream, string fileName, string? contentType = null, CancellationToken cancellationToken = default)

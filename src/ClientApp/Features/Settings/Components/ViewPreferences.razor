@@ -4,31 +4,32 @@
 <MudStack Spacing="3">
     <MudText Typo="Typo.subtitle1">View preferences</MudText>
 
-    <MudSegmentedControl T="string"
-                         Mandatory="true"
-                         Value="@_selectedViewModeLabel"
-                         ValueChanged="@OnViewModeChangedAsync">
+    <MudToggleGroup T="string"
+                    Value="@_selectedViewModeLabel"
+                    ValueChanged="@OnViewModeChangedAsync"
+                    Color="Color.Primary"
+                    Outlined="true">
         @foreach (var mode in _viewModes)
         {
-            <MudSegmentedControlItem Value="@mode">
-                @mode
-            </MudSegmentedControlItem>
+            <MudToggleItem T="string" Value="@mode" Text="@mode" />
         }
-    </MudSegmentedControl>
+    </MudToggleGroup>
 
-    <MudSlider T="int"
-               Min="1"
-               Max="6"
-               Step="1"
-               Value="@GridColumns"
-               ValueChanged="@OnGridColumnsChangedAsync"
-               Color="Color.Primary"
-               Label="Grid columns"
-               Immediate="true" />
+    <MudStack Spacing="1">
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">Grid columns</MudText>
+        <MudSlider T="int"
+                   Min="1"
+                   Max="6"
+                   Step="1"
+                   Value="@GridColumns"
+                   ValueChanged="@OnGridColumnsChangedAsync"
+                   Color="Color.Primary"
+                   Immediate="true" />
+    </MudStack>
 
     <MudSwitch T="bool"
-               Checked="@ShowMetadataOverlay"
-               CheckedChanged="OnShowMetadataOverlayChangedAsync"
+               Value="@ShowMetadataOverlay"
+               ValueChanged="OnShowMetadataOverlayChangedAsync"
                Color="Color.Primary"
                Label="Show metadata overlay" />
 </MudStack>
