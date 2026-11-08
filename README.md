@@ -228,10 +228,15 @@ TTL), fetches the image server-side, resizes via `ThumbnailService`, and caches 
 the grid request width-bounded JPEGs. The row cache turns 100 thumbnail requests for one
 screen into one upstream `/rows` call. Refusing client-supplied image URLs prevents SSRF.
 
-**Gaps.** The dataset record's `TotalItems` stays 0 when the client doesn't send config/split
-(single-option repos) — the viewer shows the right total from `/rows`, the library card shows
-0 (H-1). Upstream errors are returned as `200` with empty items (H-6). Thumbnails fetched with
-one user's token are cached for everyone who can read the dataset (H-5).
+**Resolution (PR 1.6).** A streaming import with no config/split picks the `train` split (or the
+first one listed), persists that config/split on the dataset, and records its row count. Each
+page request forwards the user's token to `/size` and `/rows`, and back-fills the dataset's
+count from `num_rows_total` when they differ. `/size` reports the selected split's count, not
+the sum over all splits. Upstream failures return `403` for an auth refusal (401/403) and
+`502` for anything else, with the reason in `error`; they are no longer an empty `200`.
+
+**Gaps.** Thumbnails fetched with one user's token are cached for everyone who can read the
+dataset (H-5).
 
 ### 4.5 HuggingFace download/import — Partial
 
