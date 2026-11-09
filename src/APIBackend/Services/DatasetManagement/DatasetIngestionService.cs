@@ -138,6 +138,7 @@ public class DatasetIngestionService : IDatasetIngestionService
                         if (current != null)
                         {
                             await _datasetRepository.UpdateAsync(
+                                current,
                                 current with { HuggingFaceConfig = match.Config, HuggingFaceSplit = match.Split },
                                 cancellationToken);
                         }
@@ -355,6 +356,7 @@ public class DatasetIngestionService : IDatasetIngestionService
             // SourceType used to stay LocalUpload, so the library labelled a server folder as an
             // uploaded file and its source filter couldn't find it (audit F-3).
             await _datasetRepository.UpdateAsync(
+                dataset,
                 dataset with { StoragePath = normalizedFolderPath, SourceType = DatasetSourceType.LocalFolder },
                 cancellationToken);
 

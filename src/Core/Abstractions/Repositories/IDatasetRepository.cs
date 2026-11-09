@@ -14,8 +14,18 @@ public interface IDatasetRepository
     /// <summary>Gets all datasets with pagination. Pass <paramref name="visibility"/> to restrict rows to what that principal may see (anonymous read requires IsPublic; null means unfiltered).</summary>
     Task<List<DatasetDto>> GetAllAsync(int page = 0, int pageSize = 50, DatasetVisibilityFilter? visibility = null, CancellationToken cancellationToken = default);
 
-    /// <summary>Updates an existing dataset</summary>
-    Task UpdateAsync(DatasetDto dataset, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Writes the fields that differ between <paramref name="original"/> (the dataset as the
+    /// caller read it) and <paramref name="updated"/>, and nothing else. It used to overwrite the
+    /// whole row from a snapshot often held across long awaits, so it reverted status and
+    /// item-count writes that background ingestion made in the meantime (audit D-4).
+    /// </summary>
+    /// <exception cref="DatasetUpdateConflictException">
+    /// A field being changed now holds a value other than the original and the new one: another
+    /// request changed it first.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">The dataset doesn't exist.</exception>
+    Task UpdateAsync(DatasetDto original, DatasetDto updated, CancellationToken cancellationToken = default);
 
     /// <summary>Deletes a dataset (metadata only, Parquet files handled separately)</summary>
     Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);

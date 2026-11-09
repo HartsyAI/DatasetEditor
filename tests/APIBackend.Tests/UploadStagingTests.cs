@@ -101,7 +101,7 @@ namespace DatasetStudio.Tests.APIBackend
             {
                 // What happens when the dataset is deleted while its upload is being written.
                 datasetRepository
-                    .Setup(r => r.UpdateAsync(It.IsAny<DatasetDto>(), It.IsAny<CancellationToken>()))
+                    .Setup(r => r.UpdateAsync(It.IsAny<DatasetDto>(), It.IsAny<DatasetDto>(), It.IsAny<CancellationToken>()))
                     .ThrowsAsync(new InvalidOperationException("Dataset not found"));
             }
 
