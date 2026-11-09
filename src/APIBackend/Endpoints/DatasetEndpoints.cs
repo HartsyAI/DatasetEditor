@@ -206,6 +206,7 @@ internal static class DatasetEndpoints
         Guid datasetId,
         Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         IDatasetItemRepository itemRepository,
+        IIngestionJobQueue ingestionQueue,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
         CancellationToken cancellationToken)
@@ -228,6 +229,9 @@ internal static class DatasetEndpoints
             return Results.Forbid();
         }
 
+        // Before the dataset row goes: its delete cascades to the job rows, which are the only
+        // record of where queued uploads were staged.
+        await ingestionQueue.DiscardQueuedJobsAsync(datasetId, cancellationToken);
         await itemRepository.DeleteByDatasetAsync(datasetId, cancellationToken);
         await datasetRepository.DeleteAsync(datasetId, cancellationToken);
 
@@ -267,12 +271,6 @@ internal static class DatasetEndpoints
             return Results.BadRequest("No file uploaded or file is empty.");
         }
 
-        // Checked before staging, so a full queue doesn't also fill the upload volume (audit I-4).
-        if (!await ingestionQueue.HasCapacityAsync(cancellationToken))
-        {
-            return IngestionQueueFull(httpContext);
-        }
-
         // Stage under Storage:UploadPath, the same root the ingestion service uses for its own
         // downloads. Path.GetTempPath() is ephemeral /tmp in the container, not the mounted volume,
         // so an upload could be lost on restart and was never on the configured disk (audit I-5).
@@ -284,19 +282,53 @@ internal static class DatasetEndpoints
             uploadPath,
             $"dataset-{datasetId}-{Guid.NewGuid()}{Path.GetExtension(file.FileName)}");
 
-        await using (FileStream stream = File.Create(tempFilePath))
+        // Reserve a queue slot before writing anything, so a full queue doesn't also fill the
+        // upload volume (audit I-4) and concurrent uploads can't all claim the last slot.
+        Guid? reservation = await ingestionQueue.TryReserveAsync(new IngestionJob(datasetId, tempFilePath), cancellationToken);
+        if (reservation is null)
         {
-            await file.CopyToAsync(stream, cancellationToken);
+            return IngestionQueueFull(httpContext);
         }
 
-        DatasetDto updated = dataset with { SourceFileName = file.FileName };
-        await repository.UpdateAsync(updated, cancellationToken);
+        try
+        {
+            await using (FileStream stream = File.Create(tempFilePath))
+            {
+                await file.CopyToAsync(stream, cancellationToken);
+            }
 
-        // Queue ingestion to run in the background; return immediately so a large upload
-        // doesn't hold the request thread. The client polls dataset status for progress.
-        await ingestionQueue.EnqueueAsync(new IngestionJob(datasetId, tempFilePath), cancellationToken);
+            DatasetDto updated = dataset with { SourceFileName = file.FileName };
+            await repository.UpdateAsync(updated, cancellationToken);
+
+            // Queue ingestion to run in the background; return immediately so a large upload
+            // doesn't hold the request thread. The client polls dataset status for progress.
+            await ingestionQueue.CommitAsync(reservation.Value, cancellationToken);
+        }
+        catch
+        {
+            // Covers a cancelled or failed copy and a dataset deleted mid-upload.
+            await ingestionQueue.ReleaseAsync(reservation.Value, CancellationToken.None);
+            TryDeleteStagedUpload(tempFilePath);
+            throw;
+        }
 
         return Results.Accepted($"/api/datasets/{datasetId}", new { datasetId, fileName = file.FileName });
+    }
+
+    /// <summary>Best-effort removal of a staged upload whose job will never run.</summary>
+    private static void TryDeleteStagedUpload(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Leaving one file behind is better than masking the original failure.
+        }
     }
 
     /// <summary>
@@ -857,8 +889,11 @@ internal static class DatasetEndpoints
             return Results.BadRequest(new { error = "Repository name is required" });
         }
 
-        // Before the dataset is updated, so a refused import leaves it as it was.
-        if (!await ingestionQueue.HasCapacityAsync(cancellationToken))
+        // Reserved before the dataset is updated, so a refused import leaves it as it was, and
+        // committed only after the update, so the worker never starts before it has landed.
+        Guid? reservation = await ingestionQueue.TryReserveAsync(
+            new IngestionJob(datasetId, FilePath: null, HuggingFaceRequest: request), cancellationToken);
+        if (reservation is null)
         {
             return IngestionQueueFull(httpContext);
         }
@@ -881,13 +916,21 @@ internal static class DatasetEndpoints
             HuggingFaceSplit = request.Split,
         };
 
-        await repository.UpdateAsync(dataset, cancellationToken);
+        try
+        {
+            await repository.UpdateAsync(dataset, cancellationToken);
 
-        // Queued through the same background-worker path as file uploads, each job getting
-        // its own DI scope — not a fire-and-forget Task.Run against a scoped
-        // IDatasetIngestionService, which used to race the request's DI scope (and its
-        // scoped DbContext) being disposed right after this handler returns.
-        await ingestionQueue.EnqueueAsync(new IngestionJob(datasetId, FilePath: null, HuggingFaceRequest: request), cancellationToken);
+            // Queued through the same background-worker path as file uploads, each job getting
+            // its own DI scope — not a fire-and-forget Task.Run against a scoped
+            // IDatasetIngestionService, which used to race the request's DI scope (and its
+            // scoped DbContext) being disposed right after this handler returns.
+            await ingestionQueue.CommitAsync(reservation.Value, cancellationToken);
+        }
+        catch
+        {
+            await ingestionQueue.ReleaseAsync(reservation.Value, CancellationToken.None);
+            throw;
+        }
 
         return Results.Accepted($"/api/datasets/{datasetId}", new
         {
@@ -933,15 +976,14 @@ internal static class DatasetEndpoints
             return Results.BadRequest(new { error = $"Folder not found: {request.FolderPath}" });
         }
 
-        if (!await ingestionQueue.HasCapacityAsync(cancellationToken))
+        // Absolute for the same reason as an upload's staged path: a later process reads it.
+        bool queued = await ingestionQueue.TryEnqueueAsync(
+            new IngestionJob(datasetId, FilePath: null, FolderPath: Path.GetFullPath(request.FolderPath)),
+            cancellationToken);
+        if (!queued)
         {
             return IngestionQueueFull(httpContext);
         }
-
-        // Absolute for the same reason as an upload's staged path: a later process reads it.
-        await ingestionQueue.EnqueueAsync(
-            new IngestionJob(datasetId, FilePath: null, FolderPath: Path.GetFullPath(request.FolderPath)),
-            cancellationToken);
 
         return Results.Accepted($"/api/datasets/{datasetId}", new
         {

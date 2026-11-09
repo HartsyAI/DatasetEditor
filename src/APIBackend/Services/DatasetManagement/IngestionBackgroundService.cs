@@ -119,6 +119,12 @@ public sealed class IngestionBackgroundService : BackgroundService
             }
         }
 
+        int abandoned = await store.DiscardAbandonedReservationsAsync(cancellationToken);
+        if (abandoned > 0)
+        {
+            _logger.LogWarning("Removed {Count} upload reservation(s) whose upload never finished", abandoned);
+        }
+
         int orphaned = await store.FailOrphanedProcessingDatasetsAsync(OrphanedDatasetMessage, cancellationToken);
         if (orphaned > 0)
         {

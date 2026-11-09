@@ -31,6 +31,12 @@ public interface IIngestionJobStore
     Task<IReadOnlyList<ClaimedIngestionJob>> GetInterruptedJobsAsync(CancellationToken cancellationToken);
 
     /// <summary>
+    /// Deletes reservations left by uploads that were still being written when the process
+    /// stopped, and their partial files. Returns how many were removed.
+    /// </summary>
+    Task<int> DiscardAbandonedReservationsAsync(CancellationToken cancellationToken);
+
+    /// <summary>
     /// Fails every dataset still marked Processing that has no queued or running job: its work
     /// was lost (for example, queued in memory before jobs were persisted) and nothing will ever
     /// finish it. Returns how many datasets were failed.

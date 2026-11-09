@@ -92,7 +92,8 @@ dataset never blocks another.
 ### Ingestion
 Uploads are saved to a staging file under `Storage:UploadPath` (not the OS temp dir) and **queued**
 as a row in the `ingestion_jobs` table (`IIngestionJobQueue`); the endpoint returns `202`
-immediately, or `503` with `Retry-After` when `Ingestion:MaxQueuedJobs` jobs are already waiting.
+immediately, or `503` with `Retry-After` when `Ingestion:MaxQueuedJobs` jobs are already waiting
+(admission is serialised with an advisory lock; an upload reserves its slot before it is staged).
 A hosted `IngestionBackgroundService` runs `Ingestion:MaxConcurrentJobs` workers that claim jobs
 with `FOR UPDATE SKIP LOCKED` (one running job per dataset, enforced by a partial unique index),
 parse the file (CSV/TSV/JSON/JSONL/ZIP/image folders — Parquet upload is **not** supported, see

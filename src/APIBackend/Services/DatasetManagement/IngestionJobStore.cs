@@ -5,6 +5,7 @@ using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities;
 using DatasetStudio.DTO.Datasets;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -22,6 +23,9 @@ public sealed class IngestionJobStore : IIngestionJobQueue, IIngestionJobStore
 
     /// <summary>Postgres unique_violation: another worker won the one-running-job-per-dataset race.</summary>
     private const string UniqueViolation = "23505";
+
+    /// <summary>pg_advisory_xact_lock key serialising queue admission ("DSIQ").</summary>
+    private const long AdmissionLockKey = 0x44534951;
 
     private readonly DatasetStudioDbContext _db;
     private readonly IDataProtector _tokenProtector;
@@ -42,34 +46,151 @@ public sealed class IngestionJobStore : IIngestionJobQueue, IIngestionJobStore
     }
 
     /// <inheritdoc />
-    public async Task<bool> HasCapacityAsync(CancellationToken cancellationToken)
+    public Task<Guid?> TryReserveAsync(IngestionJob job, CancellationToken cancellationToken)
     {
-        int active = await _db.IngestionJobs.CountAsync(
-            j => j.State == IngestionJobState.Queued || j.State == IngestionJobState.Running,
-            cancellationToken);
-        return active < _options.MaxQueuedJobs;
+        return TryAdmitAsync(job, IngestionJobState.Staging, cancellationToken);
     }
 
     /// <inheritdoc />
-    public async Task EnqueueAsync(IngestionJob job, CancellationToken cancellationToken)
+    public async Task CommitAsync(Guid jobId, CancellationToken cancellationToken)
     {
-        IngestionJobEntity entity = new()
-        {
-            Id = Guid.NewGuid(),
-            DatasetId = job.DatasetId,
-            Kind = job.HuggingFaceRequest is not null ? IngestionJobKind.HuggingFace
-                : job.FolderPath is not null ? IngestionJobKind.Folder
-                : IngestionJobKind.Upload,
-            State = IngestionJobState.Queued,
-            FilePath = job.FilePath,
-            FolderPath = job.FolderPath,
-            PayloadJson = SerializeRequest(job.HuggingFaceRequest),
-            CreatedAt = DateTime.UtcNow
-        };
-
-        _db.IngestionJobs.Add(entity);
-        await _db.SaveChangesAsync(cancellationToken);
+        await _db.IngestionJobs
+            .Where(j => j.Id == jobId && j.State == IngestionJobState.Staging)
+            .ExecuteUpdateAsync(s => s.SetProperty(j => j.State, IngestionJobState.Queued), cancellationToken);
         _signal.Notify();
+    }
+
+    /// <inheritdoc />
+    public async Task ReleaseAsync(Guid jobId, CancellationToken cancellationToken)
+    {
+        await _db.IngestionJobs
+            .Where(j => j.Id == jobId && j.State == IngestionJobState.Staging)
+            .ExecuteDeleteAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> TryEnqueueAsync(IngestionJob job, CancellationToken cancellationToken)
+    {
+        Guid? id = await TryAdmitAsync(job, IngestionJobState.Queued, cancellationToken);
+        if (id is null)
+        {
+            return false;
+        }
+
+        _signal.Notify();
+        return true;
+    }
+
+    /// <inheritdoc />
+    public async Task DiscardQueuedJobsAsync(Guid datasetId, CancellationToken cancellationToken)
+    {
+        List<string?> stagedFiles = await _db.IngestionJobs
+            .Where(j => j.DatasetId == datasetId
+                && (j.State == IngestionJobState.Queued || j.State == IngestionJobState.Staging))
+            .Select(j => j.FilePath)
+            .ToListAsync(cancellationToken);
+
+        await _db.IngestionJobs
+            .Where(j => j.DatasetId == datasetId
+                && (j.State == IngestionJobState.Queued || j.State == IngestionJobState.Staging))
+            .ExecuteDeleteAsync(cancellationToken);
+
+        // FilePath is only set for uploads, which are staged copies this app owns; a folder
+        // job's FolderPath is the caller's own folder and is never touched.
+        foreach (string? path in stagedFiles)
+        {
+            DeleteStagedFile(path);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<int> DiscardAbandonedReservationsAsync(CancellationToken cancellationToken)
+    {
+        List<string?> stagedFiles = await _db.IngestionJobs
+            .Where(j => j.State == IngestionJobState.Staging)
+            .Select(j => j.FilePath)
+            .ToListAsync(cancellationToken);
+        int removed = await _db.IngestionJobs
+            .Where(j => j.State == IngestionJobState.Staging)
+            .ExecuteDeleteAsync(cancellationToken);
+        foreach (string? path in stagedFiles)
+        {
+            DeleteStagedFile(path);
+        }
+        return removed;
+    }
+
+    /// <summary>
+    /// Inserts the job if fewer than <see cref="IngestionOptions.MaxQueuedJobs"/> jobs are
+    /// staging, queued or running. The count and the insert run under a transaction-scoped
+    /// advisory lock, so concurrent requests (in any process) are admitted one at a time and
+    /// can't all see the same free slot.
+    /// </summary>
+    private async Task<Guid?> TryAdmitAsync(IngestionJob job, IngestionJobState state, CancellationToken cancellationToken)
+    {
+        IExecutionStrategy strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            IngestionJobEntity entity = new()
+            {
+                Id = Guid.NewGuid(),
+                DatasetId = job.DatasetId,
+                Kind = job.HuggingFaceRequest is not null ? IngestionJobKind.HuggingFace
+                    : job.FolderPath is not null ? IngestionJobKind.Folder
+                    : IngestionJobKind.Upload,
+                State = state,
+                FilePath = job.FilePath,
+                FolderPath = job.FolderPath,
+                PayloadJson = SerializeRequest(job.HuggingFaceRequest),
+                CreatedAt = DateTime.UtcNow
+            };
+
+            await using IDbContextTransaction transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+            try
+            {
+                await _db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({AdmissionLockKey})", cancellationToken);
+                int active = await _db.IngestionJobs.CountAsync(
+                    j => j.State == IngestionJobState.Queued
+                        || j.State == IngestionJobState.Running
+                        || j.State == IngestionJobState.Staging,
+                    cancellationToken);
+                if (active >= _options.MaxQueuedJobs)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    return (Guid?)null;
+                }
+
+                _db.IngestionJobs.Add(entity);
+                await _db.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return entity.Id;
+            }
+            catch
+            {
+                // A retried attempt builds a new entity; don't leave this one tracked as Added.
+                _db.Entry(entity).State = EntityState.Detached;
+                throw;
+            }
+        });
+    }
+
+    private static void DeleteStagedFile(string? path)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(path) && File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (IOException)
+        {
+            // Still open (an upload being written right now); the endpoint deletes it when its
+            // commit finds the reservation gone.
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 
     /// <inheritdoc />

@@ -29,7 +29,14 @@ public enum IngestionJobState
     Completed = 2,
 
     /// <summary>Finished with an error, or interrupted after it had written items.</summary>
-    Failed = 3
+    Failed = 3,
+
+    /// <summary>
+    /// A slot reserved by an upload whose file is still being written. Counts toward the queue
+    /// limit, so concurrent uploads can't all pass it before any of them is queued, but is never
+    /// claimed. Becomes Queued when the file is staged, or is deleted if staging fails.
+    /// </summary>
+    Staging = 4
 }
 
 /// <summary>

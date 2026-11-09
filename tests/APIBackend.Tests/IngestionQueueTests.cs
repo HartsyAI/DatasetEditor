@@ -31,6 +31,9 @@ namespace DatasetStudio.Tests.APIBackend
     [Collection(PostgresCollection.Name)]
     public sealed class IngestionQueueTests : IAsyncLifetime
     {
+        /// <summary>Ingestion:MaxQueuedJobs for these tests.</summary>
+        private const int QueueLimit = 10;
+
         private readonly PostgresContainerFixture _postgres;
         private readonly List<string> _foldersToDelete = new();
         private DatasetStudioApiFactory _factory = default!;
@@ -43,7 +46,7 @@ namespace DatasetStudio.Tests.APIBackend
         public async Task InitializeAsync()
         {
             // No live worker: each test drives the store and the recovery step itself.
-            _factory = CreateFactory(runWorker: false, maxQueuedJobs: 3);
+            _factory = CreateFactory(runWorker: false, maxQueuedJobs: QueueLimit);
             await _factory.InitializeDatabaseAsync();
         }
 
@@ -92,7 +95,8 @@ namespace DatasetStudio.Tests.APIBackend
         private async Task EnqueueAsync(IngestionJob job)
         {
             using IServiceScope scope = _factory.Services.CreateScope();
-            await scope.ServiceProvider.GetRequiredService<IIngestionJobQueue>().EnqueueAsync(job, CancellationToken.None);
+            (await scope.ServiceProvider.GetRequiredService<IIngestionJobQueue>().TryEnqueueAsync(job, CancellationToken.None))
+                .Should().BeTrue("the test queue has room");
         }
 
         private async Task<ClaimedIngestionJob?> ClaimAsync(string worker = "test-worker")
@@ -345,28 +349,94 @@ namespace DatasetStudio.Tests.APIBackend
             (await GetDatasetAsync(waiting)).Status.Should().Be(IngestionStatusDto.Pending);
         }
 
-        /// <summary>Audit I-4: queued plus running jobs are capped, and finished jobs free their slot.</summary>
-        [Fact]
-        public async Task HasCapacity_IsFalseAtTheLimit_AndTrueAgainWhenAJobFinishes()
+        private async Task<Guid?> ReserveAsync(IngestionJob job)
         {
-            for (int i = 0; i < 3; i++)
-            {
-                await EnqueueAsync(new IngestionJob(await CreateDatasetAsync(), $"/staged/{i}.csv"));
-            }
+            using IServiceScope scope = _factory.Services.CreateScope();
+            return await scope.ServiceProvider.GetRequiredService<IIngestionJobQueue>().TryReserveAsync(job, CancellationToken.None);
+        }
+
+        /// <summary>
+        /// Audit I-4 (Codex review on #19): many uploads arriving at once near the limit are admitted
+        /// one at a time, so exactly the free slots are handed out; a separate check-then-insert let
+        /// them all through. A finished job frees its slot.
+        /// </summary>
+        [Fact]
+        public async Task TryReserve_ConcurrentRequests_NeverExceedTheLimit()
+        {
+            Guid datasetId = await CreateDatasetAsync();
+
+            Guid?[] reservations = await Task.WhenAll(Enumerable.Range(0, 25)
+                .Select(i => Task.Run(() => ReserveAsync(new IngestionJob(datasetId, $"/staged/{i}.csv")))));
+
+            List<Guid> granted = reservations.Where(r => r is not null).Select(r => r!.Value).ToList();
+            granted.Should().HaveCount(QueueLimit);
+            (await ReserveAsync(new IngestionJob(datasetId, "/staged/extra.csv"))).Should().BeNull("the queue is full");
 
             using (IServiceScope scope = _factory.Services.CreateScope())
             {
-                (await scope.ServiceProvider.GetRequiredService<IIngestionJobQueue>().HasCapacityAsync(CancellationToken.None))
-                    .Should().BeFalse("three jobs are queued and the limit is three");
+                await scope.ServiceProvider.GetRequiredService<IIngestionJobQueue>().ReleaseAsync(granted[0], CancellationToken.None);
             }
+            (await ReserveAsync(new IngestionJob(datasetId, "/staged/extra.csv"))).Should().NotBeNull("a released slot is free again");
+        }
 
-            ClaimedIngestionJob claimed = (await ClaimAsync())!;
+        /// <summary>A reservation is never run until it is committed, and commit makes it claimable.</summary>
+        [Fact]
+        public async Task Reservation_IsClaimedOnlyAfterCommit()
+        {
+            Guid datasetId = await CreateDatasetAsync();
+            Guid reservation = (await ReserveAsync(new IngestionJob(datasetId, "/staged/pending.csv")))!.Value;
+
+            (await ClaimAsync()).Should().BeNull("the upload is still being written");
+
             using (IServiceScope scope = _factory.Services.CreateScope())
             {
-                await scope.ServiceProvider.GetRequiredService<IIngestionJobStore>().FailAsync(claimed.Id, "boom", CancellationToken.None);
-                (await scope.ServiceProvider.GetRequiredService<IIngestionJobQueue>().HasCapacityAsync(CancellationToken.None))
-                    .Should().BeTrue();
+                await scope.ServiceProvider.GetRequiredService<IIngestionJobQueue>().CommitAsync(reservation, CancellationToken.None);
             }
+            (await ClaimAsync())!.Id.Should().Be(reservation);
+        }
+
+        /// <summary>
+        /// Codex review on #19: deleting a dataset whose upload is still queued deletes the staged
+        /// file. The cascade used to remove the only record of the path, leaving the file forever.
+        /// </summary>
+        [Fact]
+        public async Task DeleteDataset_WithQueuedUpload_DeletesTheStagedFile()
+        {
+            using HttpClient client = _factory.CreateClient();
+            await client.PostAsJsonAsync("/api/auth/register",
+                new DatasetStudio.DTO.Auth.RegisterRequest("queue-delete-user", "queue-delete-user@example.com", "password123"));
+            HttpResponseMessage created = await client.PostAsJsonAsync("/api/datasets", new CreateDatasetRequest("queued-delete", null));
+            DatasetDetailDto dataset = (await created.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+
+            using MultipartFormDataContent form = new();
+            form.Add(new ByteArrayContent(System.Text.Encoding.UTF8.GetBytes("title\na\n")), "file", "rows.csv");
+            HttpResponseMessage upload = await client.PostAsync($"/api/datasets/{dataset.Id}/upload", form);
+            upload.StatusCode.Should().Be(System.Net.HttpStatusCode.Accepted);
+            Directory.EnumerateFiles(_factory.UploadPath).Should().ContainSingle("the upload is staged and waiting for a worker");
+
+            HttpResponseMessage deleted = await client.DeleteAsync($"/api/datasets/{dataset.Id}");
+
+            deleted.StatusCode.Should().Be(System.Net.HttpStatusCode.NoContent);
+            Directory.EnumerateFiles(_factory.UploadPath).Should().BeEmpty("the staged upload must go with its dataset");
+            (await ClaimAsync()).Should().BeNull();
+        }
+
+        /// <summary>A reservation left by an upload interrupted mid-write is removed at startup, with its partial file.</summary>
+        [Fact]
+        public async Task Recovery_RemovesAbandonedReservationsAndTheirFiles()
+        {
+            Guid datasetId = await CreateDatasetAsync();
+            Directory.CreateDirectory(_factory.UploadPath);
+            string partial = Path.Combine(_factory.UploadPath, "partial.csv");
+            await File.WriteAllTextAsync(partial, "title\n");
+            Guid reservation = (await ReserveAsync(new IngestionJob(datasetId, partial)))!.Value;
+
+            await CreateWorkerHost().RecoverInterruptedJobsAsync(CancellationToken.None);
+
+            File.Exists(partial).Should().BeFalse();
+            using IServiceScope scope = _factory.Services.CreateScope();
+            (await scope.ServiceProvider.GetRequiredService<DatasetStudioDbContext>().IngestionJobs.AnyAsync(j => j.Id == reservation))
+                .Should().BeFalse();
         }
 
         /// <summary>Deleting a dataset deletes its jobs, so a worker never runs work for a dataset that is gone.</summary>

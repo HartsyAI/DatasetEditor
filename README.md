@@ -207,9 +207,13 @@ enqueue wakes a worker at once; idle workers also poll every `Ingestion:PollInte
 the worker host recovers jobs the previous process left running: a job that wrote nothing is
 requeued (up to `Ingestion:MaxAttempts`), one that wrote items is failed with the count it kept,
 and a dataset left Processing with no job is failed. When `Ingestion:MaxQueuedJobs` jobs are
-queued or running (default 50), imports get `503` with `Retry-After` before anything is staged.
-A HuggingFace access token waits in the job encrypted with Data Protection and is removed when
-the job finishes. The staged file is deleted when the job completes or fails for good.
+staging, queued or running (default 50), imports get `503` with `Retry-After`. Admission takes
+a Postgres advisory lock, so concurrent requests can't all take the last slot, and an upload
+reserves its slot (state Staging, never claimed) before writing a byte, then commits it once the
+file is staged or releases it and deletes the file if staging fails. A HuggingFace access token
+waits in the job encrypted with Data Protection and is removed when the job finishes. The staged
+file is deleted when the job completes or fails for good, when its dataset is deleted while the
+job is still queued, or at startup if the upload was cut off mid-write.
 
 **Why.** Streaming parsers so a multi-GB file never materialises. A queue instead of
 `Task.Run` so background work owns its own DI scope; a table instead of an in-memory channel so a

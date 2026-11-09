@@ -33,20 +33,51 @@ namespace DatasetStudio.Tests.APIBackend
     {
         private readonly string _uploadRoot = Path.Combine(Path.GetTempPath(), "DatasetStudioTests", "upload-staging", Guid.NewGuid().ToString("N"));
 
-        /// <summary>Records enqueued jobs and reports whatever capacity the test sets.</summary>
+        /// <summary>Records reservations, commits and releases, and refuses when the test says the queue is full.</summary>
         private sealed class RecordingQueue : IIngestionJobQueue
         {
+            private readonly Dictionary<Guid, IngestionJob> _reserved = new();
+
             public bool HasCapacity { get; init; } = true;
 
+            /// <summary>Jobs committed to the queue.</summary>
             public List<IngestionJob> Jobs { get; } = new();
 
-            public Task<bool> HasCapacityAsync(CancellationToken cancellationToken) => Task.FromResult(HasCapacity);
+            public List<Guid> Released { get; } = new();
 
-            public Task EnqueueAsync(IngestionJob job, CancellationToken cancellationToken)
+            public Task<Guid?> TryReserveAsync(IngestionJob job, CancellationToken cancellationToken)
             {
-                Jobs.Add(job);
+                if (!HasCapacity)
+                {
+                    return Task.FromResult<Guid?>(null);
+                }
+                Guid id = Guid.NewGuid();
+                _reserved[id] = job;
+                return Task.FromResult<Guid?>(id);
+            }
+
+            public Task CommitAsync(Guid jobId, CancellationToken cancellationToken)
+            {
+                Jobs.Add(_reserved[jobId]);
                 return Task.CompletedTask;
             }
+
+            public Task ReleaseAsync(Guid jobId, CancellationToken cancellationToken)
+            {
+                Released.Add(jobId);
+                return Task.CompletedTask;
+            }
+
+            public Task<bool> TryEnqueueAsync(IngestionJob job, CancellationToken cancellationToken)
+            {
+                if (HasCapacity)
+                {
+                    Jobs.Add(job);
+                }
+                return Task.FromResult(HasCapacity);
+            }
+
+            public Task DiscardQueuedJobsAsync(Guid datasetId, CancellationToken cancellationToken) => Task.CompletedTask;
         }
 
         public void Dispose()
@@ -57,7 +88,8 @@ namespace DatasetStudio.Tests.APIBackend
             }
         }
 
-        private async Task<(IResult Result, HttpContext Context)> UploadAsync(Guid datasetId, RecordingQueue queue, string? uploadPath = null)
+        private async Task<(IResult Result, HttpContext Context)> UploadAsync(
+            Guid datasetId, RecordingQueue queue, string? uploadPath = null, bool datasetUpdateFails = false)
         {
             DatasetDto dataset = new() { Id = datasetId, Name = "staged" };
 
@@ -65,6 +97,13 @@ namespace DatasetStudio.Tests.APIBackend
             datasetRepository
                 .Setup(r => r.GetByIdAsync(datasetId, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(dataset);
+            if (datasetUpdateFails)
+            {
+                // What happens when the dataset is deleted while its upload is being written.
+                datasetRepository
+                    .Setup(r => r.UpdateAsync(It.IsAny<DatasetDto>(), It.IsAny<CancellationToken>()))
+                    .ThrowsAsync(new InvalidOperationException("Dataset not found"));
+            }
 
             var permissionService = new Mock<IDatasetPermissionService>();
             permissionService
@@ -120,6 +159,20 @@ namespace DatasetStudio.Tests.APIBackend
             queue.Jobs.Should().ContainSingle();
             Path.IsPathRooted(queue.Jobs[0].FilePath).Should().BeTrue();
             queue.Jobs[0].FilePath!.Should().StartWith(_uploadRoot + Path.DirectorySeparatorChar);
+        }
+
+        /// <summary>A reservation whose upload can't be finished is released and its file deleted.</summary>
+        [Fact]
+        public async Task UploadDatasetFile_StagingFails_ReleasesTheSlotAndDeletesTheFile()
+        {
+            RecordingQueue queue = new();
+
+            Func<Task> act = () => UploadAsync(Guid.NewGuid(), queue, datasetUpdateFails: true);
+
+            await act.Should().ThrowAsync<InvalidOperationException>();
+            queue.Jobs.Should().BeEmpty();
+            queue.Released.Should().ContainSingle();
+            Directory.EnumerateFiles(_uploadRoot).Should().BeEmpty("the staged file must not outlive its reservation");
         }
 
         [Fact]
