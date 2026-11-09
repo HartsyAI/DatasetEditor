@@ -19,7 +19,7 @@
     @* Favorite star (top-right corner) *@
     @if (_isHovered || Item.IsFavorite)
     {
-        <div class="favorite-star ds-on-scrim" @onclick:stopPropagation="true" @onclick="HandleToggleFavorite">
+        <div class="favorite-star ds-on-scrim" @onclick:stopPropagation="true" @onkeydown:stopPropagation="true" @onclick="HandleToggleFavorite">
             <MudIcon Icon="@(Item.IsFavorite ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarBorder)" 
                      Color="@(Item.IsFavorite ? Color.Warning : Color.Inherit)"
                      Size="Size.Small" />
@@ -73,7 +73,9 @@
     </div>
     
     @* Bottom gradient overlay with title *@
-    <div class="bottom-info">
+    @* Keys typed in the title editor or on the buttons here must not reach the card's own Enter/Space
+       handler, which would open the item while the user is typing. *@
+    <div class="bottom-info" @onkeydown:stopPropagation="true">
         @if (_isEditingTitle)
         {
             <MudTextField T="string" @bind-Value="_editTitle"
@@ -136,7 +138,7 @@
             </div>
             
             @* Quick actions *@
-            <div class="hover-actions ds-on-scrim" @onclick:stopPropagation="true">
+            <div class="hover-actions ds-on-scrim" @onclick:stopPropagation="true" @onkeydown:stopPropagation="true">
                 <MudTooltip Text="View fullscreen">
                     <MudIconButton Icon="@Icons.Material.Filled.Fullscreen"
                                    Size="Size.Small"

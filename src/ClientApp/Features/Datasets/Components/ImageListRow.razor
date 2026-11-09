@@ -30,7 +30,7 @@
                 <MudStack Row="true" Spacing="2" Class="mt-2" Wrap="Wrap.Wrap">
                     @foreach (string fact in Facts)
                     {
-                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default" @key="fact">@fact</MudChip>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">@fact</MudChip>
                     }
                 </MudStack>
 
@@ -39,7 +39,7 @@
                     <MudStack Row="true" Spacing="1" Class="mt-2" Wrap="Wrap.Wrap">
                         @foreach (string tag in Item.Tags.Take(5))
                         {
-                            <MudChip T="string" Size="Size.Small" Color="Color.Default" @key="tag">@tag</MudChip>
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default">@tag</MudChip>
                         }
                         @if (Item.Tags.Count > 5)
                         {
@@ -49,7 +49,7 @@
                 }
             </div>
 
-            <div class="actions-container" @onclick:stopPropagation="true">
+            <div class="actions-container" @onclick:stopPropagation="true" @onkeydown:stopPropagation="true">
                 <MudTooltip Text="@(Item.IsFavorite ? "Remove from favourites" : "Add to favourites")">
                     <MudIconButton Icon="@(Item.IsFavorite ? Icons.Material.Filled.Star : Icons.Material.Outlined.StarBorder)"
                                    Color="@(Item.IsFavorite ? Color.Warning : Color.Default)"
