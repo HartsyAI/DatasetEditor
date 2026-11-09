@@ -12,6 +12,7 @@ using DatasetStudio.DTO.Auth;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.Tests.APIBackend.Fixtures;
 using FluentAssertions;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -47,13 +48,17 @@ namespace DatasetStudio.Tests.APIBackend
             }
         }
 
-        private async Task<DatasetStudioApiFactory> NewFactoryAsync(Action<AuthOptions>? configure = null)
+        private async Task<DatasetStudioApiFactory> NewFactoryAsync(Action<AuthOptions>? configure = null, Action<IServiceCollection>? services = null)
         {
             DatasetStudioApiFactory factory = new(_postgres.ConnectionString);
-            if (configure is not null)
+            factory.ConfigureTestServices = collection =>
             {
-                factory.ConfigureTestServices = services => services.Configure(configure);
-            }
+                if (configure is not null)
+                {
+                    collection.Configure(configure);
+                }
+                services?.Invoke(collection);
+            };
             await factory.InitializeDatabaseAsync();
             _factories.Add(factory);
             return factory;
@@ -119,6 +124,158 @@ namespace DatasetStudio.Tests.APIBackend
             limited.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
             limited.Headers.RetryAfter.Should().NotBeNull();
             (await ErrorOfAsync(limited)).Should().Contain("Too many attempts");
+        }
+
+        /// <summary>
+        /// PR 5.1 review: X-Forwarded-For was believed from any private-network address, so a LAN
+        /// client reaching the API's published port directly could send a new address with each
+        /// login and never hit the limit. With no proxy configured it is ignored.
+        /// </summary>
+        [Fact]
+        public async Task Login_FromAnUntrustedPeer_CantDodgeTheLimitWithForwardedFor()
+        {
+            DatasetStudioApiFactory factory = await NewFactoryAsync(o => o.LoginAttemptsPerMinute = 3,
+                services => services.AddTransient<Microsoft.AspNetCore.Hosting.IStartupFilter>(_ => new PeerAddressStartupFilter("10.1.2.3")));
+            using HttpClient client = factory.CreateClient();
+
+            HttpStatusCode[] statuses = await LoginWithForwardedForAsync(client, 4);
+
+            statuses.Take(3).Should().AllBeEquivalentTo(HttpStatusCode.Unauthorized);
+            statuses[3].Should().Be(HttpStatusCode.TooManyRequests);
+        }
+
+        /// <summary>Behind a configured proxy, each forwarded client address gets its own allowance.</summary>
+        [Fact]
+        public async Task Login_ThroughAConfiguredProxy_LimitsEachForwardedClientSeparately()
+        {
+            IConfiguration proxyConfig = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["ReverseProxy:KnownProxies:0"] = "10.1.2.3" })
+                .Build();
+            DatasetStudioApiFactory factory = await NewFactoryAsync(o => o.LoginAttemptsPerMinute = 3, services =>
+            {
+                services.AddTransient<Microsoft.AspNetCore.Hosting.IStartupFilter>(_ => new PeerAddressStartupFilter("10.1.2.3"));
+                services.Configure<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>(o =>
+                    global::DatasetStudio.APIBackend.Configuration.ReverseProxySettings.Apply(o, proxyConfig));
+            });
+            using HttpClient client = factory.CreateClient();
+
+            HttpStatusCode[] statuses = await LoginWithForwardedForAsync(client, 4);
+
+            statuses.Should().AllBeEquivalentTo(HttpStatusCode.Unauthorized);
+        }
+
+        [Theory]
+        [InlineData("ReverseProxy:KnownProxies:0", "caddy")]
+        [InlineData("ReverseProxy:KnownNetworks:0", "10.0.0.0/33")]
+        public void ReverseProxySettings_RejectsEntriesThatDontParse(string key, string value)
+        {
+            IConfiguration config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { [key] = value }).Build();
+            Action apply = () => global::DatasetStudio.APIBackend.Configuration.ReverseProxySettings.Apply(new Microsoft.AspNetCore.Builder.ForwardedHeadersOptions(), config);
+            apply.Should().Throw<InvalidOperationException>().WithMessage($"*{value}*");
+        }
+
+        private static async Task<HttpStatusCode[]> LoginWithForwardedForAsync(HttpClient client, int attempts)
+        {
+            List<HttpStatusCode> statuses = new();
+            for (int attempt = 0; attempt < attempts; attempt++)
+            {
+                using HttpRequestMessage request = new(HttpMethod.Post, "/api/auth/login")
+                {
+                    Content = JsonContent.Create(new LoginRequest("nobody", "wrong-password"))
+                };
+                request.Headers.Add("X-Forwarded-For", $"203.0.113.{attempt + 1}");
+                using HttpResponseMessage response = await client.SendAsync(request);
+                statuses.Add(response.StatusCode);
+            }
+            return statuses.ToArray();
+        }
+
+        /// <summary>The in-memory test server has no peer address; this gives requests one.</summary>
+        private sealed class PeerAddressStartupFilter : Microsoft.AspNetCore.Hosting.IStartupFilter
+        {
+            private readonly IPAddress _address;
+
+            public PeerAddressStartupFilter(string address)
+            {
+                _address = IPAddress.Parse(address);
+            }
+
+            public Action<Microsoft.AspNetCore.Builder.IApplicationBuilder> Configure(Action<Microsoft.AspNetCore.Builder.IApplicationBuilder> next) => app =>
+            {
+                app.Use((context, nextMiddleware) =>
+                {
+                    context.Connection.RemoteIpAddress = _address;
+                    return nextMiddleware(context);
+                });
+                next(app);
+            };
+        }
+
+        /// <summary>
+        /// PR 5.1 review: renaming case-only duplicates with "-" plus the id's first 8 characters
+        /// could produce a name another account already had (here "alice-20000000"), and the
+        /// unique-index creation then failed the migration and the API's startup. Names are now
+        /// checked against the table as it stands, including ones assigned in the same run.
+        /// </summary>
+        [Fact]
+        public async Task Migration_RenamesCaseOnlyDuplicates_WithoutCollidingWithExistingNames()
+        {
+            string databaseName = $"dataset_studio_dupes_{Guid.NewGuid():N}";
+            Npgsql.NpgsqlConnectionStringBuilder admin = new(_postgres.ConnectionString) { Database = "postgres", Pooling = false };
+            Npgsql.NpgsqlConnectionStringBuilder target = new(_postgres.ConnectionString) { Database = databaseName, Pooling = false };
+            await using (Npgsql.NpgsqlConnection connection = new(admin.ConnectionString))
+            {
+                await connection.OpenAsync();
+                await using Npgsql.NpgsqlCommand create = new($"CREATE DATABASE \"{databaseName}\"", connection);
+                await create.ExecuteNonQueryAsync();
+            }
+
+            try
+            {
+                DbContextOptions<DatasetStudioDbContext> options = new DbContextOptionsBuilder<DatasetStudioDbContext>()
+                    .UseNpgsql(target.ConnectionString).Options;
+                await using (DatasetStudioDbContext db = new(options))
+                {
+                    Microsoft.EntityFrameworkCore.Migrations.IMigrator migrator =
+                        Microsoft.EntityFrameworkCore.Infrastructure.AccessorExtensions.GetService<Microsoft.EntityFrameworkCore.Migrations.IMigrator>(db);
+                    await migrator.MigrateAsync("20261109185739_AddDatasetRowVersion");
+                    await db.Database.ExecuteSqlRawAsync(@"
+INSERT INTO users (id, username, email, password_hash, role, is_active, email_verified, created_at) VALUES
+ ('10000000-0000-0000-0000-000000000001', 'alice',          'alice@example.com',      'x', 'User', true, false, '2024-01-01'),
+ ('20000000-0000-0000-0000-000000000002', 'Alice',          'ALICE@example.com',      'x', 'User', true, false, '2024-02-01'),
+ ('30000000-0000-0000-0000-000000000003', 'alice-1',        'dup1-alice@example.com', 'x', 'User', true, false, '2024-03-01'),
+ ('40000000-0000-0000-0000-000000000004', 'ALICE',          'Alice@Example.com',      'x', 'User', true, false, '2024-04-01'),
+ ('50000000-0000-0000-0000-000000000005', 'alice-20000000', 'other@example.com',      'x', 'User', true, false, '2024-05-01')");
+
+                    await db.Database.MigrateAsync();
+                }
+
+                Dictionary<string, (string Username, string Email)> rows = new();
+                await using (Npgsql.NpgsqlConnection connection = new(target.ConnectionString))
+                {
+                    await connection.OpenAsync();
+                    await using Npgsql.NpgsqlCommand select = new("SELECT id::text, username, email FROM users WHERE username <> 'admin'", connection);
+                    await using Npgsql.NpgsqlDataReader reader = await select.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        rows[reader.GetString(0)[..1]] = (reader.GetString(1), reader.GetString(2));
+                    }
+                }
+
+                rows["1"].Should().Be(("alice", "alice@example.com"));
+                rows["2"].Should().Be(("Alice-2", "dup2-ALICE@example.com"));
+                rows["3"].Should().Be(("alice-1", "dup1-alice@example.com"));
+                rows["4"].Should().Be(("ALICE-3", "dup3-Alice@Example.com"));
+                rows["5"].Should().Be(("alice-20000000", "other@example.com"));
+            }
+            finally
+            {
+                Npgsql.NpgsqlConnection.ClearAllPools();
+                await using Npgsql.NpgsqlConnection connection = new(admin.ConnectionString);
+                await connection.OpenAsync();
+                await using Npgsql.NpgsqlCommand drop = new($"DROP DATABASE IF EXISTS \"{databaseName}\" WITH (FORCE)", connection);
+                await drop.ExecuteNonQueryAsync();
+            }
         }
 
         [Fact]

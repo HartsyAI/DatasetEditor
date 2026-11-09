@@ -159,7 +159,9 @@ BCrypt (work factor 11).
   and shows "Registration is closed" on `/register`; the endpoint itself returns 403.
 - *Rate limits* (`Auth:LoginAttemptsPerMinute`, default 10; `Auth:RegistrationsPerHour`,
   default 20) are per client IP, fixed-window, and answer 429 with `Retry-After`. Behind Caddy
-  the client IP comes from `X-Forwarded-For`, trusted only from loopback and private networks.
+  the client IP comes from `X-Forwarded-For`, believed only from the proxies listed under
+  `ReverseProxy:KnownProxies`/`KnownNetworks` (`ReverseProxySettings`; none by default, Caddy's
+  fixed address in the production compose file).
 - *Sessions are re-checked.* The cookie carries the account's security stamp. On each request
   `CookiePrincipalValidator` compares it with the account (cached per user for
   `Auth:RevalidateEvery`, default 30 s): a deleted or deactivated account, or a changed stamp,

@@ -147,20 +147,11 @@ builder.Services.AddMemoryCache();
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
 
 // Behind the Caddy proxy every request comes from the proxy's address, so the client IP the rate
-// limits key on comes from X-Forwarded-For. It is trusted only from loopback and private networks
-// (where the compose proxy runs), so a client on the internet can't set its own.
-builder.Services.Configure<ForwardedHeadersOptions>(options =>
-{
-    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    options.ForwardLimit = 1;
-    options.KnownProxies.Clear();
-    options.KnownIPNetworks.Clear();
-    options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("127.0.0.0/8"));
-    options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("10.0.0.0/8"));
-    options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("172.16.0.0/12"));
-    options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("192.168.0.0/16"));
-    options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse("::1/128"));
-});
+// limits key on comes from X-Forwarded-For, believed only from the proxies configured under
+// ReverseProxy (see ReverseProxySettings). Read when the options are first used, after the host
+// is built, so every configuration source counts.
+builder.Services.AddOptions<ForwardedHeadersOptions>()
+    .Configure<IConfiguration>(DatasetStudio.APIBackend.Configuration.ReverseProxySettings.Apply);
 
 // Login and registration each cost a BCrypt hash and had no limit, inviting CPU exhaustion and
 // password guessing (audit A-2). Limits are per client IP and read from Auth options.

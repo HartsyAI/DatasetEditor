@@ -28,6 +28,11 @@ overlay, Caddy is the sole entry point). MinIO is **not** part of this stack; S3
    table is empty. It replaces the password hash only when `ADMIN_PASSWORD` has changed, and then
    ends the admin's existing sessions. This is how you reset a forgotten admin password: change
    `ADMIN_PASSWORD` in `.env` and `docker compose ... up -d` again.
+4. Caddy requests a certificate for `DOMAIN`. A real public domain gets automatic Let's Encrypt
+   TLS with zero extra config. Left at the default `localhost` (or any non-public
+   domain/IP), Caddy issues a locally-trusted self-signed certificate instead (`tls internal`
+   is implicit for those addresses) — this is what the Phase 6 real-run verification exercised,
+   without owning a domain.
 
 ## Accounts
 
@@ -37,16 +42,18 @@ and nobody else can sign up. To let people register, set `ALLOW_REGISTRATION=tru
 start HuggingFace downloads, so open registration only on a server you mean to share.
 
 Login is limited to 10 attempts per client IP per minute and registration to 20 per hour
-(`Auth__LoginAttemptsPerMinute`, `Auth__RegistrationsPerHour`). The client IP is read from
-Caddy's `X-Forwarded-For`, which the API trusts only from loopback and private networks.
+(`Auth__LoginAttemptsPerMinute`, `Auth__RegistrationsPerHour`). Every request reaches the API
+from Caddy, so the client IP is the one Caddy sends in `X-Forwarded-For`. The API believes that
+header only from the addresses in `ReverseProxy__KnownProxies__*` / `ReverseProxy__KnownNetworks__*`
+and from nowhere by default. The production compose file puts Caddy at a fixed address
+(`CADDY_IP`, default `172.31.250.10`, in `PROXY_SUBNET`, default `172.31.250.0/24`) and names only
+that address, so a client that reaches the API another way can't choose its own IP. If that range
+is already used on the host, change both values in `.env`. An existing install created its compose
+network before the subnet was fixed: run `docker compose -f docker-compose.yml -f docker-compose.prod.yml down`
+once (volumes stay) before `up -d`.
 
 Deactivating an account (`users.is_active = false`) or changing its role takes effect on its
 open sessions within 30 seconds (`Auth__RevalidateEvery`).
-4. Caddy requests a certificate for `DOMAIN`. A real public domain gets automatic Let's Encrypt
-   TLS with zero extra config. Left at the default `localhost` (or any non-public
-   domain/IP), Caddy issues a locally-trusted self-signed certificate instead (`tls internal`
-   is implicit for those addresses) — this is what the Phase 6 real-run verification exercised,
-   without owning a domain.
 
 ## TLS / domain
 
