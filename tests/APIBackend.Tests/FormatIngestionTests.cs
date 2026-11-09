@@ -201,6 +201,37 @@ namespace DatasetStudio.Tests.APIBackend
             _written.Single(i => i.Title == "extra").ImageUrl.Should().EndWith("train/extra.png");
         }
 
+        /// <summary>
+        /// Codex review on #20: A.png and a.png are different images on a case-sensitive
+        /// filesystem. Each row gets its own image and neither is dropped.
+        /// </summary>
+        [Fact]
+        public async Task Upload_ZipWithImagesDifferingOnlyInCase_KeepsThemApart()
+        {
+            string probe = Path.Combine(_root, "CaseProbe");
+            await File.WriteAllTextAsync(probe, "x");
+            if (File.Exists(Path.Combine(_root, "caseprobe")))
+            {
+                return; // case-insensitive filesystem (Windows, macOS): the two names are one file there
+            }
+
+            string path = Path.Combine(_root, "case.zip");
+            using (ZipArchive zip = ZipFile.Open(path, ZipArchiveMode.Create))
+            {
+                await WriteEntryAsync(zip, "A.png", Png(3, 3));
+                await WriteEntryAsync(zip, "a.png", Png(5, 5));
+                await WriteEntryAsync(zip, "metadata.jsonl",
+                    "{\"file_name\": \"a.png\", \"text\": \"lower\"}\n{\"file_name\": \"A.png\", \"text\": \"upper\"}\n");
+            }
+
+            await CreateService().StartIngestionAsync(_datasetId, path, CancellationToken.None);
+
+            _written.Should().HaveCount(2, "two rows, each describing its own image");
+            _written.Single(i => i.Title == "lower").ImageUrl.Should().EndWith("/a.png");
+            _written.Single(i => i.Title == "upper").ImageUrl.Should().EndWith("/A.png");
+            (_written.Single(i => i.Title == "lower").Width).Should().Be(5);
+        }
+
         /// <summary>Audit I-8: a download that fails to parse is deleted, not left in the upload folder.</summary>
         [Fact]
         public async Task HuggingFaceDownload_ParseFailure_DeletesTheDownloadedFile()

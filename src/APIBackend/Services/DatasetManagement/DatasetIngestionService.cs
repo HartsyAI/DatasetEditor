@@ -606,8 +606,9 @@ public class DatasetIngestionService : IDatasetIngestionService
             // items (audit I-6). A row that names an extracted image (HuggingFace imagefolder's
             // metadata.csv/metadata.jsonl `file_name`, or a relative path in an image column)
             // is linked to it.
-            HashSet<string> imageSet = new(extractedImages, StringComparer.OrdinalIgnoreCase);
-            HashSet<string> describedImages = new(StringComparer.OrdinalIgnoreCase);
+            // Exact archive paths: on a case-sensitive filesystem A.png and a.png are two images.
+            ZipImageIndex imageSet = new(extractedImages);
+            HashSet<string> describedImages = new(StringComparer.Ordinal);
             foreach (ZipArchiveEntry dataEntry in dataEntries)
             {
                 string entryFolder = (Path.GetDirectoryName(dataEntry.FullName) ?? string.Empty).Replace('\\', '/');
@@ -735,7 +736,7 @@ public class DatasetIngestionService : IDatasetIngestionService
     /// The extracted image a row refers to: its <c>file_name</c> (HuggingFace imagefolder) or a
     /// relative path in its image column, resolved against the data file's folder first.
     /// </summary>
-    private static string? FindLinkedImage(DatasetItemDto row, string dataFileFolder, HashSet<string> extractedImages)
+    private static string? FindLinkedImage(DatasetItemDto row, string dataFileFolder, ZipImageIndex extractedImages)
     {
         List<string> candidates = new();
         foreach (KeyValuePair<string, string> pair in row.Metadata)
@@ -759,16 +760,45 @@ public class DatasetIngestionService : IDatasetIngestionService
             }
             relative = relative.TrimStart('/');
 
-            if (dataFileFolder.Length > 0 && extractedImages.TryGetValue($"{dataFileFolder}/{relative}", out string? besideDataFile))
+            if (dataFileFolder.Length > 0 && extractedImages.Find($"{dataFileFolder}/{relative}") is { } besideDataFile)
             {
                 return besideDataFile;
             }
-            if (extractedImages.TryGetValue(relative, out string? match))
+            if (extractedImages.Find(relative) is { } match)
             {
                 return match;
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// Looks up extracted ZIP images by archive path: an exact match first, then a
+    /// case-insensitive one only when exactly one image matches. A plain case-insensitive set
+    /// merged A.png and a.png, so a row naming either got the other's image and one image was
+    /// dropped from the dataset (Codex review on #20).
+    /// </summary>
+    private sealed class ZipImageIndex
+    {
+        private readonly HashSet<string> _exact;
+        private readonly ILookup<string, string> _ignoringCase;
+
+        public ZipImageIndex(IEnumerable<string> paths)
+        {
+            List<string> all = paths.ToList();
+            _exact = new HashSet<string>(all, StringComparer.Ordinal);
+            _ignoringCase = all.Distinct(StringComparer.Ordinal).ToLookup(p => p, StringComparer.OrdinalIgnoreCase);
+        }
+
+        public string? Find(string path)
+        {
+            if (_exact.Contains(path))
+            {
+                return path;
+            }
+            List<string> matches = _ignoringCase[path].ToList();
+            return matches.Count == 1 ? matches[0] : null;
+        }
     }
 
     /// <summary>
