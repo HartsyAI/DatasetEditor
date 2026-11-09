@@ -11,8 +11,8 @@ namespace DatasetStudio.ClientApp.Services.StateManagement;
 
 public sealed class ApiKeyState
 {
+    /// <summary>Storage key for the HuggingFace access token, the only provider the client uses.</summary>
     public const string ProviderHuggingFace = "huggingface";
-    public const string ProviderHartsy = "hartsy";
 
     public ApiKeySettings Settings { get; private set; } = new ApiKeySettings();
 

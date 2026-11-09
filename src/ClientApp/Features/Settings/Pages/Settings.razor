@@ -4,35 +4,28 @@
 <PageTitle>Settings - Dataset Studio</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Large" Class="px-4 py-4">
-    <MudStack Spacing="4">
-        <MudStack Spacing="1">
-            <MudText Typo="Typo.h4" HtmlTag="h1">Settings</MudText>
-            <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                Preferences are saved in this browser.
-            </MudText>
-        </MudStack>
+    <PageHeader Title="Settings" Subtitle="Preferences are saved in this browser and apply as soon as you change them." />
 
-        <MudGrid Spacing="3">
-            <MudItem xs="12" md="4">
-                <MudPaper Class="pa-4 mud-height-full" Elevation="1">
-                    <ThemeSelector Value="@ViewState.Theme" ValueChanged="@OnThemeChangedAsync" />
-                </MudPaper>
-            </MudItem>
-            <MudItem xs="12" md="4">
-                <MudPaper Class="pa-4 mud-height-full" Elevation="1">
-                    <ViewPreferences SelectedViewMode="@ViewState.ViewMode"
-                                     GridColumns="@ViewState.GridColumns"
-                                     ShowMetadataOverlay="@ViewState.Settings.ShowMetadataOverlay"
-                                     OnViewModeChanged="@OnViewModeChangedAsync"
-                                     OnGridColumnsChanged="@OnGridColumnsChangedAsync"
-                                     OnShowMetadataOverlayChanged="@OnShowMetadataOverlayChangedAsync" />
-                </MudPaper>
-            </MudItem>
-            <MudItem xs="12" md="4">
-                <MudPaper Class="pa-4 mud-height-full" Elevation="1">
-                    <ApiKeySettingsPanel />
-                </MudPaper>
-            </MudItem>
-        </MudGrid>
-    </MudStack>
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="4">
+            <SectionCard Title="Theme" Icon="@Icons.Material.Filled.DarkMode">
+                <ThemeSelector Value="@ViewState.Theme" ValueChanged="@OnThemeChangedAsync" />
+            </SectionCard>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <SectionCard Title="Viewer" Icon="@Icons.Material.Filled.GridView">
+                <ViewPreferences SelectedViewMode="@ViewState.ViewMode"
+                                 GridColumns="@ViewState.GridColumns"
+                                 ShowMetadataOverlay="@ViewState.Settings.ShowMetadataOverlay"
+                                 OnViewModeChanged="@OnViewModeChangedAsync"
+                                 OnGridColumnsChanged="@OnGridColumnsChangedAsync"
+                                 OnShowMetadataOverlayChanged="@OnShowMetadataOverlayChangedAsync" />
+            </SectionCard>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <SectionCard Title="HuggingFace token" Icon="@Icons.Material.Filled.Cloud">
+                <ApiKeySettingsPanel />
+            </SectionCard>
+        </MudItem>
+    </MudGrid>
 </MudContainer>
