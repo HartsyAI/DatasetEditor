@@ -1,35 +1,17 @@
-@* Allows users to toggle between light and dark modes. *@
+@* Light / dark / follow-the-system theme choice for the Settings page. *@
 <MudStack Spacing="2">
     <MudText Typo="Typo.subtitle1">Theme</MudText>
-    <MudToggleIconButton ToggledIcon="@Icons.Material.Filled.DarkMode"
-                         Icon="@Icons.Material.Filled.LightMode"
-                         Color="Color.Primary"
-                         Toggled="@_isDark"
-                         ToggledChanged="OnThemeChangedAsync"
-                         aria-label="Dark mode" />
+    <MudToggleGroup T="ThemeMode"
+                    Value="@Value"
+                    ValueChanged="@OnValueChangedAsync"
+                    Color="Color.Primary"
+                    Outlined="true"
+                    aria-label="Theme">
+        <MudToggleItem T="ThemeMode" Value="ThemeMode.Light" Text="Light" />
+        <MudToggleItem T="ThemeMode" Value="ThemeMode.Dark" Text="Dark" />
+        <MudToggleItem T="ThemeMode" Value="ThemeMode.Auto" Text="System" />
+    </MudToggleGroup>
     <MudText Typo="Typo.caption" Class="mud-text-secondary">
-        TODO: Bind to ViewState.Settings.ThemeMode to reflect persisted preference.
+        System follows your operating system's light or dark setting.
     </MudText>
 </MudStack>
-
-@code {
-    /// <summary>
-    /// TODO: Replace with ThemeMode enum once ViewState exposes strongly-typed mode.
-    /// </summary>
-    [Parameter] public bool IsDark { get; set; }
-
-    /// <summary>
-    /// Emitted when the toggle changes. Settings page should handle persistence via LocalStorageInterop once available.
-    /// </summary>
-    [Parameter] public EventCallback<bool> OnThemeChanged { get; set; }
-
-    private bool _isDark => IsDark;
-
-    private async Task OnThemeChangedAsync(bool value)
-    {
-        if (OnThemeChanged.HasDelegate)
-        {
-            await OnThemeChanged.InvokeAsync(value);
-        }
-    }
-}

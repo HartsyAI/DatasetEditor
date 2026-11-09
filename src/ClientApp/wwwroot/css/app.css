@@ -1,6 +1,53 @@
-/* Dataset Studio - Main Styles */
+/* Dataset Studio - global styles.
+   Palette colours come from MudBlazor (--mud-palette-*), which AppTheme.cs configures.
+   The --ds-* tokens below cover what MudBlazor doesn't own (DESIGN.md §2). Components
+   reference tokens; they never write their own colour literals. */
 
-/* Base Styles */
+:root {
+    /* Shape */
+    --ds-radius-sm: 4px;
+    --ds-radius-md: 8px;
+    --ds-radius-lg: 12px;
+
+    /* Elevation for image cards (papers use MudBlazor elevation) */
+    --ds-shadow-card: 0 1px 3px rgb(0 0 0 / .12);
+    --ds-shadow-card-hover: 0 8px 16px rgb(0 0 0 / .16);
+
+    /* Motion */
+    --ds-transition: 200ms cubic-bezier(.4, 0, .2, 1);
+    --ds-hover-lift: translateY(-4px);
+
+    /* Scrims over images: the one fixed-colour surface, independent of the theme because
+       it sits over an unknown image, not a themed surface (DESIGN.md §4.5). */
+    --ds-scrim-faint: rgb(0 0 0 / .3);
+    --ds-scrim: rgb(0 0 0 / .6);
+    --ds-scrim-strong: rgb(0 0 0 / .8);
+    --ds-scrim-solid: rgb(0 0 0 / .88);
+    --ds-on-scrim: #fff;
+    --ds-on-scrim-muted: rgb(255 255 255 / .9);
+
+    /* Selection */
+    --ds-selection-ring: 0 0 0 3px var(--mud-palette-primary);
+
+    /* Layout */
+    --ds-grid-gap: 16px;
+    --ds-z-overlay: 2;
+
+    /* Boot screen only: shown before Blazor and MudThemeProvider load. Same values as
+       AppTheme's dark and light Background, so the page doesn't flash on first paint. */
+    --ds-boot-bg-dark: #0F172A;
+    --ds-boot-bg-light: #F8FAFC;
+    --ds-boot-fg: #64748B;
+    --ds-boot-accent: #2563EB;
+}
+
+@media (max-width: 600px) {
+    :root {
+        --ds-grid-gap: 8px;
+    }
+}
+
+/* Base. No body background here: MudThemeProvider sets it from the active palette. */
 * {
     margin: 0;
     padding: 0;
@@ -12,13 +59,39 @@ html, body {
     font-family: 'Roboto', 'Helvetica', 'Arial', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    background-color: #020617;
 }
 
 #app {
     height: 100%;
     display: flex;
     flex-direction: column;
+}
+
+/* Boot screen (index.html). The inline script there sets data-ds-boot from the saved theme;
+   the rule only applies while the loader is in the DOM, so it never overrides the theme. */
+html[data-ds-boot="dark"] body:has(#ds-boot-loader) {
+    background-color: var(--ds-boot-bg-dark);
+}
+
+html[data-ds-boot="light"] body:has(#ds-boot-loader) {
+    background-color: var(--ds-boot-bg-light);
+}
+
+#ds-boot-loader {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    height: 100vh;
+    color: var(--ds-boot-fg);
+}
+
+#ds-boot-loader circle {
+    stroke: var(--ds-boot-accent);
+}
+
+#ds-boot-loader p {
+    margin-top: 20px;
 }
 
 .mud-layout {
@@ -30,12 +103,21 @@ html, body {
     height: 100vh;
 }
 
-/* Blazor Error UI */
+.mud-main-content {
+    padding: 0 !important;
+    margin-top: 0 !important;
+}
+
+.mud-virtual-scrollable {
+    width: 100%;
+}
+
+/* Blazor error UI */
 #blazor-error-ui {
-    background: #020617;
-    color: #e5e7eb;
+    background: var(--mud-palette-surface);
+    color: var(--mud-palette-text-primary);
     bottom: 0;
-    box-shadow: 0 -1px 5px rgba(0, 0, 0, 0.35);
+    box-shadow: var(--ds-shadow-card-hover);
     display: none;
     left: 0;
     padding: 0.6rem 1.25rem 0.7rem 1.25rem;
@@ -51,13 +133,24 @@ html, body {
     top: 0.5rem;
 }
 
-/* Loading Animation */
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+/* Text and icons over an image scrim (DESIGN.md §4.5). */
+.ds-on-scrim {
+    color: var(--ds-on-scrim);
 }
 
-/* Custom Scrollbar */
+/* Layout helpers used instead of fixed heights like Style="height: 80vh" (DESIGN.md §3). */
+.ds-fill {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.ds-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Scrollbars follow the palette */
 ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -68,103 +161,43 @@ html, body {
 }
 
 ::-webkit-scrollbar-thumb {
-    background: #CBD5E1;
-    border-radius: 4px;
+    background: var(--mud-palette-action-disabled);
+    border-radius: var(--ds-radius-sm);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #94A3B8;
+    background: var(--mud-palette-text-secondary);
 }
 
-/* Dark Mode Scrollbar */
-.mud-theme-dark ::-webkit-scrollbar-thumb {
-    background: #475569;
-}
-
-.mud-theme-dark ::-webkit-scrollbar-thumb:hover {
-    background: #64748B;
-}
-
-/* Image Grid - Already defined in ImageGrid.razor but included here as fallback */
-.image-grid {
-    display: grid;
-    gap: 16px;
-    padding: 16px;
-    width: 100%;
-}
-
-/* Image Loading Placeholder Animation */
-@keyframes loading {
+/* Image loading placeholder shimmer (set by interop.js) */
+@keyframes ds-shimmer {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }
 }
 
 .image-loading {
-    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background: linear-gradient(90deg,
+        var(--mud-palette-background-gray) 25%,
+        var(--mud-palette-surface) 50%,
+        var(--mud-palette-background-gray) 75%);
     background-size: 200% 100%;
-    animation: loading 1.5s ease-in-out infinite;
+    animation: ds-shimmer 1.5s ease-in-out infinite;
 }
 
-/* Dark Mode Image Loading */
-.mud-theme-dark .image-loading {
-    background: linear-gradient(90deg, #1E293B 25%, #0F172A 50%, #1E293B 75%);
-    background-size: 200% 100%;
-}
-
-/* Responsive Utility Classes */
-.full-height {
-    height: 100%;
-}
-
-.full-width {
-    width: 100%;
-}
-
-/* Custom MudBlazor Overrides */
-.mud-main-content {
-    padding: 0 !important;
-    margin-top: 0 !important;
-}
-
-/* Ensure virtualized lists take full width */
-.mud-virtual-scrollable {
-    width: 100%;
-}
-
-/* Custom Focus Styles for Accessibility */
+/* Focus ring for keyboard users */
 *:focus-visible {
-    outline: 2px solid #2563EB;
+    outline: 2px solid var(--mud-palette-primary);
     outline-offset: 2px;
 }
 
-/* Print Styles */
 @media print {
-    #blazor-error-ui {
-        display: none !important;
-    }
-    
-    .mud-appbar,
-    .mud-drawer,
-    .filter-panel {
+    #blazor-error-ui,
+    .mud-drawer {
         display: none !important;
     }
 }
 
-/* Responsive Breakpoints */
-@media (max-width: 960px) {
-    .hide-on-mobile {
-        display: none !important;
-    }
-}
-
-@media (max-width: 600px) {
-    .image-grid {
-        gap: 8px;
-        padding: 8px;
-    }
-}
-
-/* Performance: Reduce animations on low-end devices */
+/* Respect reduced-motion preferences everywhere */
 @media (prefers-reduced-motion: reduce) {
     * {
         animation-duration: 0.01ms !important;
@@ -172,7 +205,3 @@ html, body {
         transition-duration: 0.01ms !important;
     }
 }
-
-/* TODO: Add theme-specific CSS files in themes/ folder */
-/* TODO: Add more responsive breakpoints for tablets */
-/* TODO: Add print-specific styles for reports */

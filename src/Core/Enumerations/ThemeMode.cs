@@ -9,7 +9,7 @@ public enum ThemeMode
     /// <summary>Dark theme (default)</summary>
     Dark = 1,
 
-    /// <summary>Auto theme based on system preference - TODO: Implement system detection</summary>
+    /// <summary>Follow the operating system colour scheme (prefers-color-scheme), tracked live</summary>
     Auto = 2,
 
     /// <summary>High contrast theme for accessibility - TODO: Implement high contrast</summary>

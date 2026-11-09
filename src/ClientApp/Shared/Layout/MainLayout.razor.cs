@@ -1,100 +1,108 @@
+using Blazored.LocalStorage;
+using DatasetStudio.ClientApp.Services.StateManagement;
+using DatasetStudio.ClientApp.Shared.Theme;
+using DatasetStudio.Core.Enumerations;
+using DatasetStudio.Core.Utilities.Logging;
 using Microsoft.AspNetCore.Components;
 using MudBlazor;
-using DatasetStudio.ClientApp.Features.Datasets.Services;
-using DatasetStudio.ClientApp.Services.StateManagement;
-using DatasetStudio.ClientApp.Shared.Services;
-using DatasetStudio.Core.Enumerations;
-using DatasetStudio.Core.Utilities;
-using DatasetStudio.Core.Utilities.Logging;
 
 namespace DatasetStudio.ClientApp.Shared.Layout;
 
-/// <summary>Main application layout with app bar, drawer navigation, and theme management.</summary>
+/// <summary>
+/// Application shell: navigation drawer, the theme provider, and the theme preference. The stored
+/// <see cref="ThemeMode"/> is loaded from LocalStorage on start, applied (Auto follows the OS and
+/// keeps following it while the app is open), and saved whenever it changes. Before this the
+/// toggle had no caller and the preference was never loaded or saved, so the app was always dark.
+/// </summary>
 public partial class MainLayout : IDisposable
 {
-    [Inject] public NavigationService NavigationService { get; set; } = default!;
-    [Inject] public ViewState ViewState { get; set; } = default!;
+    [Inject] private ViewState ViewState { get; set; } = default!;
+    [Inject] private ILocalStorageService LocalStorage { get; set; } = default!;
 
-    public bool _drawerOpen = true;
-    public bool _isDarkMode = false;
-    public MudTheme _theme = new();
+    private MudThemeProvider? _themeProvider;
+    private bool _drawerOpen = true;
+    private bool _isDarkMode = true;
+    // Dark until the browser reports otherwise: matches the product default and the boot screen.
+    private bool _systemPrefersDark = true;
 
-    /// <summary>Initializes component and subscribes to view state changes.</summary>
-    protected override void OnInitialized()
+    private string ThemeToggleLabel => _isDarkMode ? "Use light theme" : "Use dark theme";
+
+    /// <summary>Loads the saved preferences before the first render so the theme doesn't flash.</summary>
+    protected override async Task OnInitializedAsync()
     {
-        ViewState.OnChange += StateHasChanged;
-        _isDarkMode = ViewState.Theme == ThemeMode.Dark;
-        ConfigureTheme();
-        Logs.Info("MainLayout initialized");
+        ViewState.OnChange += HandleViewStateChanged;
+        await ViewState.LoadFromStorageAsync(LocalStorage);
+        ApplyThemeMode();
     }
 
-    /// <summary>Toggles the left navigation drawer open/closed.</summary>
-    public void ToggleDrawer()
+    /// <summary>
+    /// Reads and then watches the OS colour scheme. This needs the provider's JS module, which only
+    /// exists after the first render, so Auto briefly shows the default until this completes.
+    /// </summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _themeProvider is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _systemPrefersDark = await _themeProvider.GetSystemPreference();
+            await _themeProvider.WatchSystemPreference(OnSystemPreferenceChangedAsync);
+        }
+        catch (Exception ex)
+        {
+            // A browser without matchMedia support keeps the dark default; not worth failing the shell.
+            Logs.Warning($"Could not read the system colour scheme: {ex.Message}");
+        }
+
+        if (ApplyThemeMode())
+        {
+            StateHasChanged();
+        }
+    }
+
+    private void ToggleDrawer()
     {
         _drawerOpen = !_drawerOpen;
-        Logs.Info($"Drawer toggled: {(_drawerOpen ? "open" : "closed")}");
     }
 
-    /// <summary>Toggles between light and dark theme modes.</summary>
-    public void ToggleTheme()
+    /// <summary>Flips between light and dark, pinning an explicit mode, and saves it.</summary>
+    private async Task ToggleThemeAsync()
     {
-        ThemeMode newTheme = _isDarkMode ? ThemeMode.Light : ThemeMode.Dark;
-        _isDarkMode = !_isDarkMode;
-        ViewState.SetTheme(newTheme);
-        Logs.Info($"Theme toggled to: {newTheme}");
+        ViewState.SetTheme(ThemeModeResolver.ToggleFrom(_isDarkMode));
+        await ViewState.SaveToStorageAsync(LocalStorage);
     }
 
-    /// <summary>Navigates to the settings page.</summary>
-    public void NavigateToSettings()
+    private Task OnSystemPreferenceChangedAsync(bool prefersDark)
     {
-        NavigationService.NavigateToSettings();
-    }
-
-    /// <summary>Configures the MudBlazor theme with custom colors and styles.</summary>
-    public void ConfigureTheme()
-    {
-        _theme = new MudTheme()
+        _systemPrefersDark = prefersDark;
+        if (ApplyThemeMode())
         {
-            PaletteLight = new PaletteLight()
-            {
-                Primary = "#2563EB",
-                Secondary = "#64748B",
-                Success = "#10B981",
-                Error = "#EF4444",
-                Warning = "#F59E0B",
-                Info = "#06B6D4",
-                AppbarBackground = "#FFFFFF",
-                DrawerBackground = "#F9FAFB",
-                Background = "#FFFFFF",
-                Surface = "#FFFFFF"
-            },
-            PaletteDark = new PaletteDark()
-            {
-                Primary = "#3B82F6",
-                Secondary = "#64748B",
-                Success = "#10B981",
-                Error = "#EF4444",
-                Warning = "#F59E0B",
-                Info = "#06B6D4",
-                AppbarBackground = "#1F2937",
-                DrawerBackground = "#111827",
-                Background = "#0F172A",
-                Surface = "#1E293B"
-            },
-            Typography = new Typography()
-            {
-                Default = new Default()
-                {
-                    FontFamily = ["Roboto", "Helvetica", "Arial", "sans-serif"]
-                }
-            }
-        };
+            return InvokeAsync(StateHasChanged);
+        }
+        return Task.CompletedTask;
     }
 
-    /// <summary>Unsubscribes from state changes on disposal.</summary>
-    public void Dispose() => ViewState.OnChange -= StateHasChanged;
+    private void HandleViewStateChanged()
+    {
+        ApplyThemeMode();
+        InvokeAsync(StateHasChanged);
+    }
 
-    // TODO: Add keyboard shortcut handling (Ctrl+B for drawer, Ctrl+T for theme)
-    // TODO: Add responsive breakpoint handling for mobile
-    // TODO: Add app bar overflow menu for additional actions
+    /// <summary>Recomputes the dark flag; returns whether it changed.</summary>
+    private bool ApplyThemeMode()
+    {
+        bool isDark = ThemeModeResolver.IsDark(ViewState.Theme, _systemPrefersDark);
+        if (isDark == _isDarkMode)
+        {
+            return false;
+        }
+        _isDarkMode = isDark;
+        return true;
+    }
+
+    /// <summary>Unsubscribes from view-state changes.</summary>
+    public void Dispose() => ViewState.OnChange -= HandleViewStateChanged;
 }

@@ -5,33 +5,48 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>Dataset Studio</title>
     <base href="/" />
-    
+
+    <!-- Pick the boot-screen background from the saved theme before anything paints, so a
+         light-theme user doesn't get a dark flash (and vice versa). Mirrors ThemeModeResolver:
+         0 = Light, 1 = Dark, 2 = Auto (follow the OS); anything else = Dark. -->
+    <script>
+        (function () {
+            var dark = true;
+            try {
+                var saved = JSON.parse(localStorage.getItem('hartsy_view_settings') || 'null');
+                var mode = saved ? (saved.Theme !== undefined ? saved.Theme : saved.theme) : undefined;
+                if (mode === 0) { dark = false; }
+                else if (mode === 2) { dark = window.matchMedia('(prefers-color-scheme: dark)').matches; }
+            } catch (e) { /* storage unavailable: keep the dark default */ }
+            document.documentElement.setAttribute('data-ds-boot', dark ? 'dark' : 'light');
+        })();
+    </script>
+
     <!-- MudBlazor CSS -->
     <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
-    
-    <!-- Google Fonts (Roboto) -->
+
+    <!-- Google Fonts (Roboto). Icons are MudBlazor's inline SVGs, so no icon webfont. -->
     <link href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap" rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css?family=Material+Icons" rel="stylesheet" />
-    
+
     <!-- Custom CSS -->
     <link href="css/app.css" rel="stylesheet" />
-    
+
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="favicon.png" />
-    
+
     <!-- Meta tags for SEO -->
     <meta name="description" content="A powerful tool for viewing, filtering, and managing billion-scale AI image datasets" />
     <meta name="keywords" content="dataset, AI, images, viewer, editor" />
 </head>
 <body>
     <div id="app">
-        <div style="display: flex; align-items: center; justify-content: center; height: 100vh; flex-direction: column;">
+        <div id="ds-boot-loader">
             <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="12" cy="12" r="10" stroke="#2563EB" stroke-width="2" stroke-linecap="round" stroke-dasharray="63" stroke-dashoffset="63">
+                <circle cx="12" cy="12" r="10" stroke-width="2" stroke-linecap="round" stroke-dasharray="63" stroke-dashoffset="63">
                     <animate attributeName="stroke-dashoffset" values="63;0" dur="2s" repeatCount="indefinite" />
                 </circle>
             </svg>
-            <p style="margin-top: 20px; font-family: 'Roboto', sans-serif; color: #64748B;">Loading Dataset Studio...</p>
+            <p>Loading Dataset Studio...</p>
         </div>
     </div>
 
@@ -40,18 +55,19 @@
         <a href="" class="reload">Reload</a>
         <a class="dismiss">🗙</a>
     </div>
-    
+
     <!-- MudBlazor JS -->
     <script src="_content/MudBlazor/MudBlazor.min.js"></script>
-    
-    <!-- Dexie.js for IndexedDB -->
-    <script src="https://unpkg.com/dexie@3.2.4/dist/dexie.min.js"></script>
-    
+
+    <!-- Dexie.js 3.2.4 for IndexedDB, vendored (was loaded from unpkg at runtime, which failed
+         offline and under a strict CSP). Source: npm dexie@3.2.4, sha512 checked against the registry. -->
+    <script src="lib/dexie/dexie.min.js"></script>
+
     <!-- Custom JS -->
     <script src="js/interop.js"></script>
     <script src="js/viewportInterop.js"></script>
     <script src="js/indexeddb-cache.js"></script>
-    
+
     <!-- Blazor WebAssembly -->
     <script src="_framework/blazor.webassembly.js"></script>
 </body>

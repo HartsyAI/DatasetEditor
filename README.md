@@ -136,7 +136,7 @@ refer to [docs/refactor-audit.md](docs/refactor-audit.md).
 | 4.9 | Virtualised viewer (grid / list / detail / lightbox) | Working (caveats) |
 | 4.10 | Item editing (single, bulk) | Partial (local datasets; broken in the dev setup) |
 | 4.11 | Filtering and search | Placeholder (UI only) |
-| 4.12 | Settings, theme, language | Placeholder (API keys only) |
+| 4.12 | Settings, theme, language | Partial (theme, view preferences, API keys; no i18n) |
 | 4.13 | AI tools | Placeholder |
 | 4.14 | Extensions | Partial (one example) |
 | 4.15 | Production deployment | Working |
@@ -350,17 +350,24 @@ library's "Only ready datasets" switch doesn't re-filter.
 
 **Gaps.** Real filtering needs server-side support (G-2) and a client that applies it.
 
-### 4.12 Settings, theme, language — Placeholder
+### 4.12 Settings, theme, language — Partial
 
-**What.** A Settings page with theme, view preferences, API keys (HuggingFace token stored in
-browser local storage).
+**What.** A Settings page with theme (Light, Dark or System), view preferences (view mode,
+grid columns, metadata overlay) and API keys (HuggingFace token stored in browser local
+storage). The drawer also has a one-click light/dark switch.
 
-**How.** `ViewState` holds preferences and has `LocalStorage` load/save methods that nothing
-calls; `MainLayout` builds the `MudTheme` and starts dark because `ViewSettings.Theme`
-defaults to Dark. `ThemeSelector` uses v6 parameter names, so it renders without an icon and
-never fires; the Settings handlers are no-ops; the page shows TODO text to users. Only the
-API-key panel persists anything. Translations (`wwwroot/translations/*.json`) are not loaded
-by anything.
+**How.** `Shared/Theme/AppTheme.cs` is the one `MudTheme` (DESIGN.md §2.2); app-level tokens
+are `--ds-*` custom properties in `wwwroot/css/app.css`. `MainLayout` loads `ViewState` from
+LocalStorage on start, resolves the stored `ThemeMode` with `ThemeModeResolver` (System reads
+and then watches `prefers-color-scheme` through `MudThemeProvider`), and every change is saved
+back immediately. A small inline script in `index.html` reads the same saved value so the boot
+screen matches the theme before Blazor loads.
+
+**Why.** Dark is the default (`ViewSettings.Theme`); light must be complete. Persisting in the
+browser keeps preferences per device without an account round-trip.
+
+**Gaps.** Translations (`wwwroot/translations/*.json`) are not loaded by anything (U-18).
+The high-contrast `ThemeMode` member is unimplemented and falls back to dark.
 
 ### 4.13 AI tools — Placeholder
 
