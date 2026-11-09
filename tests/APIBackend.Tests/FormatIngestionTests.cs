@@ -307,6 +307,21 @@ namespace DatasetStudio.Tests.APIBackend
             Directory.EnumerateFiles(UploadPath).Should().BeEmpty("the failed download must not be left on disk");
         }
 
+        /// <summary>Codex review on #20: an empty DataFilePath picks a file, like a missing one.</summary>
+        [Fact]
+        public async Task HuggingFaceDownload_EmptyDataFilePath_PicksAFile()
+        {
+            SetUpRepository(new HuggingFaceDatasetFile { Path = "data/train.csv", Size = 40 });
+            _huggingFace
+                .Setup(c => c.DownloadFileAsync("org/ds", "data/train.csv", It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<long?>(), It.IsAny<CancellationToken>()))
+                .Returns((string _, string _, string destination, string? _, string? _, long? _, CancellationToken _) =>
+                    File.WriteAllTextAsync(destination, "title,image_url\na,https://example.com/a.jpg\n"));
+
+            await CreateService().ImportFromHuggingFaceAsync(_datasetId, new ImportHuggingFaceDatasetRequest { Repository = "org/ds", DataFilePath = "" });
+
+            _written.Should().ContainSingle().Which.Title.Should().Be("a");
+        }
+
         /// <summary>Audit H-4: a file the tree lists as over the limit is refused before any of it is fetched.</summary>
         [Fact]
         public async Task HuggingFaceDownload_FileOverLimit_IsRefusedBeforeDownloading()

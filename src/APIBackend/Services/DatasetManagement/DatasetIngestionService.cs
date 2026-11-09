@@ -181,7 +181,11 @@ public class DatasetIngestionService : IDatasetIngestionService
             HuggingFaceDatasetFile? listedFile = string.IsNullOrEmpty(fileToDownload)
                 ? PickDownloadFile(datasetInfo.Files)
                 : datasetInfo.Files.FirstOrDefault(f => string.Equals(f.Path, fileToDownload, StringComparison.Ordinal));
-            fileToDownload ??= listedFile?.Path;
+            // An empty DataFilePath means "pick one" too, as it always did (Codex review on #20).
+            if (string.IsNullOrEmpty(fileToDownload))
+            {
+                fileToDownload = listedFile?.Path;
+            }
             if (string.IsNullOrEmpty(fileToDownload))
             {
                 throw new InvalidOperationException($"No suitable data file found in {request.Repository}. Please specify DataFilePath.");
