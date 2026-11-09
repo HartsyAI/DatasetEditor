@@ -239,7 +239,7 @@ internal static class DatasetEndpoints
         Guid datasetId,
         IFormFile file,
         Core.Abstractions.Repositories.IDatasetRepository repository,
-        IngestionQueue ingestionQueue,
+        IIngestionJobQueue ingestionQueue,
         IConfiguration configuration,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
@@ -267,10 +267,18 @@ internal static class DatasetEndpoints
             return Results.BadRequest("No file uploaded or file is empty.");
         }
 
+        // Checked before staging, so a full queue doesn't also fill the upload volume (audit I-4).
+        if (!await ingestionQueue.HasCapacityAsync(cancellationToken))
+        {
+            return IngestionQueueFull(httpContext);
+        }
+
         // Stage under Storage:UploadPath, the same root the ingestion service uses for its own
         // downloads. Path.GetTempPath() is ephemeral /tmp in the container, not the mounted volume,
         // so an upload could be lost on restart and was never on the configured disk (audit I-5).
-        string uploadPath = configuration["Storage:UploadPath"] ?? "./uploads";
+        // Absolute, because the path is stored in the job row and read back by a later process,
+        // which need not share this one's working directory.
+        string uploadPath = Path.GetFullPath(configuration["Storage:UploadPath"] ?? "./uploads");
         Directory.CreateDirectory(uploadPath);
         string tempFilePath = Path.Combine(
             uploadPath,
@@ -286,9 +294,21 @@ internal static class DatasetEndpoints
 
         // Queue ingestion to run in the background; return immediately so a large upload
         // doesn't hold the request thread. The client polls dataset status for progress.
-        ingestionQueue.Enqueue(new IngestionJob(datasetId, tempFilePath));
+        await ingestionQueue.EnqueueAsync(new IngestionJob(datasetId, tempFilePath), cancellationToken);
 
         return Results.Accepted($"/api/datasets/{datasetId}", new { datasetId, fileName = file.FileName });
+    }
+
+    /// <summary>
+    /// 503 with Retry-After when the ingestion queue is at <see cref="IngestionOptions.MaxQueuedJobs"/>.
+    /// The client shows the error text and the user can retry; nothing was staged or changed.
+    /// </summary>
+    private static IResult IngestionQueueFull(HttpContext httpContext)
+    {
+        httpContext.Response.Headers.RetryAfter = "30";
+        return Results.Json(
+            new { error = "The import queue is full. Try again in a minute." },
+            statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 
     /// <summary>
@@ -810,7 +830,7 @@ internal static class DatasetEndpoints
         Guid datasetId,
         ImportHuggingFaceDatasetRequest request,
         Core.Abstractions.Repositories.IDatasetRepository repository,
-        IngestionQueue ingestionQueue,
+        IIngestionJobQueue ingestionQueue,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
         CancellationToken cancellationToken)
@@ -837,6 +857,12 @@ internal static class DatasetEndpoints
             return Results.BadRequest(new { error = "Repository name is required" });
         }
 
+        // Before the dataset is updated, so a refused import leaves it as it was.
+        if (!await ingestionQueue.HasCapacityAsync(cancellationToken))
+        {
+            return IngestionQueueFull(httpContext);
+        }
+
         // Update dataset name/description if provided, and record the HF repository/config —
         // GetDatasetItems' streaming branch reads dataset.HuggingFaceRepository to know where
         // to stream rows from, so without this every streaming-mode dataset would complete
@@ -861,7 +887,7 @@ internal static class DatasetEndpoints
         // its own DI scope — not a fire-and-forget Task.Run against a scoped
         // IDatasetIngestionService, which used to race the request's DI scope (and its
         // scoped DbContext) being disposed right after this handler returns.
-        ingestionQueue.Enqueue(new IngestionJob(datasetId, FilePath: null, HuggingFaceRequest: request));
+        await ingestionQueue.EnqueueAsync(new IngestionJob(datasetId, FilePath: null, HuggingFaceRequest: request), cancellationToken);
 
         return Results.Accepted($"/api/datasets/{datasetId}", new
         {
@@ -887,7 +913,8 @@ internal static class DatasetEndpoints
         Guid datasetId,
         ImportFolderRequest request,
         Core.Abstractions.Repositories.IDatasetRepository repository,
-        IngestionQueue ingestionQueue,
+        IIngestionJobQueue ingestionQueue,
+        HttpContext httpContext,
         CancellationToken cancellationToken)
     {
         DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
@@ -906,7 +933,15 @@ internal static class DatasetEndpoints
             return Results.BadRequest(new { error = $"Folder not found: {request.FolderPath}" });
         }
 
-        ingestionQueue.Enqueue(new IngestionJob(datasetId, FilePath: null, FolderPath: request.FolderPath));
+        if (!await ingestionQueue.HasCapacityAsync(cancellationToken))
+        {
+            return IngestionQueueFull(httpContext);
+        }
+
+        // Absolute for the same reason as an upload's staged path: a later process reads it.
+        await ingestionQueue.EnqueueAsync(
+            new IngestionJob(datasetId, FilePath: null, FolderPath: Path.GetFullPath(request.FolderPath)),
+            cancellationToken);
 
         return Results.Accepted($"/api/datasets/{datasetId}", new
         {
