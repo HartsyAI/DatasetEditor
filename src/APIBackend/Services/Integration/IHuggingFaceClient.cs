@@ -29,6 +29,11 @@ public interface IHuggingFaceClient
     /// <param name="destinationPath">Local path to save the file</param>
     /// <param name="revision">Optional revision</param>
     /// <param name="accessToken">Optional access token</param>
+    /// <param name="maxBytes">
+    /// Largest file accepted. A larger file is refused from its Content-Length before anything is
+    /// written, or as soon as the stream passes the limit, and the partial file is deleted. Any
+    /// signed-in user can start a download, so it must be bounded (audit H-4).
+    /// </param>
     /// <param name="cancellationToken">Cancellation token</param>
     Task DownloadFileAsync(
         string repository,
@@ -36,6 +41,7 @@ public interface IHuggingFaceClient
         string destinationPath,
         string? revision = null,
         string? accessToken = null,
+        long? maxBytes = null,
         CancellationToken cancellationToken = default);
 }
 
