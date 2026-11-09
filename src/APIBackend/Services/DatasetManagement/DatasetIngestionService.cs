@@ -24,10 +24,11 @@ namespace DatasetStudio.APIBackend.Services.DatasetManagement;
 /// </summary>
 public class DatasetIngestionService : IDatasetIngestionService
 {
-    // Bounds parser-side memory (CSV row buffers, JSON element trees, extracted image
-    // bytes) independently of ParquetSchemaDefinition.DefaultBatchSize, which governs
-    // the writer's own row-group sizing.
-    private const int ChunkSize = 2000;
+    // Each chunk is appended as one Parquet row group, so this is the row-group size of every
+    // ingested shard. It was 2,000 while the writer's batch size was 10,000, so shards filled up
+    // with five times as many small groups as intended (audit I-9, P-5). Items carry metadata
+    // only, never image bytes, so 10,000 of them is a few megabytes.
+    private const int ChunkSize = DataAccess.Parquet.ParquetSchemaDefinition.DefaultBatchSize;
 
     private readonly Core.Abstractions.Repositories.IDatasetRepository _datasetRepository;
     private readonly Core.Abstractions.Repositories.IDatasetItemRepository _itemRepository;

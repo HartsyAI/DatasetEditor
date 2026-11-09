@@ -124,14 +124,11 @@ public static class ParquetSchemaDefinition
     }
 
     /// <summary>
-    /// Writer options with optimized settings for dataset items.
+    /// Writer options. Compression is not an option in this Parquet.Net version; the writer sets
+    /// <c>ParquetWriter.CompressionMethod</c> to <see cref="Compression"/> on every file it opens.
     /// </summary>
     public static ParquetOptions WriterOptions => new()
     {
-        // TODO: Update to new Parquet.NET API
-        // CompressionMethod = Compression,
-        // WriteStatistics = true,
-
         // Enable dictionary encoding for string columns
         UseDictionaryEncoding = true
     };

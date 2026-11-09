@@ -29,19 +29,27 @@ names and types.
 
 ## Behaviour
 
-- **Paging.** The cursor is an opaque `"shardIndex:rowIndex"` string. A page reads row groups
-  sequentially from the cursor position until the page is full. Cost is bounded by row-group
-  size, not by dataset size. Malformed cursors are not yet rejected (audit G-3) and an
-  exact-fill last page returns a cursor past the end (P-10).
-- **Ingestion.** Items are appended batch by batch. Each append re-opens the shard and rewrites its
-  footer, so a shard written in many small appends ends up with many small row groups (P-5).
+- **Paging.** The cursor is an opaque `"shardIndex:rowIndex"` string; a malformed one is rejected.
+  A page uses the footer's row-group row counts to skip every group that ends before the cursor
+  without decoding it, then decodes groups from there until the page is full. Cost is one footer
+  read plus the groups the page actually returns rows from. When the page ends exactly at the last
+  row, no cursor is returned.
+- **Counts.** An unfiltered count sums footer row counts, cached per shard file and invalidated by
+  the file's length and write time. A filtered count reads every row.
+- **Ingestion.** Items are appended batch by batch, `DefaultBatchSize` (10,000) rows per append, so
+  each append adds one 10,000-row group (ingestion used to append 2,000 at a time; I-9). Each
+  append re-opens the shard and rewrites its footer, and a dataset re-imported in many small
+  uploads still ends up with small groups; there is no compaction yet (P-5, planned with the
+  atomic shard rewrite in PR 4.2). A process killed mid-append can leave the shard unreadable
+  (P-11).
 - **Edits.** `UpdateItemsAsync` rewrites only the shards that contain an updated item. Each such
   shard is read whole into memory, its items are replaced, and it is written back as one row group.
   The delete-then-write is not atomic: a crash between the two loses the shard (P-3, P-4).
 - **Locking.** Writes are serialised per dataset with a `SemaphoreSlim` keyed by dataset id, so
   editing one dataset never blocks another.
-- **Compression.** `ParquetSchemaDefinition.Compression` is declared as Snappy, but the writer
-  option that would apply it is commented out (P-6), so files use the library's default codec.
+- **Compression.** Snappy. The writer sets `ParquetWriter.CompressionMethod` from
+  `ParquetSchemaDefinition.Compression` on every file it opens.
+- **Columns.** A page decodes every column of the groups it reads; there is no column projection.
 - **Item lookup by id** (`GetItemAsync`) has no dataset hint and scans every local dataset's
   shards (P-2).
 

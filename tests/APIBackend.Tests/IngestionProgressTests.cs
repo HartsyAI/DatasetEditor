@@ -30,7 +30,7 @@ namespace DatasetStudio.Tests.APIBackend
             Directory.CreateDirectory(folder);
             string csvPath = Path.Combine(folder, "rows.csv");
             StringBuilder csv = new("title,image_url\n");
-            for (int i = 0; i < 4_500; i++)
+            for (int i = 0; i < 22_500; i++)
             {
                 csv.Append($"item-{i},https://example.com/{i}.jpg\n");
             }
@@ -46,11 +46,11 @@ namespace DatasetStudio.Tests.APIBackend
                     .Callback((Guid _, long count, CancellationToken _) => reportedCounts.Add(count))
                     .Returns(Task.CompletedTask);
 
-                // 100 items already in the dataset (a second upload appends), 4,600 at the end.
+                // 100 items already in the dataset (a second upload appends), 22,600 at the end.
                 var items = new Mock<IDatasetItemRepository>();
                 items.SetupSequence(r => r.GetCountAsync(datasetId, It.IsAny<CancellationToken>()))
                     .ReturnsAsync(100)
-                    .ReturnsAsync(4_600);
+                    .ReturnsAsync(22_600);
 
                 DatasetIngestionService service = new(
                     datasets.Object,
@@ -62,7 +62,7 @@ namespace DatasetStudio.Tests.APIBackend
 
                 await service.StartIngestionAsync(datasetId, csvPath, CancellationToken.None);
 
-                reportedCounts.Should().Equal(new long[] { 2_100, 4_100, 4_600 },
+                reportedCounts.Should().Equal(new long[] { 10_100, 20_100, 22_600 },
                     "each full chunk reports the running total, then the final count is the true total");
             }
             finally

@@ -88,7 +88,7 @@ namespace DatasetStudio.Tests.APIBackend
         public async Task StartIngestionAsync_LargeCsv_WritesInMultipleBoundedChunksNotOneGiantInsert()
         {
             string tempFile = Path.Combine(Path.GetTempPath(), $"streaming-ingestion-test-{Guid.NewGuid():N}.csv");
-            await File.WriteAllTextAsync(tempFile, BuildCsv(5_000));
+            await File.WriteAllTextAsync(tempFile, BuildCsv(25_000));
 
             try
             {
@@ -109,8 +109,9 @@ namespace DatasetStudio.Tests.APIBackend
                 await service.StartIngestionAsync(Guid.NewGuid(), tempFile, CancellationToken.None);
 
                 // Old (pre-Phase-2) behavior: exactly 1 call sized to the whole file. The
-                // chunked rewrite must write in ceil(5000 / 2000) = 3 bounded batches instead.
-                insertedBatchSizes.Should().Equal(2_000, 2_000, 1_000);
+                // chunked rewrite must write in ceil(25000 / 10000) = 3 bounded batches instead (one
+                // row group each, ParquetSchemaDefinition.DefaultBatchSize rows; audit I-9).
+                insertedBatchSizes.Should().Equal(10_000, 10_000, 5_000);
                 datasetRepoMock.Verify(r => r.UpdateStatusAsync(
                     It.IsAny<Guid>(), IngestionStatusDto.Completed, null, It.IsAny<CancellationToken>()), Times.Once);
             }
