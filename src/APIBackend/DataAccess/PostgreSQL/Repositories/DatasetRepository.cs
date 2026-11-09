@@ -121,6 +121,41 @@ public sealed class DatasetRepository : IDatasetRepository
                 ?? throw new InvalidOperationException($"Dataset with ID {updated.Id} not found");
 
             FieldPatch patch = new();
+
+            // Where the items come from (type, HuggingFace repo/config/split, S3 profile/bucket/
+            // prefix, folder) is one selection. If the caller changes any part of it while another
+            // request changed any part since the caller's read, the update is refused as a whole:
+            // merging field by field could store a combination no request chose or validated, such
+            // as an S3 bucket on a dataset another request switched to HuggingFace, or a new
+            // repository with the old one's resolved split (Codex review on #21).
+            (string Name, object? Original, object? Updated, object? Current)[] source =
+            {
+                (nameof(DatasetDto.SourceType), original.SourceType, updated.SourceType, entity.SourceType),
+                (nameof(DatasetDto.SourceUri), original.SourceUri, updated.SourceUri, entity.SourceUri),
+                (nameof(DatasetDto.IsStreaming), original.IsStreaming, updated.IsStreaming, entity.IsStreaming),
+                (nameof(DatasetDto.HuggingFaceRepository), original.HuggingFaceRepository, updated.HuggingFaceRepository, entity.HuggingFaceRepository),
+                (nameof(DatasetDto.HuggingFaceConfig), original.HuggingFaceConfig, updated.HuggingFaceConfig, entity.HuggingFaceConfig),
+                (nameof(DatasetDto.HuggingFaceSplit), original.HuggingFaceSplit, updated.HuggingFaceSplit, entity.HuggingFaceSplit),
+                (nameof(DatasetDto.S3StorageProfileName), original.S3StorageProfileName, updated.S3StorageProfileName, entity.S3StorageProfileName),
+                (nameof(DatasetDto.S3Bucket), original.S3Bucket, updated.S3Bucket, entity.S3Bucket),
+                (nameof(DatasetDto.S3Prefix), original.S3Prefix, updated.S3Prefix, entity.S3Prefix),
+                (nameof(DatasetDto.StoragePath), original.StoragePath, updated.StoragePath, entity.StoragePath),
+            };
+            if (source.Any(f => !Equals(f.Original, f.Updated)))
+            {
+                // Another request setting a field to exactly the caller's value (two reads resolving the
+                // same split) agrees with the caller, so it isn't a conflict.
+                List<string> changedElsewhere = source
+                    .Where(f => !Equals(f.Current, f.Original) && !Equals(f.Current, f.Updated))
+                    .Select(f => f.Name)
+                    .ToList();
+                if (changedElsewhere.Count > 0)
+                {
+                    _dbContext.Entry(entity).State = EntityState.Detached;
+                    throw new DatasetUpdateConflictException(updated.Id, changedElsewhere);
+                }
+            }
+
             patch.Apply(nameof(DatasetDto.Name), original.Name, updated.Name, entity.Name, v => entity.Name = v);
             patch.Apply(nameof(DatasetDto.Description), original.Description, updated.Description, entity.Description, v => entity.Description = v);
             patch.Apply(nameof(DatasetDto.Status), original.Status, updated.Status, entity.Status, v => entity.Status = v);
@@ -128,22 +163,12 @@ public sealed class DatasetRepository : IDatasetRepository
             patch.Apply(nameof(DatasetDto.SourceType), original.SourceType, updated.SourceType, entity.SourceType, v => entity.SourceType = v);
             patch.Apply(nameof(DatasetDto.SourceUri), original.SourceUri, updated.SourceUri, entity.SourceUri, v => entity.SourceUri = v);
             patch.Apply(nameof(DatasetDto.IsStreaming), original.IsStreaming, updated.IsStreaming, entity.IsStreaming, v => entity.IsStreaming = v);
-            // Repository/config/split, and profile/bucket/prefix, each name one source together.
-            // When the caller changes any of them, all of them are written as the caller has them:
-            // otherwise a re-import to a new repository could keep a config/split that a
-            // concurrent items request resolved for the old one (Codex review on #21).
-            bool huggingFaceSourceChanged = !Equals(original.HuggingFaceRepository, updated.HuggingFaceRepository)
-                || !Equals(original.HuggingFaceConfig, updated.HuggingFaceConfig)
-                || !Equals(original.HuggingFaceSplit, updated.HuggingFaceSplit);
-            patch.Apply(nameof(DatasetDto.HuggingFaceRepository), original.HuggingFaceRepository, updated.HuggingFaceRepository, entity.HuggingFaceRepository, v => entity.HuggingFaceRepository = v, huggingFaceSourceChanged);
-            patch.Apply(nameof(DatasetDto.HuggingFaceConfig), original.HuggingFaceConfig, updated.HuggingFaceConfig, entity.HuggingFaceConfig, v => entity.HuggingFaceConfig = v, huggingFaceSourceChanged);
-            patch.Apply(nameof(DatasetDto.HuggingFaceSplit), original.HuggingFaceSplit, updated.HuggingFaceSplit, entity.HuggingFaceSplit, v => entity.HuggingFaceSplit = v, huggingFaceSourceChanged);
-            bool s3SourceChanged = !Equals(original.S3StorageProfileName, updated.S3StorageProfileName)
-                || !Equals(original.S3Bucket, updated.S3Bucket)
-                || !Equals(original.S3Prefix, updated.S3Prefix);
-            patch.Apply(nameof(DatasetDto.S3StorageProfileName), original.S3StorageProfileName, updated.S3StorageProfileName, entity.S3StorageProfileName, v => entity.S3StorageProfileName = v, s3SourceChanged);
-            patch.Apply(nameof(DatasetDto.S3Bucket), original.S3Bucket, updated.S3Bucket, entity.S3Bucket, v => entity.S3Bucket = v, s3SourceChanged);
-            patch.Apply(nameof(DatasetDto.S3Prefix), original.S3Prefix, updated.S3Prefix, entity.S3Prefix, v => entity.S3Prefix = v, s3SourceChanged);
+            patch.Apply(nameof(DatasetDto.HuggingFaceRepository), original.HuggingFaceRepository, updated.HuggingFaceRepository, entity.HuggingFaceRepository, v => entity.HuggingFaceRepository = v);
+            patch.Apply(nameof(DatasetDto.HuggingFaceConfig), original.HuggingFaceConfig, updated.HuggingFaceConfig, entity.HuggingFaceConfig, v => entity.HuggingFaceConfig = v);
+            patch.Apply(nameof(DatasetDto.HuggingFaceSplit), original.HuggingFaceSplit, updated.HuggingFaceSplit, entity.HuggingFaceSplit, v => entity.HuggingFaceSplit = v);
+            patch.Apply(nameof(DatasetDto.S3StorageProfileName), original.S3StorageProfileName, updated.S3StorageProfileName, entity.S3StorageProfileName, v => entity.S3StorageProfileName = v);
+            patch.Apply(nameof(DatasetDto.S3Bucket), original.S3Bucket, updated.S3Bucket, entity.S3Bucket, v => entity.S3Bucket = v);
+            patch.Apply(nameof(DatasetDto.S3Prefix), original.S3Prefix, updated.S3Prefix, entity.S3Prefix, v => entity.S3Prefix = v);
             patch.Apply(nameof(DatasetDto.TotalItems), original.TotalItems, updated.TotalItems, entity.TotalItems, v => entity.TotalItems = v);
             patch.Apply(nameof(DatasetDto.ErrorMessage), original.ErrorMessage, updated.ErrorMessage, entity.ErrorMessage, v => entity.ErrorMessage = v);
             patch.Apply(nameof(DatasetDto.Format), original.Format, updated.Format, entity.Format, v => entity.Format = v);
@@ -200,24 +225,11 @@ public sealed class DatasetRepository : IDatasetRepository
         /// <param name="updated">The value the caller wants.</param>
         /// <param name="current">The value in the database now.</param>
         /// <param name="set">Writes the value to the tracked entity.</param>
-        /// <param name="groupChanged">
-        /// True when another field of this field's group changed: the field is then written as
-        /// the caller has it even though the caller didn't change it, so the group stays consistent.
-        /// </param>
-        public void Apply<T>(string field, T original, T updated, T current, Action<T> set, bool groupChanged = false)
+        public void Apply<T>(string field, T original, T updated, T current, Action<T> set)
         {
             EqualityComparer<T> comparer = EqualityComparer<T>.Default;
-            if (comparer.Equals(current, updated))
+            if (comparer.Equals(original, updated) || comparer.Equals(current, updated))
             {
-                return;
-            }
-            if (comparer.Equals(original, updated))
-            {
-                if (groupChanged)
-                {
-                    set(updated);
-                    ChangedFields.Add(field);
-                }
                 return;
             }
             if (!comparer.Equals(current, original))

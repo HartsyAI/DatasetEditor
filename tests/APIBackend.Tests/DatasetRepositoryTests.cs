@@ -194,12 +194,12 @@ namespace DatasetStudio.Tests.APIBackend
         }
 
         /// <summary>
-        /// Codex review on #21: switching a dataset to another HuggingFace repository resets the
-        /// config/split with it, even when a concurrent read resolved them for the old repository
-        /// after the caller's snapshot.
+        /// Codex review on #21: re-importing from a new repository after a concurrent read resolved
+        /// the old repository's config/split is refused, rather than storing the new repository
+        /// with the old one's split.
         /// </summary>
         [Fact]
-        public async Task UpdateAsync_NewHuggingFaceRepository_DoesNotKeepTheOldReposResolvedSplit()
+        public async Task UpdateAsync_NewRepositoryAfterConcurrentResolution_IsRefused()
         {
             DatasetDto snapshot = await CreateAsync("Re-import");
             await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { HuggingFaceRepository = "org/old" }));
@@ -207,18 +207,17 @@ namespace DatasetStudio.Tests.APIBackend
             // A concurrent items request resolves the old repository's config/split.
             await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { HuggingFaceConfig = "old-config", HuggingFaceSplit = "old-split" }));
 
-            await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { HuggingFaceRepository = "org/new" }));
+            Func<Task> act = () => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { HuggingFaceRepository = "org/new" }));
 
+            (await act.Should().ThrowAsync<DatasetUpdateConflictException>()).Which.Fields
+                .Should().BeEquivalentTo("HuggingFaceConfig", "HuggingFaceSplit");
             DatasetDto loaded = (await GetAsync(snapshot.Id))!;
-            loaded.HuggingFaceRepository.Should().Be("org/new");
-            loaded.HuggingFaceConfig.Should().BeNull("the old repository's config doesn't belong to the new one");
-            loaded.HuggingFaceSplit.Should().BeNull();
+            (loaded.HuggingFaceRepository, loaded.HuggingFaceConfig).Should().Be(("org/old", "old-config"), "a refused update writes nothing");
         }
 
         /// <summary>
         /// Codex review on #21: two S3 connects from the same snapshot, one changing the profile and
-        /// one the bucket, must not merge into a profile/bucket pair neither request validated.
-        /// The later request's whole selection wins.
+        /// one the bucket, can't merge into a pair neither validated. The second is refused.
         /// </summary>
         [Fact]
         public async Task UpdateAsync_ConcurrentS3Selections_NeverMixProfileAndBucket()
@@ -228,10 +227,49 @@ namespace DatasetStudio.Tests.APIBackend
             DatasetDto snapshot = (await GetAsync(start.Id))!;
 
             await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { S3StorageProfileName = "B" }));
-            await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { S3Bucket = "Y" }));
+            Func<Task> second = () => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { S3Bucket = "Y" }));
 
+            await second.Should().ThrowAsync<DatasetUpdateConflictException>();
             DatasetDto loaded = (await GetAsync(start.Id))!;
-            (loaded.S3StorageProfileName, loaded.S3Bucket).Should().Be(("A", "Y"), "B/Y was never validated by either request");
+            (loaded.S3StorageProfileName, loaded.S3Bucket).Should().Be(("B", "X"), "B/Y was never validated by either request");
+        }
+
+        /// <summary>
+        /// Codex review on #21: an S3 reconnect racing a switch to HuggingFace streaming is refused,
+        /// so the dataset never ends up typed HuggingFace with an S3 bucket the caller thought it set.
+        /// </summary>
+        [Fact]
+        public async Task UpdateAsync_S3ReconnectAfterProviderSwitch_IsRefused()
+        {
+            DatasetDto start = await CreateAsync("Provider switch");
+            await WithRepositoryAsync(r => r.UpdateAsync(start, start with
+            {
+                SourceType = DatasetSourceType.ExternalS3Streaming, IsStreaming = true, S3StorageProfileName = "A", S3Bucket = "X",
+            }));
+            DatasetDto snapshot = (await GetAsync(start.Id))!;
+
+            await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with
+            {
+                SourceType = DatasetSourceType.HuggingFaceStreaming, HuggingFaceRepository = "org/ds",
+            }));
+            Func<Task> reconnect = () => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { S3Bucket = "Y" }));
+
+            await reconnect.Should().ThrowAsync<DatasetUpdateConflictException>();
+            DatasetDto loaded = (await GetAsync(start.Id))!;
+            (loaded.SourceType, loaded.S3Bucket).Should().Be((DatasetSourceType.HuggingFaceStreaming, "X"));
+        }
+
+        /// <summary>A source change with no concurrent source change is written as usual.</summary>
+        [Fact]
+        public async Task UpdateAsync_SourceChangeWithoutRace_IsWritten()
+        {
+            DatasetDto snapshot = await CreateAsync("No race");
+            await WithRepositoryAsync(r => r.UpdateItemCountAsync(snapshot.Id, 7));
+
+            await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { HuggingFaceRepository = "org/ds", HuggingFaceSplit = "train" }));
+
+            DatasetDto loaded = (await GetAsync(snapshot.Id))!;
+            (loaded.HuggingFaceRepository, loaded.HuggingFaceSplit, loaded.TotalItems).Should().Be(("org/ds", "train", 7L));
         }
 
         /// <summary>Many concurrent patches of different fields all land.</summary>
