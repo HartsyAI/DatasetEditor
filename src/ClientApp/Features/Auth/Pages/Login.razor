@@ -1,41 +1,43 @@
 @page "/login"
-@using DatasetStudio.ClientApp.Features.Auth.Services
 
-<PageTitle>Log in - DatasetStudio</PageTitle>
+<PageTitle>Log in - Dataset Studio</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="py-8">
+<MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="px-4 py-8">
     <MudPaper Class="pa-6" Elevation="2">
-        <MudText Typo="Typo.h5" GutterBottom="true">Log in</MudText>
+        <MudText Typo="Typo.h4" HtmlTag="h1">Log in</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">Sign in to see and edit your datasets.</MudText>
 
         @if (!string.IsNullOrEmpty(_errorMessage))
         {
             <MudAlert Severity="Severity.Error" Class="mb-4">@_errorMessage</MudAlert>
         }
 
-        <MudTextField T="string"
-                      @bind-Value="_usernameOrEmail"
-                      Label="Username or email"
-                      Variant="Variant.Outlined"
-                      Immediate="true"
-                      AutoFocus="true"
-                      Class="mb-4" />
+        @* A real form: Enter in any field submits, and the button is a submit button. *@
+        <form @onsubmit="SubmitAsync" novalidate>
+            <MudStack Spacing="4">
+                <MudTextField T="string"
+                              @bind-Value="_usernameOrEmail"
+                              Label="Username or email"
+                              Variant="Variant.Outlined"
+                              Immediate="true"
+                              AutoFocus="true" />
 
-        <MudTextField T="string"
-                      @bind-Value="_password"
-                      Label="Password"
-                      InputType="InputType.Password"
-                      Variant="Variant.Outlined"
-                      Immediate="true"
-                      Class="mb-4"
-                      @onkeyup="@(async e => { if (e.Key == "Enter") { await SubmitAsync(); } })" />
+                <MudTextField T="string"
+                              @bind-Value="_password"
+                              Label="Password"
+                              InputType="InputType.Password"
+                              Variant="Variant.Outlined"
+                              Immediate="true" />
 
-        <MudButton Color="Color.Primary"
-                   Variant="Variant.Filled"
-                   FullWidth="true"
-                   Disabled="@(_isSubmitting || string.IsNullOrWhiteSpace(_usernameOrEmail) || string.IsNullOrWhiteSpace(_password))"
-                   OnClick="SubmitAsync">
-            @(_isSubmitting ? "Logging in..." : "Log in")
-        </MudButton>
+                <MudButton ButtonType="ButtonType.Submit"
+                           Color="Color.Primary"
+                           Variant="Variant.Filled"
+                           FullWidth="true"
+                           Disabled="@(!CanSubmit)">
+                    @(_isSubmitting ? "Logging in…" : "Log in")
+                </MudButton>
+            </MudStack>
+        </form>
 
         <MudText Typo="Typo.body2" Class="mt-4">
             Don't have an account? <MudLink Href="/register">Register</MudLink>

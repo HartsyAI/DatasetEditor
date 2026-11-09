@@ -4,6 +4,10 @@ using Microsoft.AspNetCore.Components;
 
 namespace DatasetStudio.ClientApp.Features.Auth.Pages;
 
+/// <summary>
+/// Registration page. Registering signs the user in (AuthEndpoints.Register), so success goes
+/// straight to the datasets page. The form submits on Enter from any field.
+/// </summary>
 public partial class Register : ComponentBase
 {
     [Inject] private AuthApiClient AuthApiClient { get; set; } = default!;
@@ -16,9 +20,11 @@ public partial class Register : ComponentBase
     private string? _errorMessage;
     private bool _isSubmitting;
 
+    private bool CanSubmit => !_isSubmitting && !string.IsNullOrWhiteSpace(_username) && !string.IsNullOrWhiteSpace(_email) && !string.IsNullOrWhiteSpace(_password);
+
     private async Task SubmitAsync()
     {
-        if (_isSubmitting || string.IsNullOrWhiteSpace(_username) || string.IsNullOrWhiteSpace(_email) || string.IsNullOrWhiteSpace(_password))
+        if (!CanSubmit)
         {
             return;
         }

@@ -4,6 +4,10 @@ using Microsoft.AspNetCore.Components;
 
 namespace DatasetStudio.ClientApp.Features.Auth.Pages;
 
+/// <summary>
+/// Log-in page. The form submits on Enter from any field; network failures reset the form with a
+/// message (U-28); the return URL is restricted to same-site paths (A-8).
+/// </summary>
 public partial class Login : ComponentBase
 {
     private const string DefaultLandingPage = "/datasets";
@@ -21,9 +25,11 @@ public partial class Login : ComponentBase
     private string? _errorMessage;
     private bool _isSubmitting;
 
+    private bool CanSubmit => !_isSubmitting && !string.IsNullOrWhiteSpace(_usernameOrEmail) && !string.IsNullOrWhiteSpace(_password);
+
     private async Task SubmitAsync()
     {
-        if (_isSubmitting || string.IsNullOrWhiteSpace(_usernameOrEmail) || string.IsNullOrWhiteSpace(_password))
+        if (!CanSubmit)
         {
             return;
         }
