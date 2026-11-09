@@ -114,8 +114,8 @@ Font: Roboto 300/400/500/700 (Google Fonts, loaded in `index.html`). Fallback He
 | Meta | `caption` + `mud-text-secondary` | Counts, timestamps, "Updated 3 min ago". |
 | Card overlay title | `body2` weight 600 in `.ds-on-scrim` | Image card only. |
 
-Don't use `h5` for page titles (login/register do today) and don't use `h6` for card titles
-(`DatasetLibrary` does today). **(gap)**
+Don't use `h5` for page titles and don't use `h6` for card titles (the auth pages and the old
+datasets cards did; both are fixed).
 
 ### 2.4 Spacing and layout
 
@@ -292,7 +292,8 @@ hard-coded `Class="mt-3"` to make room for itself — the parent stack spaces ch
 - Labels, not placeholders, carry the field name. Helper text uses `HelperText`.
 - Validation: `MudForm` with `Validation` on fields, errors shown inline; a page-level
   `MudAlert Severity.Error` only for server errors.
-- Submit on Enter: use `MudForm`'s submit, not an `@onkeyup` lambda on the last field. **(gap)**
+- Submit on Enter: wrap the fields in a `<form @onsubmit=…>` with a `ButtonType.Submit` button
+  (as Login and Register do), not an `@onkeyup` lambda on the last field.
 - Submitting state: button `Disabled` + label change ("Creating account…").
 
 ### 4.4 Chips
