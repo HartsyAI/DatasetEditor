@@ -1,127 +1,148 @@
 @page "/my-datasets"
 @using DatasetStudio.DTO.Datasets
-@using MudBlazor
 
-<PageTitle>@(_isAuthenticated ? "My Datasets" : "Public Datasets") - DatasetStudio</PageTitle>
+<PageTitle>@PageTitleText - Dataset Studio</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="py-4">
-    <MudText Typo="Typo.h4" Class="mb-1">@(_isAuthenticated ? "My Datasets" : "Public Datasets")</MudText>
-    @if (!_isAuthenticated)
+@* Plain wrapper element so this page's scoped CSS (::deep) has an anchor; MudContainer is a component. *@
+<div>
+<MudContainer MaxWidth="MaxWidth.Large" Class="px-4 py-4">
+    <PageHeader Title="@PageTitleText">
+        <SubtitleContent>
+            @if (_isAuthenticated)
+            {
+                <span>Your datasets and public datasets shared by others.</span>
+            }
+            else
+            {
+                <span>Showing datasets their creators made public. <MudLink Href="/login">Log in</MudLink> to see your own datasets too.</span>
+            }
+        </SubtitleContent>
+        <Actions>
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.AddBox"
+                       Href="/datasets/create">
+                New dataset
+            </MudButton>
+        </Actions>
+    </PageHeader>
+
+    <Toolbar>
+        <Start>
+            <MudTextField T="string"
+                          @bind-Value="@_searchQuery"
+                          @bind-Value:after="FilterDatasets"
+                          Label="Search datasets"
+                          Variant="Variant.Outlined"
+                          Margin="Margin.Dense"
+                          Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          Immediate="true"
+                          Class="ds-library-search" />
+
+            <MudSelect T="IngestionStatusDto?" Label="Status" Value="@_statusFilter" ValueChanged="OnStatusFilterChanged"
+                       Margin="Margin.Dense" Variant="Variant.Outlined" Class="ds-library-filter">
+                <MudSelectItem T="IngestionStatusDto?" Value="@(null)">All statuses</MudSelectItem>
+                <MudSelectItem T="IngestionStatusDto?" Value="IngestionStatusDto.Pending">Pending</MudSelectItem>
+                <MudSelectItem T="IngestionStatusDto?" Value="IngestionStatusDto.Processing">Processing</MudSelectItem>
+                <MudSelectItem T="IngestionStatusDto?" Value="IngestionStatusDto.Completed">Ready</MudSelectItem>
+                <MudSelectItem T="IngestionStatusDto?" Value="IngestionStatusDto.Failed">Failed</MudSelectItem>
+            </MudSelect>
+
+            <MudSelect T="DatasetSourceType?" Label="Source" Value="@_sourceFilter" ValueChanged="OnSourceFilterChanged"
+                       Margin="Margin.Dense" Variant="Variant.Outlined" Class="ds-library-filter">
+                <MudSelectItem T="DatasetSourceType?" Value="@(null)">All sources</MudSelectItem>
+                <MudSelectItem T="DatasetSourceType?" Value="DatasetSourceType.LocalUpload">Uploaded file</MudSelectItem>
+                <MudSelectItem T="DatasetSourceType?" Value="DatasetSourceType.LocalFolder">Server folder</MudSelectItem>
+                <MudSelectItem T="DatasetSourceType?" Value="DatasetSourceType.HuggingFaceDownload">HuggingFace (imported)</MudSelectItem>
+                <MudSelectItem T="DatasetSourceType?" Value="DatasetSourceType.HuggingFaceStreaming">HuggingFace (streaming)</MudSelectItem>
+                <MudSelectItem T="DatasetSourceType?" Value="DatasetSourceType.ExternalS3Streaming">S3 bucket</MudSelectItem>
+            </MudSelect>
+        </Start>
+        <End>
+            <MudSwitch T="bool" Value="@_onlyReady" ValueChanged="OnOnlyReadyChanged" Color="Color.Primary" Label="Only ready datasets" />
+        </End>
+    </Toolbar>
+
+    @if (_isLoading && _datasets.Count == 0)
     {
-        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
-            Showing datasets their creators made public. <MudLink Href="/login">Log in</MudLink> to see your own datasets too.
-        </MudText>
+        <LoadingState Variant="LoadingVariant.CardGrid" Message="Loading datasets" />
+    }
+    else if (_loadError is not null)
+    {
+        <ErrorState Title="Couldn't load datasets" Message="@_loadError" OnRetry="@LoadDatasetsAsync" />
+    }
+    else if (_datasets.Count == 0)
+    {
+        <EmptyState Headline="No datasets yet"
+                    Description="Create a dataset from a file upload, a HuggingFace repository, a server folder or an S3 bucket."
+                    Icon="@Icons.Material.Filled.Collections">
+            <ActionContent>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.AddBox"
+                           Href="/datasets/create">
+                    New dataset
+                </MudButton>
+            </ActionContent>
+        </EmptyState>
+    }
+    else if (_filteredDatasets.Count == 0)
+    {
+        <EmptyState Headline="No datasets match your filters"
+                    Description="Try a different search or clear the status and source filters."
+                    Icon="@Icons.Material.Filled.FilterList">
+            <ActionContent>
+                <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="ClearFilters">Clear filters</MudButton>
+            </ActionContent>
+        </EmptyState>
     }
     else
     {
-        <div class="mb-4"></div>
-    }
-
-    <MudPaper Class="pa-4 mb-4" Elevation="1">
-        <MudStack Spacing="2">
-            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
-                <MudTextField T="string"
-                             @bind-Value="@_searchQuery"
-                             Label="Search datasets"
-                             Variant="Variant.Outlined"
-                             Adornment="Adornment.Start"
-                             AdornmentIcon="@Icons.Material.Filled.Search"
-                             Immediate="true"
-                             OnKeyUp="HandleSearchKeyUp" />
-
-                <MudButton Variant="Variant.Filled"
-                          Color="Color.Primary"
-                          StartIcon="@Icons.Material.Filled.Add"
-                          Href="/datasets/create">
-                    Upload New Dataset
-                </MudButton>
-            </MudStack>
-
-            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                <MudSelect T="IngestionStatusDto?" Label="Status" Value="@_statusFilter" ValueChanged="OnStatusFilterChanged" Dense="true" Variant="Variant.Outlined" Class="mr-2" Style="min-width: 180px;">
-                    <MudSelectItem T="IngestionStatusDto?" Value="@(null)">All statuses</MudSelectItem>
-                    <MudSelectItem T="IngestionStatusDto?" Value="IngestionStatusDto.Pending">Pending</MudSelectItem>
-                    <MudSelectItem T="IngestionStatusDto?" Value="IngestionStatusDto.Processing">Processing</MudSelectItem>
-                    <MudSelectItem T="IngestionStatusDto?" Value="IngestionStatusDto.Completed">Completed</MudSelectItem>
-                    <MudSelectItem T="IngestionStatusDto?" Value="IngestionStatusDto.Failed">Failed</MudSelectItem>
-                </MudSelect>
-
-                <MudSelect T="DatasetSourceType?" Label="Source" Value="@_sourceFilter" ValueChanged="OnSourceFilterChanged" Dense="true" Variant="Variant.Outlined" Class="mr-2" Style="min-width: 200px;">
-                    <MudSelectItem T="DatasetSourceType?" Value="@(null)">All sources</MudSelectItem>
-                    <MudSelectItem T="DatasetSourceType?" Value="DatasetSourceType.LocalUpload">Local upload</MudSelectItem>
-                    <MudSelectItem T="DatasetSourceType?" Value="DatasetSourceType.HuggingFaceDownload">HuggingFace download</MudSelectItem>
-                    <MudSelectItem T="DatasetSourceType?" Value="DatasetSourceType.HuggingFaceStreaming">HuggingFace streaming</MudSelectItem>
-                    <MudSelectItem T="DatasetSourceType?" Value="DatasetSourceType.ExternalS3Streaming">External S3 streaming</MudSelectItem>
-                </MudSelect>
-
-                <MudSwitch T="bool" @bind-Value="_onlyReady" Color="Color.Primary" Class="ml-2" Ripple="false">
-                    <MudText Typo="Typo.caption">Only ready datasets</MudText>
-                </MudSwitch>
-            </MudStack>
-        </MudStack>
-    </MudPaper>
-
-    @if (_isLoading)
-    {
-        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
-    }
-
-    @if (_filteredDatasets.Any())
-    {
-        <MudGrid>
+        @if (_isLoading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+        }
+        <MudGrid Spacing="3">
             @foreach (DatasetSummaryDto dataset in _filteredDatasets)
             {
-                <MudItem xs="12" sm="6" md="4">
-                    <MudCard Elevation="2" Class="dataset-card">
+                <MudItem xs="12" sm="6" md="4" @key="dataset.Id">
+                    <MudCard Elevation="1" Class="dataset-card">
                         <MudCardHeader>
                             <CardHeaderContent>
-                                <MudText Typo="Typo.h6">@dataset.Name</MudText>
-                                <MudText Typo="Typo.caption">
-                                    @dataset.TotalItems items • @(string.IsNullOrWhiteSpace(dataset.Modality) ? "Unknown" : dataset.Modality)
+                                <MudText Typo="Typo.subtitle1" HtmlTag="h2">@dataset.Name</MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                    @dataset.TotalItems.ToString("N0") items • @(string.IsNullOrWhiteSpace(dataset.Modality) ? "Unknown" : dataset.Modality)
                                 </MudText>
                             </CardHeaderContent>
                             <CardHeaderActions>
-                                <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(dataset.Status)" Variant="Variant.Filled">
-                                    @dataset.Status
-                                </MudChip>
+                                <StatusChip Status="@dataset.Status" />
                             </CardHeaderActions>
                         </MudCardHeader>
 
-                        <MudCardContent>
+                        <MudCardContent Class="flex-grow-1">
                             @if (!string.IsNullOrEmpty(dataset.Description))
                             {
-                                <MudText Typo="Typo.body2" Class="mb-2">
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2">
                                     @GetTruncatedDescription(dataset.Description)
                                 </MudText>
                             }
-
-                            <MudStack Row="true" Spacing="1" Class="mb-1">
-                                <MudChip T="string" Size="Size.Small" Color="Color.Default">
-                                    @(string.IsNullOrWhiteSpace(dataset.Format) ? "Unknown format" : dataset.Format)
-                                </MudChip>
-                                <MudChip T="string" Size="Size.Small" Color="Color.Default">
-                                    @(string.IsNullOrWhiteSpace(dataset.Modality) ? "Unknown modality" : dataset.Modality)
-                                </MudChip>
-                            </MudStack>
-
-                            <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                                @GetSourceLabel(dataset)
-                            </MudText>
+                            <SourceBadge SourceType="@dataset.SourceType" IsStreaming="@dataset.IsStreaming" />
                         </MudCardContent>
 
                         <MudCardActions>
                             <MudButton Variant="Variant.Text"
-                                      Color="Color.Primary"
-                                      StartIcon="@Icons.Material.Filled.Visibility"
-                                      OnClick="@(() => ViewDataset(dataset))">
+                                       Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Visibility"
+                                       OnClick="@(() => ViewDataset(dataset))">
                                 Open
                             </MudButton>
                             @if (CanDelete(dataset))
                             {
                                 <MudButton Variant="Variant.Text"
-                                          Color="Color.Error"
-                                          StartIcon="@Icons.Material.Filled.Delete"
-                                          OnClick="@(() => DeleteDatasetAsync(dataset))">
+                                           Color="Color.Error"
+                                           StartIcon="@Icons.Material.Filled.Delete"
+                                           OnClick="@(() => DeleteDatasetAsync(dataset))">
                                     Delete
                                 </MudButton>
                             }
@@ -135,35 +156,5 @@
             }
         </MudGrid>
     }
-    else if (!_isLoading)
-    {
-        <MudPaper Class="pa-8" Elevation="0">
-            <MudStack AlignItems="AlignItems.Center" Spacing="3">
-                <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Large" Color="Color.Secondary" />
-                <MudText Typo="Typo.h6">No datasets yet</MudText>
-                <MudText Typo="Typo.body2" Align="Align.Center">
-                    Upload your first dataset to get started
-                </MudText>
-                <MudButton Variant="Variant.Filled"
-                          Color="Color.Primary"
-                          StartIcon="@Icons.Material.Filled.CloudUpload"
-                          Href="/datasets/create">
-                    Upload Dataset
-                </MudButton>
-            </MudStack>
-        </MudPaper>
-    }
 </MudContainer>
-
-<style>
-    .dataset-card {
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        transition: transform 0.2s ease;
-    }
-
-    .dataset-card:hover {
-        transform: translateY(-4px);
-    }
-</style>
+</div>

@@ -42,6 +42,8 @@ public partial class DatasetViewer : IDisposable
     private bool _isIndexedDbEnabled;
     private bool _isBuffering;
     private bool _isStatusRefreshing;
+    // The dataset id from the query string, kept so the error state can retry the same load.
+    private Guid? _requestedDatasetId;
 
     /// <summary>Initializes component and subscribes to state changes.</summary>
     protected override void OnInitialized()
@@ -60,6 +62,7 @@ public partial class DatasetViewer : IDisposable
         string? idParam = _navigationService.GetQueryParameter("id");
         if (!string.IsNullOrWhiteSpace(idParam) && Guid.TryParse(idParam, out Guid requestedId))
         {
+            _requestedDatasetId = requestedId;
             // If the requested dataset is already loaded, just apply filters
             if (_datasetCache.CurrentDatasetId == requestedId && _datasetState.CurrentDataset != null)
             {
@@ -250,8 +253,14 @@ public partial class DatasetViewer : IDisposable
         }
         catch (Exception ex)
         {
+            // The cache already put the failure into DatasetState, which renders the inline ErrorState.
+            // No snackbar as well: one failure is reported once (audit U-10, DESIGN.md §4.7).
             Logs.Error($"[DatasetViewer] Failed to load dataset {datasetId} from navigation: {ex.Message}");
-            _notificationService.ShowError("Failed to load selected dataset.");
+            if (string.IsNullOrEmpty(_errorMessage))
+            {
+                _errorMessage = "The server didn't return this dataset.";
+                await InvokeAsync(StateHasChanged);
+            }
         }
     }
 
@@ -351,14 +360,17 @@ public partial class DatasetViewer : IDisposable
         _notificationService.ShowInfo($"IndexedDB caching {status}.");
     }
 
-    private static Severity GetStatusSeverity(IngestionStatusDto status) => status switch
+    /// <summary>Clears the error and loads the requested dataset again.</summary>
+    private async Task RetryLoadAsync()
     {
-        IngestionStatusDto.Pending => Severity.Warning,
-        IngestionStatusDto.Processing => Severity.Info,
-        IngestionStatusDto.Completed => Severity.Success,
-        IngestionStatusDto.Failed => Severity.Error,
-        _ => Severity.Normal
-    };
+        if (_requestedDatasetId is not Guid datasetId)
+        {
+            return;
+        }
+
+        ClearError();
+        await LoadDatasetFromNavigationAsync(datasetId);
+    }
 
     /// <summary>Clears the current error message.</summary>
     public void ClearError()

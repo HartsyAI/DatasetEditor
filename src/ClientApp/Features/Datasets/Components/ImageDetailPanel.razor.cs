@@ -1,5 +1,6 @@
 using System;
 using Microsoft.AspNetCore.Components;
+using DatasetStudio.ClientApp.Shared.Services;
 using Microsoft.AspNetCore.Components.Web;
 using MudBlazor;
 using DatasetStudio.ClientApp.Features.Datasets.Components;
@@ -19,7 +20,7 @@ public partial class ImageDetailPanel
     [Inject] public DatasetState DatasetState { get; set; } = default!;
     [Inject] public ItemEditService EditService { get; set; } = default!;
     [Inject] public IDialogService DialogService { get; set; } = default!;
-    [Inject] public ISnackbar Snackbar { get; set; } = default!;
+    [Inject] public NotificationService Notifications { get; set; } = default!;
     [Inject] public ImageUrlHelper ImageUrlHelper { get; set; } = default!;
 
     [Parameter] public DatasetItemDto? Item { get; set; }
@@ -58,11 +59,11 @@ public partial class ImageDetailPanel
             
             if (success)
             {
-                Snackbar.Add("Title updated", Severity.Success);
+                Notifications.ShowSuccess("Title updated");
             }
             else
             {
-                Snackbar.Add("Failed to update title", Severity.Error);
+                Notifications.ShowError("Failed to update title");
             }
         }
     }
@@ -98,11 +99,11 @@ public partial class ImageDetailPanel
             
             if (success)
             {
-                Snackbar.Add("Description updated", Severity.Success);
+                Notifications.ShowSuccess("Description updated");
             }
             else
             {
-                Snackbar.Add("Failed to update description", Severity.Error);
+                Notifications.ShowError("Failed to update description");
             }
         }
     }
@@ -115,11 +116,11 @@ public partial class ImageDetailPanel
         
         if (success)
         {
-            Snackbar.Add($"Tag '{tag}' removed", Severity.Success);
+            Notifications.ShowSuccess($"Tag '{tag}' removed");
         }
         else
         {
-            Snackbar.Add("Failed to remove tag", Severity.Error);
+            Notifications.ShowError("Failed to remove tag");
         }
     }
 
@@ -139,11 +140,11 @@ public partial class ImageDetailPanel
             
             if (success)
             {
-                Snackbar.Add($"Tag '{newTag}' added", Severity.Success);
+                Notifications.ShowSuccess($"Tag '{newTag}' added");
             }
             else
             {
-                Snackbar.Add("Failed to add tag", Severity.Error);
+                Notifications.ShowError("Failed to add tag");
             }
         }
     }
@@ -151,13 +152,13 @@ public partial class ImageDetailPanel
     public void HandleDownload()
     {
         // TODO: Implement download
-        Snackbar.Add("Download feature coming soon", Severity.Info);
+        Notifications.ShowInfo("Download feature coming soon");
     }
 
     public void HandleShare()
     {
         // TODO: Implement share
-        Snackbar.Add("Share feature coming soon", Severity.Info);
+        Notifications.ShowInfo("Share feature coming soon");
     }
 
     public async Task HandleDelete()
@@ -170,7 +171,7 @@ public partial class ImageDetailPanel
         if (confirm == true)
         {
             // TODO: Implement delete
-            Snackbar.Add("Delete feature coming soon", Severity.Info);
+            Notifications.ShowInfo("Delete feature coming soon");
         }
     }
 

@@ -1,0 +1,14 @@
+<MudPaper Elevation="1" Class="@($"pa-3 {Class}")">
+    <div class="ds-toolbar">
+        <div class="ds-toolbar-start">
+            @Start
+            @ChildContent
+        </div>
+        @if (End is not null)
+        {
+            <div class="ds-toolbar-end">
+                @End
+            </div>
+        }
+    </div>
+</MudPaper>

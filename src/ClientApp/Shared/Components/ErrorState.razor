@@ -1,0 +1,21 @@
+@* Plain wrapper so scoped CSS can reach MudAlert's message area (MudAlert is a component). *@
+<div class="ds-error-state-root @Class">
+    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
+        <div class="ds-error-state">
+            <div>
+                <MudText Typo="Typo.subtitle1">@Title</MudText>
+                <MudText Typo="Typo.body2">@Message</MudText>
+            </div>
+            @if (OnRetry.HasDelegate)
+            {
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Error"
+                           StartIcon="@Icons.Material.Filled.Refresh"
+                           Disabled="@_retrying"
+                           OnClick="@RetryAsync">
+                    @(_retrying ? "Retrying…" : RetryLabel)
+                </MudButton>
+            }
+        </div>
+    </MudAlert>
+</div>

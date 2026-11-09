@@ -1,0 +1,20 @@
+.ds-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.ds-toolbar-start,
+.ds-toolbar-end {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.ds-toolbar-start {
+    flex: 1 1 auto;
+}

@@ -14,7 +14,7 @@
                     Control center for your datasets
                 </MudText>
                 <MudText Typo="Typo.body1" Class="mb-4 mud-text-secondary">
-                    Start a new ingestion, jump back into the viewer, or explore your library of datasets.
+                    Start a new ingestion, jump back into the viewer, or browse your datasets.
                 </MudText>
 
                 <MudStack Row="true" Spacing="2">
@@ -29,7 +29,7 @@
                                Color="Color.Primary"
                                StartIcon="@Icons.Material.Filled.Bookmarks"
                                OnClick="@NavigateToLibrary">
-                        Open library
+                        Open datasets
                     </MudButton>
 
                     <MudButton Variant="Variant.Text"
@@ -74,7 +74,7 @@
                     </MudGrid>
 
                     <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined" Class="mt-3">
-                        Use the library or viewer to load a dataset into this session.
+                        Open a dataset from Datasets into this session.
                     </MudAlert>
                 </MudStack>
             </MudPaper>
@@ -86,7 +86,7 @@
             <MudCard Elevation="2">
                 <MudCardHeader>
                     <CardHeaderContent>
-                        <MudText Typo="Typo.subtitle1">Library</MudText>
+                        <MudText Typo="Typo.subtitle1">Datasets</MudText>
                         <MudText Typo="Typo.body2" Class="mud-text-secondary">
                             Browse and manage all saved datasets.
                         </MudText>
@@ -100,7 +100,7 @@
                                Color="Color.Primary"
                                FullWidth="true"
                                OnClick="@NavigateToLibrary">
-                        Go to Library
+                        Open datasets
                     </MudButton>
                 </MudCardActions>
             </MudCard>
@@ -124,7 +124,7 @@
                                Color="Color.Primary"
                                FullWidth="true"
                                OnClick="@NavigateToCreateDataset">
-                        Open Creator
+                        New dataset
                     </MudButton>
                 </MudCardActions>
             </MudCard>
@@ -198,7 +198,7 @@
                         <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
                             <MudIcon Icon="@Icons.Material.Filled.FilterAlt" />
                             <MudText Typo="Typo.body2">
-                                Rich filtering by status, source, and modality in the library.
+                                Rich filtering by status, source, and modality in your datasets.
                             </MudText>
                         </MudStack>
                     </MudListItem>

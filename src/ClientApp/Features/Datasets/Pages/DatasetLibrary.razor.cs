@@ -1,34 +1,43 @@
 using System.Security.Claims;
+using DatasetStudio.ClientApp.Services.ApiClients;
+using DatasetStudio.ClientApp.Shared.Components;
+using DatasetStudio.ClientApp.Shared.Services;
+using DatasetStudio.Core.Utilities.Logging;
+using DatasetStudio.DTO.Datasets;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Authorization;
-using Microsoft.AspNetCore.Components.Web;
 using MudBlazor;
-using DatasetStudio.DTO.Datasets;
-using DatasetStudio.Core.Utilities;
-using DatasetStudio.Core.Utilities.Logging;
-using DatasetStudio.ClientApp.Services.ApiClients;
 
 namespace DatasetStudio.ClientApp.Features.Datasets.Pages;
 
+/// <summary>
+/// The datasets page: the caller's datasets plus public ones, with client-side search and
+/// filters over the loaded page. Loading, failure and "no datasets" are distinct states; a
+/// failed request used to render "No datasets yet" plus a snackbar (audit U-10).
+/// </summary>
 public partial class DatasetLibrary : ComponentBase
 {
-    [Inject] public DatasetApiClient DatasetApiClient { get; set; } = default!;
-    [Inject] public NavigationManager Navigation { get; set; } = default!;
-    [Inject] public ISnackbar Snackbar { get; set; } = default!;
-    [Inject] public IDialogService DialogService { get; set; } = default!;
+    [Inject] private DatasetApiClient DatasetApiClient { get; set; } = default!;
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
+    [Inject] private NotificationService Notifications { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
 
     [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
 
     private List<DatasetSummaryDto> _datasets = new();
     private List<DatasetSummaryDto> _filteredDatasets = new();
     private string _searchQuery = string.Empty;
-    private bool _isLoading = false;
-    private IngestionStatusDto? _statusFilter = null;
-    private DatasetSourceType? _sourceFilter = null;
-    private bool _onlyReady = false;
-    private bool _isAuthenticated = false;
-    private Guid? _currentUserId = null;
+    private bool _isLoading;
+    private string? _loadError;
+    private IngestionStatusDto? _statusFilter;
+    private DatasetSourceType? _sourceFilter;
+    private bool _onlyReady;
+    private bool _isAuthenticated;
+    private Guid? _currentUserId;
 
+    private string PageTitleText => _isAuthenticated ? "My Datasets" : "Public Datasets";
+
+    /// <summary>Resolves the caller and loads the first page of datasets.</summary>
     protected override async Task OnInitializedAsync()
     {
         if (AuthStateTask is not null)
@@ -50,27 +59,24 @@ public partial class DatasetLibrary : ComponentBase
     private async Task LoadDatasetsAsync()
     {
         _isLoading = true;
-        
+        _loadError = null;
+
         try
         {
             IReadOnlyList<DatasetSummaryDto> datasets = await DatasetApiClient.GetAllDatasetsAsync(page: 0, pageSize: 50, CancellationToken.None);
             _datasets = datasets.ToList();
-            _filteredDatasets = _datasets;
+            FilterDatasets();
         }
         catch (Exception ex)
         {
+            // Shown inline with a retry; not also as a snackbar (DESIGN.md §4.7).
             Logs.Error("Failed to load datasets", ex);
-            Snackbar.Add("Failed to load datasets", Severity.Error);
+            _loadError = "The server didn't respond. Check that the API is running, then retry.";
         }
         finally
         {
             _isLoading = false;
         }
-    }
-
-    private void HandleSearchKeyUp(KeyboardEventArgs e)
-    {
-        FilterDatasets();
     }
 
     private void FilterDatasets()
@@ -79,9 +85,9 @@ public partial class DatasetLibrary : ComponentBase
 
         if (!string.IsNullOrWhiteSpace(_searchQuery))
         {
-            string text = _searchQuery.ToLowerInvariant();
-            query = query.Where(d => d.Name.ToLowerInvariant().Contains(text) ||
-                                     (d.Description?.ToLowerInvariant().Contains(text) ?? false));
+            string text = _searchQuery.Trim();
+            query = query.Where(d => d.Name.Contains(text, StringComparison.OrdinalIgnoreCase) ||
+                                     (d.Description?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false));
         }
 
         if (_statusFilter.HasValue)
@@ -102,86 +108,6 @@ public partial class DatasetLibrary : ComponentBase
         _filteredDatasets = query.ToList();
     }
 
-    private void ViewDataset(DatasetSummaryDto dataset)
-    {
-        Navigation.NavigateTo($"/dataset-viewer?id={dataset.Id}");
-    }
-
-    private void ShowDatasetMenu(DatasetSummaryDto dataset)
-    {
-        // TODO: Show context menu with options (rename, delete, export, etc.)
-        Snackbar.Add("Context menu coming soon", Severity.Info);
-    }
-
-    private async Task DeleteDatasetAsync(DatasetSummaryDto dataset)
-    {
-        // Deletion removes the dataset's shards and cannot be undone, so the user confirms first.
-        bool? confirmed = await DialogService.ShowMessageBox(
-            "Delete dataset",
-            $"Delete '{dataset.Name}'? This cannot be undone.",
-            yesText: "Delete",
-            noText: "Cancel");
-        if (confirmed != true)
-        {
-            return;
-        }
-
-        try
-        {
-            bool success = await DatasetApiClient.DeleteDatasetAsync(dataset.Id, CancellationToken.None);
-            if (!success)
-            {
-                Snackbar.Add($"Failed to delete dataset '{dataset.Name}'.", Severity.Error);
-                return;
-            }
-
-            _datasets.RemoveAll(d => d.Id == dataset.Id);
-            _filteredDatasets.RemoveAll(d => d.Id == dataset.Id);
-
-            Snackbar.Add($"Dataset '{dataset.Name}' deleted.", Severity.Success);
-        }
-        catch (Exception ex)
-        {
-            Logs.Error("Failed to delete dataset", ex);
-            Snackbar.Add("Failed to delete dataset.", Severity.Error);
-        }
-    }
-
-    private string GetTruncatedDescription(string description)
-    {
-        return description.Length > 100 
-            ? description.Substring(0, 97) + "..." 
-            : description;
-    }
-
-    private Color GetStatusColor(IngestionStatusDto status) => status switch
-    {
-        IngestionStatusDto.Pending => Color.Warning,
-        IngestionStatusDto.Processing => Color.Info,
-        IngestionStatusDto.Completed => Color.Success,
-        IngestionStatusDto.Failed => Color.Error,
-        _ => Color.Default
-    };
-
-    private string GetSourceLabel(DatasetSummaryDto dataset)
-    {
-        string source = dataset.SourceType switch
-        {
-            DatasetSourceType.LocalUpload => "Local upload",
-            DatasetSourceType.HuggingFaceDownload => "HuggingFace download",
-            DatasetSourceType.HuggingFaceStreaming => "HuggingFace streaming",
-            DatasetSourceType.ExternalS3Streaming => "External S3 streaming",
-            _ => "Unknown source"
-        };
-
-        if (dataset.IsStreaming && dataset.SourceType == DatasetSourceType.HuggingFaceDownload)
-        {
-            source += " (streaming)";
-        }
-
-        return source;
-    }
-
     private void OnStatusFilterChanged(IngestionStatusDto? value)
     {
         _statusFilter = value;
@@ -194,10 +120,72 @@ public partial class DatasetLibrary : ComponentBase
         FilterDatasets();
     }
 
-    private string FormatTimeAgo(DateTime dateTime)
+    // The switch used to @bind the field directly, so toggling it never re-ran the filter (U-6).
+    private void OnOnlyReadyChanged(bool value)
+    {
+        _onlyReady = value;
+        FilterDatasets();
+    }
+
+    private void ClearFilters()
+    {
+        _searchQuery = string.Empty;
+        _statusFilter = null;
+        _sourceFilter = null;
+        _onlyReady = false;
+        FilterDatasets();
+    }
+
+    private void ViewDataset(DatasetSummaryDto dataset)
+    {
+        Navigation.NavigateTo($"/dataset-viewer?id={dataset.Id}");
+    }
+
+    private async Task DeleteDatasetAsync(DatasetSummaryDto dataset)
+    {
+        // Deletion removes the dataset's shards and cannot be undone, so the user confirms first.
+        bool confirmed = await DialogService.ConfirmAsync(
+            title: "Delete dataset",
+            message: $"Delete \"{dataset.Name}\"?",
+            confirmLabel: "Delete",
+            destructive: true,
+            secondaryMessage: "Its items are removed from the server. This cannot be undone.");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        try
+        {
+            bool success = await DatasetApiClient.DeleteDatasetAsync(dataset.Id, CancellationToken.None);
+            if (!success)
+            {
+                Notifications.ShowError($"Couldn't delete \"{dataset.Name}\".");
+                return;
+            }
+
+            _datasets.RemoveAll(d => d.Id == dataset.Id);
+            FilterDatasets();
+            Notifications.ShowSuccess($"Deleted \"{dataset.Name}\".");
+        }
+        catch (Exception ex)
+        {
+            Logs.Error("Failed to delete dataset", ex);
+            Notifications.ShowError($"Couldn't delete \"{dataset.Name}\". The server didn't respond.");
+        }
+    }
+
+    private static string GetTruncatedDescription(string description)
+    {
+        return description.Length > 100
+            ? description.Substring(0, 97) + "..."
+            : description;
+    }
+
+    private static string FormatTimeAgo(DateTime dateTime)
     {
         TimeSpan span = DateTime.UtcNow - dateTime;
-        
+
         if (span.TotalDays > 365)
             return $"{(int)(span.TotalDays / 365)} year(s) ago";
         if (span.TotalDays > 30)
@@ -208,7 +196,7 @@ public partial class DatasetLibrary : ComponentBase
             return $"{(int)span.TotalHours} hour(s) ago";
         if (span.TotalMinutes > 1)
             return $"{(int)span.TotalMinutes} minute(s) ago";
-        
+
         return "just now";
     }
 }

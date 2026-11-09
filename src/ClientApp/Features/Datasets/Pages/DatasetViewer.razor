@@ -2,35 +2,42 @@
 @using DatasetStudio.ClientApp.Features.Datasets.Components
 @using DatasetStudio.Core.Utilities
 @using DatasetStudio.DTO.Datasets
+@using DatasetStudio.ClientApp.Shared.Presentation
 
-<PageTitle>Dataset Viewer - DatasetStudio</PageTitle>
+<PageTitle>@(_datasetState.CurrentDataset?.Name ?? "Dataset viewer") - Dataset Studio</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.False" Class="pa-0">
     @if (_isLoading)
     {
-        <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Style="height: 80vh;">
-            <MudProgressCircular Color="Color.Primary" Size="Size.Large" Indeterminate="true" />
-            <MudText Typo="Typo.h6">Loading dataset...</MudText>
-        </MudStack>
+        <LoadingState Variant="LoadingVariant.Spinner" Message="Loading dataset" />
     }
     else if (!string.IsNullOrEmpty(_errorMessage))
     {
-        <MudAlert Severity="Severity.Error" Class="ma-4">
-            @_errorMessage
-            <MudButton Color="Color.Error" Variant="Variant.Text" OnClick="@ClearError">Dismiss</MudButton>
-        </MudAlert>
+        <div class="pa-4">
+            @if (_requestedDatasetId is not null)
+            {
+                <ErrorState Title="Couldn't load this dataset" Message="@_errorMessage" OnRetry="@RetryLoadAsync" />
+            }
+            else
+            {
+                <ErrorState Title="Couldn't load this dataset" Message="@_errorMessage" />
+            }
+        </div>
     }
     else if (_datasetState.CurrentDataset == null)
     {
-        <!-- No Dataset Loaded - Show Upload Component -->
-        <MudStack AlignItems="AlignItems.Center" Justify="Justify.Center" Style="height: 80vh;" Spacing="4">
-            <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Size="Size.Large" Color="Color.Primary" />
-            <MudText Typo="Typo.h4">No Dataset Loaded</MudText>
-            <MudText Typo="Typo.body1" Class="mud-text-secondary">
-                Upload a dataset file to get started
-            </MudText>
-            <DatasetUploader />
-        </MudStack>
+        <EmptyState Headline="No dataset open"
+                    Description="Open one from Datasets, or create a new dataset."
+                    Icon="@Icons.Material.Filled.Collections">
+            <ActionContent>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Collections" Href="/my-datasets">
+                    Open datasets
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddBox" Href="/datasets/create">
+                    New dataset
+                </MudButton>
+            </ActionContent>
+        </EmptyState>
     }
     else
     {
@@ -44,21 +51,20 @@
                 <MudStack Spacing="2" Class="pa-4">
                     @if (_datasetDetail is not null)
                     {
-                        <MudAlert Severity="@GetStatusSeverity(_datasetDetail.Status)" Variant="Variant.Filled" Dense="true">
+                        <MudAlert Severity="@StatusPresentation.For(_datasetDetail.Status).Severity" Variant="Variant.Outlined" Dense="true">
                             <MudStack Spacing="1">
-                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
                                     <MudText Typo="Typo.subtitle2">Ingestion status</MudText>
-                                    <MudChip T="string" Color="Color.Default" Variant="Variant.Outlined" Size="Size.Small">
-                                        @_datasetDetail.Status
-                                    </MudChip>
+                                    <StatusChip Status="@_datasetDetail.Status" />
                                     <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                                        Last updated @(_datasetDetail.UpdatedAt.ToLocalTime().ToString("g")) • Total items: @_datasetDetail.TotalItems
+                                        Last updated @(_datasetDetail.UpdatedAt.ToLocalTime().ToString("g")) • @_datasetDetail.TotalItems.ToString("N0") items
                                     </MudText>
                                     <MudTooltip Text="Refresh status now">
                                         <MudIconButton Icon="@Icons.Material.Filled.Refresh"
                                                        Disabled="@_isStatusRefreshing"
                                                        Color="Color.Default"
-                                                       OnClick="@(() => RefreshStatusAsync())" />
+                                                       OnClick="@(() => RefreshStatusAsync())"
+                                                       aria-label="Refresh status now" />
                                     </MudTooltip>
                                 </MudStack>
 
@@ -164,9 +170,6 @@
     }
 </MudContainer>
 
-@code {
-    // TODO: Move to separate .razor.cs file following component pattern
-}
 
 <style>
     .dataset-viewer-grid {

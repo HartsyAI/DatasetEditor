@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using DatasetStudio.ClientApp.Shared.Services;
 using MudBlazor;
 using DatasetStudio.ClientApp.Features.Auth.Services;
 using DatasetStudio.ClientApp.Services.StateManagement;
@@ -14,7 +15,7 @@ public partial class NavMenu : IDisposable
     [Inject] private AuthApiClient AuthApiClient { get; set; } = default!;
     [Inject] private CookieAuthenticationStateProvider AuthStateProvider { get; set; } = default!;
     [Inject] private NavigationManager Navigation { get; set; } = default!;
-    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+    [Inject] private NotificationService Notifications { get; set; } = default!;
 
     private async Task LogoutAsync()
     {
@@ -27,7 +28,7 @@ public partial class NavMenu : IDisposable
             // The server may still hold the session, so do not report a sign-out that did not
             // happen (audit U-28). The user can retry.
             Logs.Warning($"Logout request did not complete: {ex.GetType().Name}");
-            Snackbar.Add("Could not sign out because the server is unreachable. Try again.", Severity.Error);
+            Notifications.ShowError("Could not sign out because the server is unreachable. Try again.");
             return;
         }
 

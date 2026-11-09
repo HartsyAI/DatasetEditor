@@ -25,12 +25,12 @@
         Dashboard
     </MudNavLink>
     
-    <MudNavLink Href="/my-datasets" Icon="@Icons.Material.Filled.Bookmarks">
-        Saved Datasets
+    <MudNavLink Href="/my-datasets" Icon="@Icons.Material.Filled.Collections">
+        Datasets
     </MudNavLink>
     
     <MudNavLink Href="/datasets/create" Icon="@Icons.Material.Filled.AddBox">
-        Create Dataset
+        New dataset
     </MudNavLink>
     
     <MudNavLink Href="/ai-tools" Icon="@Icons.Material.Filled.Bolt">
@@ -44,7 +44,7 @@
     
     <MudDivider Class="my-2" />
     
-    <MudNavGroup Title="Recent Datasets" Icon="@Icons.Material.Filled.History" Expanded="false">
+    <MudNavGroup Title="Recent datasets" Icon="@Icons.Material.Filled.History" Expanded="false">
         @if (_recentDatasets.Count == 0)
         {
             <MudText Typo="Typo.body2" Class="px-4 py-2 mud-text-secondary">
