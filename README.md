@@ -68,7 +68,7 @@ one of three item backends chosen by `SourceType`:
 
 | Source type | Where items live | Where images live |
 |---|---|---|
-| `LocalUpload` (CSV/TSV/JSON/JSONL/ZIP) | Parquet shards under `Storage:DatasetRootPath` | URLs in the file, or extracted ZIP images served by the API |
+| `LocalUpload` (CSV/TSV/JSON/JSONL/Parquet/ZIP) | Parquet shards under `Storage:DatasetRootPath` | URLs in the file, or extracted ZIP images served by the API |
 | `LocalFolder` (admin only) | Parquet shards | The original folder, served by the API |
 | `HuggingFaceStreaming` | Not stored; each page is a `/rows` call | HuggingFace CDN, thumbnails proxied + cached by the API |
 | `ExternalS3Streaming` | Not stored; each page is a `ListObjectsV2` call | The bucket, proxied + thumbnailed by the API |
@@ -189,11 +189,15 @@ specific user is impossible from the API (D-2).
 
 ### 4.3 Upload ingestion — Working
 
-**What.** Create a dataset, upload a `.csv`, `.tsv`, `.json` (array), `.jsonl`/`.ndjson`, or
-`.zip` of images (up to 5 GB). Column names are matched loosely (`image_url|url|image`,
+**What.** Create a dataset, upload a `.csv`, `.tsv`, `.json` (array), `.jsonl`/`.ndjson`,
+`.parquet`, or `.zip` (up to 5 GB). Column names are matched loosely (`image_url|url|image`,
 `title|name|caption|text`, `description`, `id`, `width`, `height`, `tags`); every column is
-kept in item metadata. ZIP members that are images are extracted into the dataset's storage
-folder and served by the API.
+kept in item metadata. ZIP members that are images (JPEG, PNG, GIF, BMP, WebP) are extracted
+into the dataset's storage folder and served by the API, with their dimensions read from the
+header; data files inside a ZIP are parsed as well, and a row whose `file_name` (HuggingFace
+imagefolder's `metadata.csv`/`metadata.jsonl`) or image column names an extracted image is
+linked to it. Parquet flat columns become fields; an `image: {bytes, path}` struct
+(HuggingFace's `Image` feature) is written out as an image file and served.
 
 **How.** `DatasetEndpoints.UploadDatasetFile` → staged file under `Storage:UploadPath` → a row in
 `ingestion_jobs` (`IIngestionJobQueue`) → `IngestionBackgroundService` →
@@ -225,13 +229,12 @@ assumes one API instance per database, which is how Dataset Studio is deployed. 
 of trusting `ExtractToDirectory`. Partial writes are kept because re-ingesting into an
 existing dataset is supported and rolling back would destroy earlier data.
 
-**Gaps.** `.parquet` upload is *not* supported despite earlier docs (I-6). An import
-interrupted after writing items is failed rather than resumed; importing the file again appends
-every row. A process killed while a batch is being appended can leave that shard unreadable
-(P-11). Files staged before this queue existed are not swept from `Storage:UploadPath`.
+**Gaps.** Parquet list and nested columns other than an image struct are skipped. The queue is
+in-memory: a restart loses queued jobs and strands datasets in Pending/Processing (I-1).
+Strictly serial (I-3).
 
-**Client.** `/datasets/create` has one form per source. Upload takes one CSV, TSV, JSON, JSONL or
-ZIP file (drop or choose), streams it to `POST /api/datasets/{id}/upload` without an in-memory
+**Client.** `/datasets/create` has one form per source. Upload takes one CSV, TSV, JSON, JSONL,
+Parquet or ZIP file (drop or choose), streams it to `POST /api/datasets/{id}/upload` without an in-memory
 copy, and opens the viewer as soon as the server accepts it; the viewer's status band follows
 ingestion. HuggingFace streaming waits for the real status (not a fixed delay) to offer an
 import when the repository can't be streamed. The browser still buffers the request body once
@@ -271,12 +274,15 @@ dataset (H-5).
 **What.** Non-streaming import: download one data file from the repo and ingest it locally.
 
 **How.** `DatasetIngestionService.ImportFromHuggingFaceAsync` non-streaming branch:
-`HuggingFaceClient.GetDatasetInfoAsync` (non-recursive tree), pick `DataFilePath` or the first
-`.parquet`/`.csv`, stream to `Storage:UploadPath`, then `IngestAsync`.
+`HuggingFaceClient.GetDatasetInfoAsync` lists the repository tree recursively (following the
+Hub's `Link` pagination), then `DataFilePath` or the first parseable file is chosen (Parquet,
+then JSONL, CSV, TSV, JSON; a `train` file first). A file larger than `Ingestion:MaxDownloadBytes`
+(default 5 GB, the upload limit) is refused from its listed size before anything is fetched, and
+the download stops if it passes the limit anyway. The file is streamed to `Storage:UploadPath`,
+parsed with `IngestAsync`, and deleted whether or not parsing succeeds.
 
-**Gaps.** The auto-pick prefers `.parquet`, which `IngestAsync` can't parse (I-6); the tree
-listing is non-recursive so repos with `data/` folders report "no suitable file" (I-7); no size
-cap on the download (H-4). Treat this path as experimental.
+**Gaps.** One file per import, so a dataset split across many shards imports only the first;
+no per-user quota beyond the size limit (H-4).
 
 ### 4.6 S3-compatible buckets — Working
 
@@ -307,9 +313,12 @@ place and served from there.
 **Why.** Admin-only because it reads arbitrary server paths; copying was rejected because
 "point at a folder" is the whole point for huge local collections.
 
+The dataset's `SourceType` becomes `LocalFolder`; each item's width and height are read from
+the image header; item metadata holds only the path relative to the folder. TIFF files are
+skipped: nothing else in the app serves or thumbnails them as images.
+
 **Gaps.** No path allow-list and `ServeDatasetFile` has no extension allow-list, so an admin
-can expose non-image files (F-1); directory symlinks escape containment (F-2); `SourceType`
-isn't set to `LocalFolder` (F-3).
+can expose non-image files (F-1); directory symlinks escape containment (F-2).
 
 ### 4.8 Thumbnails — Working
 
@@ -442,6 +451,7 @@ then environment variables (`ConnectionStrings__DatasetStudio`, `Cors__AllowedOr
 - `Cors:AllowedOrigins` — must list the client origin; empty is a startup error.
 - `Storage:DatasetRootPath|BlobPath|ThumbnailPath|UploadPath|DataProtectionKeysPath`.
 - `Storage:S3StorageProfiles[]` — `Name, ServiceUrl, AccessKey, SecretKey, Region, ForcePathStyle, AllowedBuckets[]`.
+- `Ingestion:MaxDownloadBytes` — largest file HuggingFace download mode fetches (default 5 GB).
 - `Ingestion:MaxConcurrentJobs|MaxQueuedJobs|MaxAttempts|PollInterval` — background import limits (defaults 2, 50, 3, `00:01:00`).
 - `Extensions:BuiltInPath|CommunityPath|DisabledExtensions`.
 

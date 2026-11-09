@@ -91,18 +91,11 @@ the whole dataset. Writes are serialized **per dataset** (a keyed semaphore), so
 dataset never blocks another.
 
 ### Ingestion
-Uploads are saved to a staging file under `Storage:UploadPath` (not the OS temp dir) and **queued**
-as a row in the `ingestion_jobs` table (`IIngestionJobQueue`); the endpoint returns `202`
-immediately, or `503` with `Retry-After` when `Ingestion:MaxQueuedJobs` jobs are already waiting
-(admission is serialised with an advisory lock; an upload reserves its slot before it is staged).
-A hosted `IngestionBackgroundService` runs `Ingestion:MaxConcurrentJobs` workers that claim jobs
-with `FOR UPDATE SKIP LOCKED` (one running job per dataset, enforced by a partial unique index),
-parse the file (CSV/TSV/JSON/JSONL/ZIP/image folders — Parquet upload is **not** supported, see
-`docs/refactor-audit.md` I-6) and write items in batches, updating the dataset's item count after
-each batch. On failure it records `Failed` + an error message on the dataset, which the client's
-status poller surfaces. At startup it recovers jobs a previous process left running: requeued if
-they wrote nothing, failed with the kept count if they did. HuggingFace tokens in queued jobs are
-encrypted with Data Protection.
+Uploads are saved to a staging file under `Storage:UploadPath` (not the OS temp dir) and **queued** (`IngestionQueue`); the endpoint returns `202`
+immediately. A hosted `IngestionBackgroundService` drains the queue off the request thread, parses
+the file (CSV/TSV/JSON/JSONL/Parquet, ZIPs of images and of those formats, image folders) and
+writes items in batches. On failure it
+records `Failed` + an error message on the dataset, which the client's status poller surfaces.
 
 ---
 

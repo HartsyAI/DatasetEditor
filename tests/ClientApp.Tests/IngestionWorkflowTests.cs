@@ -73,7 +73,7 @@ public sealed class IngestionWorkflowTests
     [Fact]
     public void AcceptedExtensions_MatchTheServerParsers()
     {
-        Assert.Equal(".csv,.tsv,.json,.jsonl,.ndjson,.zip", IngestionWorkflowService.AcceptedUploadExtensions);
+        Assert.Equal(".csv,.tsv,.json,.jsonl,.ndjson,.parquet,.zip", IngestionWorkflowService.AcceptedUploadExtensions);
     }
 
     /// <summary>File sizes read naturally in the upload form.</summary>

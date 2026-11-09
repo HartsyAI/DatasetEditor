@@ -10,7 +10,7 @@
         <MudStack AlignItems="AlignItems.Center" Spacing="1">
             <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Size="Size.Large" Color="Color.Primary" />
             <MudText Typo="Typo.subtitle1">Drop a file here or click to choose one</MudText>
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">CSV, TSV, JSON, JSONL or a ZIP of them, up to 5 GB</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">CSV, TSV, JSON, JSONL, Parquet, or a ZIP of them or of images, up to 5 GB</MudText>
         </MudStack>
         <InputFile @key="_inputKey"
                    OnChange="@OnFileSelected"
