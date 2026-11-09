@@ -1,0 +1,110 @@
+@* Shares a dataset with other accounts and lists who it's shared with (audit D-2). *@
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <MudText Typo="Typo.h5" HtmlTag="h2">Share "@DatasetName"</MudText>
+
+            <form @onsubmit="ShareAsync" novalidate>
+                <MudStack Spacing="2">
+                    <MudTextField T="string"
+                                  @bind-Value="_who"
+                                  Label="Username or email"
+                                  Variant="Variant.Outlined"
+                                  Immediate="true"
+                                  AutoFocus="true"
+                                  Disabled="@_isSaving" />
+                    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap">
+                        <MudSelect T="DatasetAccessLevel"
+                                   @bind-Value="_accessLevel"
+                                   Label="Access"
+                                   Variant="Variant.Outlined"
+                                   Dense="true"
+                                   Class="ds-share-access"
+                                   Disabled="@_isSaving">
+                            <MudSelectItem T="DatasetAccessLevel" Value="DatasetAccessLevel.Read">Can view</MudSelectItem>
+                            <MudSelectItem T="DatasetAccessLevel" Value="DatasetAccessLevel.Write">Can edit</MudSelectItem>
+                        </MudSelect>
+                        <MudDatePicker @bind-Date="_expiresOn"
+                                       Label="Ends on (optional)"
+                                       Variant="Variant.Outlined"
+                                       MinDate="@DateTime.Today.AddDays(1)"
+                                       Clearable="true"
+                                       Class="ds-share-expiry"
+                                       Disabled="@_isSaving" />
+                    </MudStack>
+                    <MudStack Row="true" Spacing="4" Wrap="Wrap.Wrap">
+                        <MudSwitch T="bool" @bind-Value="_canDelete" Color="Color.Primary" Label="Can delete the dataset" Disabled="@_isSaving" />
+                        <MudSwitch T="bool" @bind-Value="_canShare" Color="Color.Primary" Label="Can share with others" Disabled="@_isSaving" />
+                    </MudStack>
+                    @if (!string.IsNullOrEmpty(_formError))
+                    {
+                        <MudAlert Severity="Severity.Error" Dense="true">@_formError</MudAlert>
+                    }
+                    <div>
+                        <MudButton ButtonType="ButtonType.Submit"
+                                   Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.PersonAdd"
+                                   Disabled="@(!CanSubmit)">
+                            @(_isSaving ? "Sharing…" : "Share")
+                        </MudButton>
+                    </div>
+                </MudStack>
+            </form>
+
+            <MudDivider />
+            <MudText Typo="Typo.subtitle1" HtmlTag="h3">Shared with</MudText>
+
+            @if (_isLoading)
+            {
+                <LoadingState Variant="LoadingVariant.Rows" Count="2" Message="Loading shares" />
+            }
+            else if (_loadError is not null)
+            {
+                <ErrorState Title="Couldn't load the shares" Message="@_loadError" OnRetry="@LoadAsync" />
+            }
+            else if (_shares.Count == 0)
+            {
+                <EmptyState Headline="Not shared with anyone yet"
+                            Description="People you add above can open this dataset even while it's private."
+                            Icon="@Icons.Material.Filled.Group" />
+            }
+            else
+            {
+                <MudList T="string" Dense="true" Class="ds-share-list">
+                    @foreach (DatasetShareDto share in _shares)
+                    {
+                        <MudListItem T="string" @key="share.UserId">
+                            <div class="ds-share-row">
+                                <div class="ds-share-who">
+                                    <MudText Typo="Typo.body1">@(share.DisplayName ?? share.Username)</MudText>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@Describe(share)</MudText>
+                                </div>
+                                <MudChip T="string" Size="Size.Small" Color="@(share.AccessLevel == DatasetAccessLevel.Write ? Color.Primary : Color.Default)">
+                                    @(share.AccessLevel == DatasetAccessLevel.Write ? "Can edit" : "Can view")
+                                </MudChip>
+                                <MudTooltip Text="Change">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                                   Size="Size.Small"
+                                                   OnClick="@(() => Edit(share))"
+                                                   aria-label="@($"Change {share.Username}'s access")" />
+                                </MudTooltip>
+                                <MudTooltip Text="Stop sharing">
+                                    <MudIconButton Icon="@Icons.Material.Filled.PersonRemove"
+                                                   Size="Size.Small"
+                                                   Color="Color.Error"
+                                                   Disabled="@(_revoking == share.UserId)"
+                                                   OnClick="@(() => RevokeAsync(share))"
+                                                   aria-label="@($"Stop sharing with {share.Username}")" />
+                                </MudTooltip>
+                            </div>
+                        </MudListItem>
+                    }
+                </MudList>
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="@Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>

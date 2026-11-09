@@ -111,10 +111,10 @@ namespace DatasetStudio.Tests.APIBackend
                     "__EFMigrationsHistory",
                     "users",
                     "datasets",
-                    "dataset_items",
-                    "captions",
-                    "permissions"
+                    "permissions",
+                    "ingestion_jobs"
                 };
+                // dataset_items and captions were never used and are dropped (audit D-7).
 
                 HashSet<string> actualTables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 

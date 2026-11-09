@@ -42,6 +42,15 @@
             </MudToggleItem>
         </MudToggleGroup>
 
+        @if (CanShare)
+        {
+            <MudTooltip Text="Share">
+                <MudIconButton Icon="@Icons.Material.Filled.PersonAdd"
+                               OnClick="@OnShare"
+                               aria-label="Share this dataset" />
+            </MudTooltip>
+        }
+
         <MudTooltip Text="@(DetailsOpen ? "Hide details" : "Show details")">
             <MudIconButton Icon="@Icons.Material.Filled.Info"
                            Color="@(DetailsOpen ? Color.Primary : Color.Default)"

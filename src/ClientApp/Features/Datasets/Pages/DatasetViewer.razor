@@ -61,7 +61,9 @@
                                DetailsOpen="@_viewState.ShowDetailPanel"
                                OnToggleDetails="@_viewState.ToggleDetailPanel"
                                IndexedDbEnabled="@_isIndexedDbEnabled"
-                               OnIndexedDbChanged="@ToggleOfflineCacheAsync" />
+                               OnIndexedDbChanged="@ToggleOfflineCacheAsync"
+                               CanShare="@(_datasetDetail?.CanShare == true)"
+                               OnShare="@OpenShareDialogAsync" />
 
                 @if (_viewState.ShowFilterPanel)
                 {

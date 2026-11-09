@@ -154,13 +154,19 @@ internal static class DatasetEndpoints
         CancellationToken cancellationToken)
     {
         DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
-
-        if (dataset is null || !await permissionService.CanReadAsync(dataset, httpContext.User, cancellationToken))
+        if (dataset is null)
         {
             return Results.NotFound();
         }
 
-        return Results.Ok(dataset.ToDetailDto());
+        DatasetAccess access = await permissionService.GetAccessAsync(dataset, httpContext.User, cancellationToken);
+        if (!access.CanRead)
+        {
+            return Results.NotFound();
+        }
+
+        // CanShare tells the viewer whether to offer "Share" (audit D-2).
+        return Results.Ok(dataset.ToDetailDto() with { CanShare = access.CanShare });
     }
 
     /// <summary>Creates a new dataset, owned by the authenticated caller.</summary>
