@@ -64,7 +64,7 @@
 |---|---|---|
 | Theme | `src/ClientApp/Shared/Theme/AppTheme.cs` | Single `MudTheme` instance: both palettes, typography, layout, shape. Nothing else constructs a `MudTheme`. |
 | Custom properties | `src/ClientApp/wwwroot/css/app.css` | `--ds-*` tokens that MudBlazor doesn't own (radii, scrims, card shadows, z-index, transitions). |
-| Component styles | `*.razor.css` (CSS isolation) | Component-scoped rules that reference tokens. Bundled as `ClientApp.styles.css`, which `index.html` links (it did not until PR 2.2, so no scoped style loaded). **No `<style>` blocks inside `.razor` files** — a `<style>` in a component is emitted once per instance, so a 300-card grid emits 300 copies. **(gap: 8 components do this)** |
+| Component styles | `*.razor.css` (CSS isolation) | Component-scoped rules that reference tokens. Bundled as `ClientApp.styles.css`, which `index.html` links (it did not until PR 2.2, so no scoped style loaded). **No `<style>` blocks inside `.razor` files** — a `<style>` in a component is emitted once per instance, so a 300-card grid emits 300 copies. (Only `DatasetUploader` still has one; PR 2.5 splits it.) |
 
 The old `wwwroot/css/themes/*.css` files (never loaded, contradicting palette) are deleted. The
 saved `ThemeMode` (Light, Dark, System) is applied by `MainLayout` through `ThemeModeResolver`.
@@ -229,8 +229,9 @@ Rules:
 └────────────────────────────────────────────────┴──────────────┘
 ```
 
-Three columns at `md` and up (9/3 with the detail panel, 12 without). Below `md` the detail
-panel becomes a bottom sheet/dialog, not a stacked column. **(gap)**
+At `md` and up the detail panel is a 360 px column (`DetailSidebar`); below `md` it is a bottom
+sheet over the grid. The item list is the scroll container (flex layout), so `<Virtualize>` and
+the end-of-list sentinel measure against it.
 
 ---
 
@@ -401,7 +402,7 @@ Alerts for the same statuses use `Severity.Normal / Info / Success / Error`.
 | HuggingFace | **HuggingFace** | Hugging Face, HF (UI) |
 | Product name | **Dataset Studio** | DatasetStudio, Hartsy's Dataset Editor |
 
-Routes: `/`, `/datasets` (`/my-datasets` kept as an alias for old links), `/datasets/create`, `/datasets/{id}` (**gap:** today `/dataset-viewer?id=`),
+Routes: `/`, `/datasets` (`/my-datasets` kept as an alias for old links), `/datasets/create`, `/datasets/{id}` (`/dataset-viewer?id=` kept as an alias),
 `/settings`, `/login`, `/register`, `/ai-tools`.
 
 Copy rules: sentence case; buttons are verbs ("Open", "Delete", "New dataset"); no "TODO"
@@ -412,17 +413,18 @@ soon" features are labelled in nav and on the page, never presented as working.
 
 ## 8. Accessibility and responsiveness
 
-- `index.html` viewport must allow zoom (`user-scalable=no` removed). **(gap)**
+- `index.html` viewport allows zoom (no `user-scalable=no`).
 - Every `MudIconButton` has `aria-label` (MudBlazor renders `Title` as tooltip, not as an
   accessible name).
 - Interactive non-button elements (`ImageCard`, `ImageListRow`) get `role="button"`,
-  `tabindex="0"`, and handle Enter/Space. **(gap)**
+  `tabindex="0"`, and handle Enter/Space (both do).
 - Lightbox traps focus and closes on Escape.
 - Contrast ≥ 4.5:1 for text on both palettes; secondary text uses Mud's secondary token,
   not a custom grey.
 - Breakpoints: `xs` < 600, `sm` ≥ 600, `md` ≥ 960, `lg` ≥ 1280. Dataset grid: 1 / 2 / 3
   columns. Image grid columns come from container width (`VirtualizedItemView`), min card
-  width 180 px. Drawer: persistent at `md`+, temporary (overlay) below. **(gap)**
+  width 180 px (`GridLayout.ColumnsFor`, capped by the "Grid columns" setting). Drawer:
+  persistent at `md`+, temporary (overlay) below. **(gap: the navigation drawer is always persistent)**
 - Touch targets ≥ 40 px.
 
 ---

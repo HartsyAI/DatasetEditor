@@ -1,0 +1,63 @@
+/* Moved from a <style> block, which was emitted once per component instance and leaked
+generic class names app-wide (audit U-1). Scoped to .ds-list-row-root via CSS isolation. */
+.ds-list-row-root ::deep .list-item {
+    cursor: pointer;
+    transition: box-shadow var(--ds-transition);
+}
+
+.ds-list-row-root ::deep .list-item.selected {
+    box-shadow: var(--ds-selection-ring);
+}
+
+.ds-list-row-root ::deep .list-item-content {
+    display: flex;
+    gap: 16px;
+    padding: 16px;
+    align-items: center;
+}
+
+.ds-list-row-root ::deep .thumbnail-container {
+    width: 120px;
+    height: 120px;
+    flex-shrink: 0;
+}
+
+.ds-list-row-root ::deep .thumbnail-container img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: var(--ds-radius-sm);
+}
+
+.ds-list-row-root ::deep .metadata-container {
+    flex: 1;
+    min-width: 0;
+}
+
+.ds-list-row-root ::deep .description {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.ds-list-row-root ::deep .actions-container {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ds-list-row-root ::deep .thumbnail-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--ds-radius-sm);
+    background: var(--mud-palette-background-gray);
+}
+
+.ds-list-row-root ::deep .list-item:focus-visible {
+    outline: 2px solid var(--mud-palette-primary);
+    outline-offset: 2px;
+}

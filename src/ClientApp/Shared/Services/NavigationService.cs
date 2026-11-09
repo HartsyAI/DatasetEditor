@@ -22,7 +22,7 @@ public class NavigationService(NavigationManager navigationManager)
     {
         string url = string.IsNullOrEmpty(datasetId) 
             ? "/dataset-viewer" 
-            : $"/dataset-viewer?id={datasetId}";
+            : $"/datasets/{Uri.EscapeDataString(datasetId)}";
         NavigationManager.NavigateTo(url);
         Logs.Info($"Navigated to dataset viewer: {datasetId ?? "no dataset specified"}");
     }

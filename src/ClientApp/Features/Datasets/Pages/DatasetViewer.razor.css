@@ -1,0 +1,28 @@
+/* Viewer layout (DESIGN.md §3.1). Was a <style> block on a MudGrid whose item column had no
+   fixed height, so the list never scrolled itself and the page column did instead. */
+.ds-viewer-layout {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+.ds-viewer-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px 16px 0 16px;
+}
+
+/* Takes the rest of the height; VirtualizedItemView scrolls inside it. */
+.ds-viewer-items {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+@media (max-width: 600px) {
+    .ds-viewer-main {
+        padding: 8px 8px 0 8px;
+    }
+}

@@ -2,9 +2,18 @@
 @using DatasetStudio.Core.Utilities
 @using DatasetStudio.DTO.Datasets
 
-<div class="modern-image-card @(IsSelected ? "selected" : "")" 
+@* Plain root so ImageCard.razor.css (scoped) can reach the Mud components inside. *@
+<div class="ds-image-card-root">
+<div class="modern-image-card @(IsSelected ? "selected" : "")"
+     role="button"
+     tabindex="0"
+     aria-label="@($"Open {GetDisplayTitle()}")"
+     aria-pressed="@(IsSelected ? "true" : "false")"
      @onmouseenter="HandleMouseEnter"
      @onmouseleave="HandleMouseLeave"
+     @onfocusin="HandleMouseEnter"
+     @onfocusout="HandleMouseLeave"
+     @onkeydown="HandleKeyDown"
      @onclick="HandleClick">
     
     @* Favorite star (top-right corner) *@
@@ -42,6 +51,13 @@
                     <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="100%" Width="100%" Animation="Animation.Wave" />
                 </div>
             }
+        }
+        else if (_hasNoImage)
+        {
+            <div class="image-placeholder">
+                <MudIcon Icon="@Icons.Material.Filled.HideImage" Class="mud-text-secondary" Size="Size.Large" />
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">No image</MudText>
+            </div>
         }
         else if (_imageError)
         {
@@ -146,180 +162,4 @@
         </div>
     }
 </div>
-
-<style>
-    .modern-image-card {
-        position: relative;
-        border-radius: var(--ds-radius-lg);
-        overflow: hidden;
-        background: var(--mud-palette-surface);
-        box-shadow: var(--ds-shadow-card);
-        transition: transform var(--ds-transition), box-shadow var(--ds-transition);
-        cursor: pointer;
-        height: 100%;
-    }
-    
-    .modern-image-card:hover {
-        transform: var(--ds-hover-lift);
-        box-shadow: var(--ds-shadow-card-hover);
-    }
-    
-    .modern-image-card.selected {
-        box-shadow: var(--ds-selection-ring);
-    }
-    
-    .favorite-star {
-        position: absolute;
-        top: 12px;
-        right: 12px;
-        z-index: 10;
-        background: var(--ds-scrim);
-        backdrop-filter: blur(8px);
-        border-radius: 50%;
-        padding: 6px;
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }
-    
-    .favorite-star:hover {
-        background: var(--ds-scrim-strong);
-        transform: scale(1.1);
-    }
-    
-    .selection-indicator {
-        position: absolute;
-        bottom: 12px;
-        left: 12px;
-        z-index: 10;
-        animation: scaleIn 0.2s ease;
-    }
-    
-    @@keyframes scaleIn {
-        from { transform: scale(0); }
-        to { transform: scale(1); }
-    }
-    
-    .image-container {
-        position: relative;
-        width: 100%;
-        aspect-ratio: 1 / 1;
-        overflow: hidden;
-        background: var(--mud-palette-background-gray);
-    }
-
-    .card-image {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        transition: transform 0.3s ease, opacity 0.3s ease;
-    }
-
-    .card-image.loading {
-        opacity: 0;
-    }
-
-    .card-image.loaded {
-        opacity: 1;
-    }
-
-    .image-skeleton {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-    }
-    
-    .modern-image-card:hover .card-image {
-        transform: scale(1.05);
-    }
-    
-    .image-placeholder {
-        width: 100%;
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 8px;
-        background: var(--mud-palette-background-gray);
-    }
-    
-    .bottom-info {
-        position: absolute;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        padding: 16px;
-        background: linear-gradient(to top, var(--ds-scrim-strong) 0%, var(--ds-scrim) 50%, transparent 100%);
-        color: var(--ds-on-scrim);
-        z-index: 5;
-    }
-    
-    .card-title {
-        font-weight: 600;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        color: var(--ds-on-scrim);
-        margin-bottom: 2px;
-    }
-    
-    .card-title-input {
-        width: 100%;
-        color: var(--ds-on-scrim);
-    }
-    .card-subtitle {
-        opacity: 0.9;
-        color: var(--ds-on-scrim-muted);
-    }
-    
-    .hover-details {
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        padding: 16px;
-        background: var(--ds-scrim-solid);
-        backdrop-filter: blur(4px);
-        color: var(--ds-on-scrim);
-        z-index: 8;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        animation: fadeIn 0.2s ease;
-    }
-    
-    @@keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-    }
-    
-    .details-content {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-        padding-top: 40px;
-    }
-    
-    .details-section {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 0.875rem;
-        color: var(--ds-on-scrim);
-    }
-    
-    .detail-icon {
-        opacity: 0.8;
-    }
-    
-    .hover-actions {
-        display: flex;
-        gap: 8px;
-        justify-content: center;
-        padding: 8px;
-        background: var(--ds-scrim-faint);
-        border-radius: var(--ds-radius-md);
-    }
-</style>
+</div>

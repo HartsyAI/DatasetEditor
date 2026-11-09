@@ -1,0 +1,36 @@
+/* Moved from a <style> block, which was emitted once per component instance and leaked
+generic class names app-wide (audit U-1). Scoped to .ds-detail-panel-root via CSS isolation. */
+.ds-detail-panel-root ::deep .detail-image-container {
+    width: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--mud-palette-background-gray);
+    position: relative;
+    cursor: pointer;
+}
+
+.ds-detail-panel-root ::deep .detail-image {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.ds-detail-panel-root ::deep .detail-image-overlay {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    padding: 4px;
+    border-radius: 9999px;
+    background-color: var(--ds-scrim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.ds-detail-panel-root ::deep .color-swatch {
+    width: 40px;
+    height: 40px;
+    border-radius: 4px;
+    border: 1px solid var(--mud-palette-lines-default);
+}

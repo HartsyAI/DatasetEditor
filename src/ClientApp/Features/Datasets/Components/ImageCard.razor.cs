@@ -38,6 +38,7 @@ public partial class ImageCard
     private bool _isHovered = false;
     private bool _imageLoaded = false;
     private bool _imageError = false;
+    private bool _hasNoImage;
     private string _imageUrl = string.Empty;
     private bool _isEditingTitle = false;
     private string _editTitle = string.Empty;
@@ -57,18 +58,17 @@ public partial class ImageCard
     /// <summary>Prepares the image URL with optional transformations.</summary>
     public void PrepareImageUrl()
     {
-        if (string.IsNullOrEmpty(Item.ImageUrl))
+        // Prefer the thumbnail, fall back to the full image. An item with neither still gets a card
+        // ("No image") instead of being dropped from the grid, so the count matches the server (U-30).
+        string? baseUrl = string.IsNullOrEmpty(Item.ThumbnailUrl) ? Item.ImageUrl : Item.ThumbnailUrl;
+        _hasNoImage = string.IsNullOrEmpty(baseUrl);
+        if (_hasNoImage)
         {
             _imageUrl = string.Empty;
-            _imageError = true;
+            _imageError = false;
             _imageLoaded = false;
             return;
         }
-
-        // Use thumbnail URL if available, otherwise use regular image URL
-        string baseUrl = string.IsNullOrEmpty(Item.ThumbnailUrl)
-            ? Item.ImageUrl
-            : Item.ThumbnailUrl;
 
         // Resolve to full URL (prepends API base address if relative), then request a
         // width-bounded thumbnail variant so the grid never pulls full-res originals.
@@ -83,8 +83,12 @@ public partial class ImageCard
             _imageError = false;
         }
 
-        // TODO: Add image transformation parameters (resize, quality) using ImageHelper
-        // Example: _imageUrl = ImageHelper.AddResizeParams(_imageUrl, width: 400, height: 400);
+    }
+
+    /// <summary>Opens the item from the keyboard: Enter or Space on the focused card, like a click.</summary>
+    private Task HandleKeyDown(KeyboardEventArgs args)
+    {
+        return args.Key is "Enter" or " " ? HandleClick() : Task.CompletedTask;
     }
 
     /// <summary>Marks the image as fully loaded once the browser fires onload.</summary>
@@ -105,7 +109,7 @@ public partial class ImageCard
         {
             string? color = Item.AverageColor();
             return string.IsNullOrWhiteSpace(color)
-                ? "var(--mud-palette-background-grey)"
+                ? "var(--mud-palette-background-gray)"
                 : color!;
         }
     }

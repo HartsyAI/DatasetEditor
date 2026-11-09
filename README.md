@@ -303,19 +303,22 @@ are fully buffered before decode (T-3).
 toggle; inline title edit; an ingestion status band that polls while processing; optional
 IndexedDB page cache across reloads.
 
-**How.** `Features/Datasets/Pages/DatasetViewer.razor(.cs)` → `ViewerContainer` →
-`VirtualizedItemView` (Blazor `<Virtualize>` over *rows* of N cards, N from container width
-via a `ResizeObserver` interop) → `ImageCard` / `ImageListRow`. `DatasetCacheService` keeps a
-sliding window of pages from `DatasetApiClient`, prefetching near the end and evicting at the
-front; `IndexedDbCache` (Dexie) optionally persists pages.
+**How.** `/datasets/{id}` (`/dataset-viewer?id=` still works) is
+`Features/Datasets/Pages/DatasetViewer.razor(.cs)`: `IngestionStatusBanner`, `ViewerToolbar`,
+optional `FilterPanel`, then `ViewerContainer` → `VirtualizedItemView` (Blazor `<Virtualize>`
+over *rows* of N cards; N from the container width via `GridLayout.ColumnsFor`, min card 180 px,
+capped by the "Grid columns" setting; width changes arrive debounced from a `ResizeObserver`)
+→ `ImageCard` / `ImageListRow`, and `DetailSidebar` (a column at `md`+, a bottom sheet below).
+The next page is fetched only when an end-of-list sentinel comes within 800 px of the list's
+visible area (IntersectionObserver). `DatasetCacheService` keeps a sliding window of pages from
+`DatasetApiClient`, evicting at the front; `IndexedDbCache` (Dexie) optionally persists pages.
+Cards and rows are keyboard reachable (Enter or Space opens the item).
 
 **Why.** Row virtualisation keeps a responsive N-column grid inside a single `<Virtualize>`.
 Placeholder colour + lazy `<img>` give instant layout with zero shift.
 
-**Gaps.** The cache prefetch cascade keeps loading pages in the background until the whole
-dataset (up to 100k items) is in memory, regardless of scrolling (U-5). Component `<style>`
-blocks are emitted once per card instance (U-1). Items with neither an image nor a thumbnail
-URL are dropped from the grid, so the count label can disagree with the server (U-30).
+**Gaps.** Client-side filters are not applied (U-6, needs server-side filtering, PR 4.4).
+Gallery mode renders like the grid.
 
 ### 4.10 Item editing — Partial
 

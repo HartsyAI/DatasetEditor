@@ -2,12 +2,19 @@
 @using DatasetStudio.ClientApp.Services.StateManagement
 @using DatasetStudio.DTO.Datasets
 
+@* Plain root so ImageDetailPanel.razor.css (scoped) can reach the Mud components inside. *@
+<div class="ds-detail-panel-root">
 @if (Item != null)
 {
-    <MudPaper Class="pa-4 h-100 overflow-y-auto" Elevation="1">
+    <MudPaper Class="pa-4 mud-height-full overflow-y-auto" Elevation="1">
         <MudStack Spacing="3">
             @* Image Preview *@
-            <div class="detail-image-container" @onclick="OpenLightboxAsync">
+            <div class="detail-image-container"
+                 role="button"
+                 tabindex="0"
+                 aria-label="View full size"
+                 @onclick="OpenLightboxAsync"
+                 @onkeydown="HandleImageKeyDown">
                 <img src="@ResolvedImageUrl"
                      alt="@Item.Title"
                      loading="lazy"
@@ -34,9 +41,12 @@
                 {
                     <div class="d-flex align-center justify-space-between">
                         <MudText Typo="Typo.h6">@Item.Title</MudText>
-                        <MudIconButton Icon="@Icons.Material.Filled.Edit" 
-                                      Size="Size.Small" 
-                                      OnClick="StartEditTitle" />
+                        <MudTooltip Text="Edit title">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                           Size="Size.Small"
+                                           aria-label="Edit title"
+                                           OnClick="StartEditTitle" />
+                        </MudTooltip>
                     </div>
                 }
             </MudStack>
@@ -59,9 +69,12 @@
                         <MudText Typo="Typo.body2" Class="flex-grow-1">
                             @(string.IsNullOrEmpty(Item.Description) ? "No description" : Item.Description)
                         </MudText>
-                        <MudIconButton Icon="@Icons.Material.Filled.Edit" 
-                                      Size="Size.Small" 
-                                      OnClick="StartEditDescription" />
+                        <MudTooltip Text="Edit description">
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit"
+                                           Size="Size.Small"
+                                           aria-label="Edit description"
+                                           OnClick="StartEditDescription" />
+                        </MudTooltip>
                     </div>
                 }
             </MudStack>
@@ -72,10 +85,13 @@
             <MudStack Spacing="2">
                 <div class="d-flex align-center justify-space-between">
                     <MudText Typo="Typo.subtitle2">Tags</MudText>
-                    <MudIconButton Icon="@Icons.Material.Filled.Add" 
-                                  Size="Size.Small" 
-                                  Color="Color.Primary"
-                                  OnClick="ShowAddTagDialog" />
+                    <MudTooltip Text="Add tag">
+                        <MudIconButton Icon="@Icons.Material.Filled.Add"
+                                       Size="Size.Small"
+                                       Color="Color.Primary"
+                                       aria-label="Add tag"
+                                       OnClick="ShowAddTagDialog" />
+                    </MudTooltip>
                 </div>
                 @if (Item.Tags.Any())
                 {
@@ -198,76 +214,28 @@
 
             <MudDivider />
 
-            @* Actions *@
-            <MudStack Spacing="2">
-                <MudText Typo="Typo.subtitle2">Actions</MudText>
-                <MudButton Variant="Variant.Filled" 
-                          Color="Color.Primary" 
-                          StartIcon="@Icons.Material.Filled.Download"
-                          OnClick="HandleDownload"
-                          FullWidth="true">
-                    Download
+            @* Share and delete used to be buttons that only showed "coming soon"; they are removed
+               rather than presented as working (DESIGN.md §7). *@
+            @if (!string.IsNullOrEmpty(ResolvedImageUrl))
+            {
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Download"
+                           Href="@ResolvedImageUrl"
+                           Target="_blank"
+                           FullWidth="true">
+                    Open original
                 </MudButton>
-                <MudButton Variant="Variant.Outlined" 
-                          Color="Color.Secondary"
-                          StartIcon="@Icons.Material.Filled.Share"
-                          OnClick="HandleShare"
-                          FullWidth="true">
-                    Share
-                </MudButton>
-                <MudButton Variant="Variant.Outlined" 
-                          Color="Color.Error"
-                          StartIcon="@Icons.Material.Filled.Delete"
-                          OnClick="HandleDelete"
-                          FullWidth="true">
-                    Delete
-                </MudButton>
-            </MudStack>
+            }
         </MudStack>
     </MudPaper>
 }
 else
 {
-    <MudPaper Class="pa-4 h-100" Elevation="1">
+    <MudPaper Class="pa-4 mud-height-full" Elevation="1">
         <MudText Typo="Typo.body1" Align="Align.Center" Class="mud-text-secondary">
             Select an image to view details
         </MudText>
     </MudPaper>
 }
-
-<style>
-    .detail-image-container {
-        width: 100%;
-        border-radius: 8px;
-        overflow: hidden;
-        background: var(--mud-palette-background-grey);
-        position: relative;
-        cursor: pointer;
-    }
-
-    .detail-image {
-        width: 100%;
-        height: auto;
-        display: block;
-    }
-
-    .detail-image-overlay {
-        position: absolute;
-        right: 8px;
-        bottom: 8px;
-        padding: 4px;
-        border-radius: 9999px;
-        background-color: var(--ds-scrim);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        pointer-events: none;
-    }
-
-    .color-swatch {
-        width: 40px;
-        height: 40px;
-        border-radius: 4px;
-        border: 1px solid var(--mud-palette-lines-default);
-    }
-</style>
+</div>

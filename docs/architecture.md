@@ -110,8 +110,10 @@ API → DatasetApiClient → DatasetCacheService → DatasetState.Items (sliding
 - **`VirtualizedItemView`** wraps Blazor's `<Virtualize>` using **row virtualization** (each
   virtualized element is one row of *N* cards), so a responsive N-column grid stays virtualized.
   Only a few screenfuls of cards exist in the DOM at any scroll depth. The same component renders
-  the list view (`Columns = 1`). Column count and row height are computed from the container width
-  (a small `ResizeObserver` JS interop), and nearing the end triggers prefetch via the cache.
+  the list view (`Columns = 1`). Column count (`GridLayout.ColumnsFor`: container width, min card
+  180 px, capped by the user setting) and row height come from the container width, reported
+  debounced by a `ResizeObserver`. The next page is requested only when an end-of-list sentinel
+  nears the list's visible area (`IntersectionObserver`), never in a background chain.
 - **`ImageCard`** shows a dominant-color (`average_color`) placeholder instantly, then fades in a
   width-bounded thumbnail (`loading="lazy"`, `decoding="async"`) over it — zero layout shift.
 
