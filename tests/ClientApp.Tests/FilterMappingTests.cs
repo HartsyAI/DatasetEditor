@@ -46,6 +46,32 @@ public sealed class FilterMappingTests
         Assert.Contains("&tag=cat", FilterQueryString.Build(request));
     }
 
+    /// <summary>
+    /// PR 4.4 review: the picker's "To" day arrives at midnight, which left out items created later
+    /// that day (and a one-day range matched nothing). It now covers the whole day.
+    /// </summary>
+    [Fact]
+    public void ToRequest_ToDateCoversTheWholeDay()
+    {
+        DateTime day = new(2026, 3, 5);
+        FilterCriteria criteria = new() { DateFrom = day, DateTo = day };
+
+        FilterRequest request = FilterMapping.ToRequest(criteria)!;
+
+        Assert.Equal(day, request.DateFrom);
+        Assert.Equal(new DateTime(2026, 3, 5, 23, 59, 59, 999).AddTicks(9999), request.DateTo);
+        DateTime createdAtNoon = day.AddHours(12);
+        Assert.True(createdAtNoon >= request.DateFrom && createdAtNoon <= request.DateTo);
+    }
+
+    /// <summary>A "To" value with a time of day (not from the picker) is kept as given.</summary>
+    [Fact]
+    public void ToRequest_ToDateWithATimeIsKept()
+    {
+        DateTime exact = new(2026, 3, 5, 14, 30, 0);
+        Assert.Equal(exact, FilterMapping.ToRequest(new FilterCriteria { DateTo = exact })!.DateTo);
+    }
+
     [Theory]
     [InlineData(DatasetSourceType.LocalUpload, FilterSupport.All)]
     [InlineData(DatasetSourceType.LocalFolder, FilterSupport.All)]

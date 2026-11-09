@@ -24,10 +24,21 @@ public static class FilterMapping
             MinHeight = criteria.MinHeight,
             MaxHeight = criteria.MaxHeight,
             DateFrom = criteria.DateFrom,
-            DateTo = criteria.DateTo,
+            DateTo = EndOfDay(criteria.DateTo),
         };
         return FilterQueryString.IsEmpty(request) ? null : request;
     }
+
+    /// <summary>
+    /// The date picker gives the chosen "To" day at midnight, and the server keeps items created
+    /// up to that instant, so almost everything from the chosen day was left out (and choosing the
+    /// same From and To day matched nothing). A midnight bound means the whole day; an explicit
+    /// time is kept.
+    /// </summary>
+    public static DateTime? EndOfDay(DateTime? dateTo) =>
+        dateTo is DateTime to && to.TimeOfDay == TimeSpan.Zero
+            ? to.AddDays(1).AddTicks(-1)
+            : dateTo;
 
     /// <summary>What the filter panel offers for a source.</summary>
     public static FilterSupport SupportFor(DatasetSourceType? sourceType)
