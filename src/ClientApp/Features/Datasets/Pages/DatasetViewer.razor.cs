@@ -314,9 +314,10 @@ public partial class DatasetViewer : IDisposable
 
         if (_datasetCache.ActiveFilter is not null)
         {
+            string matches = _filteredCount == 1 ? "match" : "matches";
             return _datasetCache.HasMorePages
-                ? $"{_filteredCount:N0} matches so far"
-                : $"{_filteredCount:N0} matches";
+                ? $"{_filteredCount:N0} {matches} so far"
+                : $"{_filteredCount:N0} {matches}";
         }
 
         if (datasetTotal > 0)
