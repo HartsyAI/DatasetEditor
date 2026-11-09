@@ -25,6 +25,12 @@ public sealed class IngestionBackgroundService : BackgroundService
     private readonly IngestionOptions _options;
     private readonly ILogger<IngestionBackgroundService> _logger;
 
+    /// <summary>
+    /// When this process's worker host was created, before the server accepts requests. Only
+    /// upload reservations older than this are abandoned ones.
+    /// </summary>
+    private readonly DateTime _startedAt = DateTime.UtcNow;
+
     /// <summary>Creates the worker host.</summary>
     public IngestionBackgroundService(
         IServiceScopeFactory scopeFactory,
@@ -119,7 +125,7 @@ public sealed class IngestionBackgroundService : BackgroundService
             }
         }
 
-        int abandoned = await store.DiscardAbandonedReservationsAsync(cancellationToken);
+        int abandoned = await store.DiscardAbandonedReservationsAsync(_startedAt, cancellationToken);
         if (abandoned > 0)
         {
             _logger.LogWarning("Removed {Count} upload reservation(s) whose upload never finished", abandoned);

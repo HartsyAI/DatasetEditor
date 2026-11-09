@@ -421,6 +421,43 @@ namespace DatasetStudio.Tests.APIBackend
             (await ClaimAsync()).Should().BeNull();
         }
 
+        /// <summary>
+        /// Codex review on #19: requests are accepted while startup recovery runs, so a reservation
+        /// made by this process (an upload being written right now) must survive recovery.
+        /// </summary>
+        [Fact]
+        public async Task Recovery_KeepsReservationsMadeAfterThisProcessStarted()
+        {
+            IngestionBackgroundService host = CreateWorkerHost();
+            Guid datasetId = await CreateDatasetAsync();
+            Directory.CreateDirectory(_factory.UploadPath);
+            string inProgress = Path.Combine(_factory.UploadPath, "in-progress.csv");
+            await File.WriteAllTextAsync(inProgress, "title\n");
+            Guid reservation = (await ReserveAsync(new IngestionJob(datasetId, inProgress)))!.Value;
+
+            await host.RecoverInterruptedJobsAsync(CancellationToken.None);
+
+            File.Exists(inProgress).Should().BeTrue();
+            using IServiceScope scope = _factory.Services.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<IIngestionJobQueue>().CommitAsync(reservation, CancellationToken.None);
+            (await ClaimAsync())!.Id.Should().Be(reservation);
+        }
+
+        /// <summary>Committing a reservation that no longer exists fails instead of pretending the import was queued.</summary>
+        [Fact]
+        public async Task Commit_OfAVanishedReservation_Throws()
+        {
+            Guid datasetId = await CreateDatasetAsync();
+            Guid reservation = (await ReserveAsync(new IngestionJob(datasetId, "/staged/gone.csv")))!.Value;
+            using IServiceScope scope = _factory.Services.CreateScope();
+            IIngestionJobQueue queue = scope.ServiceProvider.GetRequiredService<IIngestionJobQueue>();
+            await queue.ReleaseAsync(reservation, CancellationToken.None);
+
+            Func<Task> act = () => queue.CommitAsync(reservation, CancellationToken.None);
+
+            await act.Should().ThrowAsync<InvalidOperationException>();
+        }
+
         /// <summary>A reservation left by an upload interrupted mid-write is removed at startup, with its partial file.</summary>
         [Fact]
         public async Task Recovery_RemovesAbandonedReservationsAndTheirFiles()

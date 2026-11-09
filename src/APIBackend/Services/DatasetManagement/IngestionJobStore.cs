@@ -54,9 +54,15 @@ public sealed class IngestionJobStore : IIngestionJobQueue, IIngestionJobStore
     /// <inheritdoc />
     public async Task CommitAsync(Guid jobId, CancellationToken cancellationToken)
     {
-        await _db.IngestionJobs
+        int committed = await _db.IngestionJobs
             .Where(j => j.Id == jobId && j.State == IngestionJobState.Staging)
             .ExecuteUpdateAsync(s => s.SetProperty(j => j.State, IngestionJobState.Queued), cancellationToken);
+        if (committed == 0)
+        {
+            // The reservation is gone (its dataset was deleted mid-upload). Answering 202 would
+            // promise an import that never runs; the endpoint's catch releases and cleans up.
+            throw new InvalidOperationException($"Ingestion reservation {jobId} no longer exists.");
+        }
         _signal.Notify();
     }
 
@@ -104,14 +110,16 @@ public sealed class IngestionJobStore : IIngestionJobQueue, IIngestionJobStore
     }
 
     /// <inheritdoc />
-    public async Task<int> DiscardAbandonedReservationsAsync(CancellationToken cancellationToken)
+    public async Task<int> DiscardAbandonedReservationsAsync(DateTime createdBefore, CancellationToken cancellationToken)
     {
+        // Only reservations older than this process: requests are accepted while recovery runs,
+        // and their live reservations must survive it (Codex review on #19).
         List<string?> stagedFiles = await _db.IngestionJobs
-            .Where(j => j.State == IngestionJobState.Staging)
+            .Where(j => j.State == IngestionJobState.Staging && j.CreatedAt < createdBefore)
             .Select(j => j.FilePath)
             .ToListAsync(cancellationToken);
         int removed = await _db.IngestionJobs
-            .Where(j => j.State == IngestionJobState.Staging)
+            .Where(j => j.State == IngestionJobState.Staging && j.CreatedAt < createdBefore)
             .ExecuteDeleteAsync(cancellationToken);
         foreach (string? path in stagedFiles)
         {

@@ -34,7 +34,9 @@ public interface IIngestionJobStore
     /// Deletes reservations left by uploads that were still being written when the process
     /// stopped, and their partial files. Returns how many were removed.
     /// </summary>
-    Task<int> DiscardAbandonedReservationsAsync(CancellationToken cancellationToken);
+    /// <param name="createdBefore">When this process started; newer reservations belong to live requests.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<int> DiscardAbandonedReservationsAsync(DateTime createdBefore, CancellationToken cancellationToken);
 
     /// <summary>
     /// Fails every dataset still marked Processing that has no queued or running job: its work
