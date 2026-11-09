@@ -215,6 +215,25 @@ namespace DatasetStudio.Tests.APIBackend
             loaded.HuggingFaceSplit.Should().BeNull();
         }
 
+        /// <summary>
+        /// Codex review on #21: two S3 connects from the same snapshot, one changing the profile and
+        /// one the bucket, must not merge into a profile/bucket pair neither request validated.
+        /// The later request's whole selection wins.
+        /// </summary>
+        [Fact]
+        public async Task UpdateAsync_ConcurrentS3Selections_NeverMixProfileAndBucket()
+        {
+            DatasetDto start = await CreateAsync("S3");
+            await WithRepositoryAsync(r => r.UpdateAsync(start, start with { S3StorageProfileName = "A", S3Bucket = "X" }));
+            DatasetDto snapshot = (await GetAsync(start.Id))!;
+
+            await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { S3StorageProfileName = "B" }));
+            await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { S3Bucket = "Y" }));
+
+            DatasetDto loaded = (await GetAsync(start.Id))!;
+            (loaded.S3StorageProfileName, loaded.S3Bucket).Should().Be(("A", "Y"), "B/Y was never validated by either request");
+        }
+
         /// <summary>Many concurrent patches of different fields all land.</summary>
         [Fact]
         public async Task UpdateAsync_ConcurrentPatchesOfDifferentFields_AllLand()
