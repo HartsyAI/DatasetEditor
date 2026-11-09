@@ -26,15 +26,6 @@ public class FilterState
     /// <summary>Event fired when filter criteria changes.</summary>
     public event Action? OnChange;
     
-    /// <summary>Updates the entire filter criteria, replacing existing criteria.</summary>
-    /// <param name="criteria">New filter criteria to apply.</param>
-    public void UpdateCriteria(FilterCriteria criteria)
-    {
-        Criteria = criteria;
-        NotifyStateChanged();
-        Logs.Info("Filter criteria updated");
-    }
-    
     /// <summary>Clears all active filters, resetting to default state.</summary>
     public void ClearFilters()
     {
@@ -51,14 +42,6 @@ public class FilterState
         Criteria.SearchQuery = query;
         NotifyStateChanged();
         Logs.Info($"Search query set: {query}");
-    }
-    
-    /// <summary>Clears the current search query.</summary>
-    public void ClearSearchQuery()
-    {
-        Criteria.SearchQuery = string.Empty;
-        NotifyStateChanged();
-        Logs.Info("Search query cleared");
     }
     
     /// <summary>Adds a tag to the filter criteria if not already present.</summary>
@@ -84,14 +67,6 @@ public class FilterState
         }
     }
     
-    /// <summary>Clears all tag filters.</summary>
-    public void ClearTags()
-    {
-        Criteria.Tags.Clear();
-        NotifyStateChanged();
-        Logs.Info("All tag filters cleared");
-    }
-    
     /// <summary>Sets the date range filter.</summary>
     /// <param name="dateFrom">Start date (inclusive), null for no lower bound.</param>
     /// <param name="dateTo">End date (inclusive), null for no upper bound.</param>
@@ -101,15 +76,6 @@ public class FilterState
         Criteria.DateTo = dateTo;
         NotifyStateChanged();
         Logs.Info($"Date range filter set: {dateFrom?.ToShortDateString() ?? "none"} to {dateTo?.ToShortDateString() ?? "none"}");
-    }
-    
-    /// <summary>Clears the date range filter.</summary>
-    public void ClearDateRange()
-    {
-        Criteria.DateFrom = null;
-        Criteria.DateTo = null;
-        NotifyStateChanged();
-        Logs.Info("Date range filter cleared");
     }
     
     /// <summary>Sets the minimum width filter for images.</summary>
@@ -146,29 +112,6 @@ public class FilterState
         Criteria.MaxHeight = maxHeight;
         NotifyStateChanged();
         Logs.Info($"Max height filter set: {maxHeight}");
-    }
-    
-    /// <summary>Clears all dimension filters (width and height).</summary>
-    public void ClearDimensionFilters()
-    {
-        Criteria.MinWidth = null;
-        Criteria.MaxWidth = null;
-        Criteria.MinHeight = null;
-        Criteria.MaxHeight = null;
-        NotifyStateChanged();
-        Logs.Info("Dimension filters cleared");
-    }
-    
-    /// <summary>Updates the filtered item count after filters are applied.</summary>
-    /// <param name="count">Number of items matching current filters.</param>
-    public void SetFilteredCount(int count)
-    {
-        if (FilteredCount == count)
-        {
-            return;
-        }
-        FilteredCount = count;
-        NotifyStateChanged();
     }
     
     /// <summary>Notifies all subscribers that the filter state has changed.</summary>

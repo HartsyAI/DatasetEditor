@@ -15,16 +15,16 @@ public partial class FilterPanel : IDisposable
     [Inject] public DatasetState DatasetState { get; set; } = default!;
     [Inject] public FilterState FilterState { get; set; } = default!;
 
-    public string _searchQuery = string.Empty;
-    public int? _minWidth = null;
-    public int? _maxWidth = null;
-    public int? _minHeight = null;
-    public int? _maxHeight = null;
-    public DateTime? _dateFrom = null;
-    public DateTime? _dateTo = null;
+    private string _searchQuery = string.Empty;
+    private int? _minWidth = null;
+    private int? _maxWidth = null;
+    private int? _minHeight = null;
+    private int? _maxHeight = null;
+    private DateTime? _dateFrom = null;
+    private DateTime? _dateTo = null;
 
-    public List<string> _availableTags = [];
-    public Dictionary<string, bool> _selectedTags = [];
+    private List<string> _availableTags = [];
+    private Dictionary<string, bool> _selectedTags = [];
 
     /// <summary>Initializes component and loads available filter options.</summary>
     protected override void OnInitialized()

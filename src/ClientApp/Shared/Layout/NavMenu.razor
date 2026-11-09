@@ -53,11 +53,13 @@
         }
         else
         {
-            @foreach (var (datasetId, datasetName) in _recentDatasets)
+            @foreach (RecentDataset recent in _recentDatasets)
             {
-                <MudNavLink Href="@GetDatasetUrl(datasetId)"
-                           Icon="@Icons.Material.Filled.Folder">
-                    @datasetName
+                <MudNavLink Href="@GetDatasetUrl(recent.Id)"
+                            Match="NavLinkMatch.All"
+                            Icon="@Icons.Material.Filled.Collections"
+                            @key="recent.Id">
+                    @recent.Name
                 </MudNavLink>
             }
         }
@@ -70,6 +72,3 @@
     </MudText>
 </MudNavMenu>
 
-@code {
-    // TODO: Move to separate .razor.cs file following component pattern
-}

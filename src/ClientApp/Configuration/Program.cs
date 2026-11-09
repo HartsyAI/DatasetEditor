@@ -12,10 +12,6 @@ using DatasetStudio.ClientApp.Services.Interop;
 using DatasetStudio.ClientApp.Services.StateManagement;
 using DatasetStudio.ClientApp.Shared.Services;
 using DatasetStudio.ClientApp.Features.Datasets.Services;
-using DatasetStudio.Core.BusinessLogic;
-using DatasetStudio.Core.BusinessLogic.Layouts;
-using DatasetStudio.Core.BusinessLogic.Parsers;
-using DatasetStudio.Core.BusinessLogic.ModalityProviders;
 using DatasetStudio.Core.Utilities;
 using DatasetStudio.Core.Utilities.Logging;
 using Microsoft.Extensions.Logging;
@@ -76,16 +72,11 @@ builder.Services.AddMudServices();
 // LocalStorage for browser storage
 builder.Services.AddBlazoredLocalStorage();
 
-// Register Core services
-builder.Services.AddSingleton<ParserRegistry>();
-builder.Services.AddSingleton<ModalityProviderRegistry>();
-builder.Services.AddSingleton<LayoutRegistry>();
-builder.Services.AddScoped<FormatDetector>();
+// Dataset data services. (The Core parser/layout/modality registries, FormatDetector, FilterService
+// and SearchService used to be registered here although no UI used them; audit K-2.)
 builder.Services.AddScoped<DatasetCacheService>();
 builder.Services.AddScoped<IngestionWorkflowService>();
 builder.Services.AddScoped<IndexedDbCache>();
-builder.Services.AddScoped<FilterService>();
-builder.Services.AddScoped<SearchService>();
 
 AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
 {
@@ -113,7 +104,6 @@ builder.Services.AddScoped<IndexedDbInterop>();
 builder.Services.AddScoped<ImageUrlHelper>();
 
 // Register State Management
-builder.Services.AddScoped<AppState>();
 builder.Services.AddScoped<DatasetState>();
 builder.Services.AddScoped<FilterState>();
 builder.Services.AddScoped<ViewState>();
