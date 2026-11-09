@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using DatasetStudio.ClientApp.Features.Datasets.Components;
 using DatasetStudio.ClientApp.Services.ApiClients;
 using DatasetStudio.ClientApp.Shared.Components;
 using DatasetStudio.ClientApp.Shared.Services;
@@ -11,9 +12,9 @@ using MudBlazor;
 namespace DatasetStudio.ClientApp.Features.Datasets.Pages;
 
 /// <summary>
-/// The datasets page: the caller's datasets plus public ones, with client-side search and
-/// filters over the loaded page. Loading, failure and "no datasets" are distinct states; a
-/// failed request used to render "No datasets yet" plus a snackbar (audit U-10).
+/// The datasets page (<c>/datasets</c>; <c>/my-datasets</c> is kept so old links still work): the
+/// caller's datasets plus public ones, filtered client-side over the loaded page. Loading,
+/// failure, "no datasets" and "no matches" are distinct states.
 /// </summary>
 public partial class DatasetLibrary : ComponentBase
 {
@@ -25,13 +26,10 @@ public partial class DatasetLibrary : ComponentBase
     [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
 
     private List<DatasetSummaryDto> _datasets = new();
-    private List<DatasetSummaryDto> _filteredDatasets = new();
-    private string _searchQuery = string.Empty;
+    private IReadOnlyList<DatasetSummaryDto> _filteredDatasets = Array.Empty<DatasetSummaryDto>();
+    private LibraryFilter _filter = LibraryFilter.None;
     private bool _isLoading;
     private string? _loadError;
-    private IngestionStatusDto? _statusFilter;
-    private DatasetSourceType? _sourceFilter;
-    private bool _onlyReady;
     private bool _isAuthenticated;
     private Guid? _currentUserId;
 
@@ -65,7 +63,7 @@ public partial class DatasetLibrary : ComponentBase
         {
             IReadOnlyList<DatasetSummaryDto> datasets = await DatasetApiClient.GetAllDatasetsAsync(page: 0, pageSize: 50, CancellationToken.None);
             _datasets = datasets.ToList();
-            FilterDatasets();
+            _filteredDatasets = _filter.Apply(_datasets);
         }
         catch (Exception ex)
         {
@@ -79,62 +77,13 @@ public partial class DatasetLibrary : ComponentBase
         }
     }
 
-    private void FilterDatasets()
+    private void OnFilterChanged(LibraryFilter filter)
     {
-        IEnumerable<DatasetSummaryDto> query = _datasets;
-
-        if (!string.IsNullOrWhiteSpace(_searchQuery))
-        {
-            string text = _searchQuery.Trim();
-            query = query.Where(d => d.Name.Contains(text, StringComparison.OrdinalIgnoreCase) ||
-                                     (d.Description?.Contains(text, StringComparison.OrdinalIgnoreCase) ?? false));
-        }
-
-        if (_statusFilter.HasValue)
-        {
-            query = query.Where(d => d.Status == _statusFilter.Value);
-        }
-
-        if (_sourceFilter.HasValue)
-        {
-            query = query.Where(d => d.SourceType == _sourceFilter.Value);
-        }
-
-        if (_onlyReady)
-        {
-            query = query.Where(d => d.Status == IngestionStatusDto.Completed);
-        }
-
-        _filteredDatasets = query.ToList();
+        _filter = filter;
+        _filteredDatasets = _filter.Apply(_datasets);
     }
 
-    private void OnStatusFilterChanged(IngestionStatusDto? value)
-    {
-        _statusFilter = value;
-        FilterDatasets();
-    }
-
-    private void OnSourceFilterChanged(DatasetSourceType? value)
-    {
-        _sourceFilter = value;
-        FilterDatasets();
-    }
-
-    // The switch used to @bind the field directly, so toggling it never re-ran the filter (U-6).
-    private void OnOnlyReadyChanged(bool value)
-    {
-        _onlyReady = value;
-        FilterDatasets();
-    }
-
-    private void ClearFilters()
-    {
-        _searchQuery = string.Empty;
-        _statusFilter = null;
-        _sourceFilter = null;
-        _onlyReady = false;
-        FilterDatasets();
-    }
+    private void ClearFilters() => OnFilterChanged(LibraryFilter.None);
 
     private void ViewDataset(DatasetSummaryDto dataset)
     {
@@ -165,7 +114,7 @@ public partial class DatasetLibrary : ComponentBase
             }
 
             _datasets.RemoveAll(d => d.Id == dataset.Id);
-            FilterDatasets();
+            _filteredDatasets = _filter.Apply(_datasets);
             Notifications.ShowSuccess($"Deleted \"{dataset.Name}\".");
         }
         catch (Exception ex)
@@ -173,30 +122,5 @@ public partial class DatasetLibrary : ComponentBase
             Logs.Error("Failed to delete dataset", ex);
             Notifications.ShowError($"Couldn't delete \"{dataset.Name}\". The server didn't respond.");
         }
-    }
-
-    private static string GetTruncatedDescription(string description)
-    {
-        return description.Length > 100
-            ? description.Substring(0, 97) + "..."
-            : description;
-    }
-
-    private static string FormatTimeAgo(DateTime dateTime)
-    {
-        TimeSpan span = DateTime.UtcNow - dateTime;
-
-        if (span.TotalDays > 365)
-            return $"{(int)(span.TotalDays / 365)} year(s) ago";
-        if (span.TotalDays > 30)
-            return $"{(int)(span.TotalDays / 30)} month(s) ago";
-        if (span.TotalDays > 1)
-            return $"{(int)span.TotalDays} day(s) ago";
-        if (span.TotalHours > 1)
-            return $"{(int)span.TotalHours} hour(s) ago";
-        if (span.TotalMinutes > 1)
-            return $"{(int)span.TotalMinutes} minute(s) ago";
-
-        return "just now";
     }
 }

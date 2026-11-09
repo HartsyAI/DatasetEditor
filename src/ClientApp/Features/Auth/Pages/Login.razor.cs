@@ -6,7 +6,7 @@ namespace DatasetStudio.ClientApp.Features.Auth.Pages;
 
 public partial class Login : ComponentBase
 {
-    private const string DefaultLandingPage = "/my-datasets";
+    private const string DefaultLandingPage = "/datasets";
 
     [Inject] private AuthApiClient AuthApiClient { get; set; } = default!;
     [Inject] private CookieAuthenticationStateProvider AuthStateProvider { get; set; } = default!;

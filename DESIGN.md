@@ -248,7 +248,8 @@ has logic, and a `.razor.css` when it has styles. Parameters are documented with
 | `Toolbar` | exists | `MudPaper Elevation=1 Class="pa-3"` with a wrapping row; `Start` and `End` fragments. Used by the datasets page; the viewer toolbar adopts it in PR 2.4. |
 | `StatusChip` | exists | `IngestionStatusDto` → chip with fixed colour + icon (§5.3), from `Shared/Presentation/StatusPresentation`, which also gives the matching alert severity. |
 | `SourceBadge` | exists | `DatasetSourceType` (+ `IsStreaming`) → label + icon (§5.4), from `Shared/Presentation/SourcePresentation`. |
-| `DatasetCard` | **missing (extract)** | The card in `DatasetLibrary.razor:75-133`, with `StatusChip`, `SourceBadge`, Open/Delete actions, "Updated … ago". |
+| `DatasetCard` | exists (`Features/Datasets/Components`) | Name, size, `StatusChip`, `SourceBadge`, three-line description, Open/Delete, "Updated … ago" with the absolute time in a tooltip. |
+| `LibraryFilterBar` | exists (`Features/Datasets/Components`) | Search, status, source and "only ready" in a `Toolbar`; raises one `LibraryFilter`, whose `Apply` is the filter rule. |
 | `EmptyState` | exists | Headline (`h6`), description, icon, `ActionContent`. Used by the datasets page (no datasets / no matches) and the viewer (no dataset open). |
 | `LoadingState` | exists | `Variant` = `Spinner | CardGrid | Rows`. Was `LoadingIndicator`. |
 | `ErrorState` | exists | Inline outlined error alert with an optional retry. `ErrorBoundary` stays for render crashes. |
@@ -399,8 +400,7 @@ Alerts for the same statuses use `Severity.Normal / Info / Success / Error`.
 | HuggingFace | **HuggingFace** | Hugging Face, HF (UI) |
 | Product name | **Dataset Studio** | DatasetStudio, Hartsy's Dataset Editor |
 
-Routes: `/`, `/datasets` (**gap:** today `/my-datasets`; three links point at a non-existent
-`/upload`), `/datasets/create`, `/datasets/{id}` (**gap:** today `/dataset-viewer?id=`),
+Routes: `/`, `/datasets` (`/my-datasets` kept as an alias for old links), `/datasets/create`, `/datasets/{id}` (**gap:** today `/dataset-viewer?id=`),
 `/settings`, `/login`, `/register`, `/ai-tools`.
 
 Copy rules: sentence case; buttons are verbs ("Open", "Delete", "New dataset"); no "TODO"
