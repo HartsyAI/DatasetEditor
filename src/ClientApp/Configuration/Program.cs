@@ -82,6 +82,7 @@ builder.Services.AddSingleton<ModalityProviderRegistry>();
 builder.Services.AddSingleton<LayoutRegistry>();
 builder.Services.AddScoped<FormatDetector>();
 builder.Services.AddScoped<DatasetCacheService>();
+builder.Services.AddScoped<IngestionWorkflowService>();
 builder.Services.AddScoped<IndexedDbCache>();
 builder.Services.AddScoped<FilterService>();
 builder.Services.AddScoped<SearchService>();

@@ -21,8 +21,9 @@ public enum CreateSource
 /// <summary>
 /// Create dataset: choose a source (step 1), then configure and import it (step 2). Step 2 is
 /// disabled until a source is chosen. The page has one primary action, Continue; the source cards
-/// are selections, not buttons. The per-source forms are still one <c>DatasetUploader</c> opened
-/// on the matching tab until PR 2.5 splits it.
+/// are selections, not buttons. Each source has its own form
+/// component (<c>UploadSourceForm</c>, <c>HuggingFaceSourceForm</c>, <c>FolderSourceForm</c>,
+/// <c>S3SourceForm</c>), which opens the new dataset when the server accepts it.
 /// </summary>
 public partial class CreateDataset
 {
@@ -59,14 +60,4 @@ public partial class CreateDataset
     {
         _activeStep = 0;
     }
-
-    // DatasetUploader's internal tab order: upload, HuggingFace, folder, S3.
-    private static int UploaderTabIndex(CreateSource source) => source switch
-    {
-        CreateSource.Upload => 0,
-        CreateSource.HuggingFace => 1,
-        CreateSource.Folder => 2,
-        CreateSource.S3 => 3,
-        _ => 0
-    };
 }

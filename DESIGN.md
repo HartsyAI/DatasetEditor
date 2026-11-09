@@ -64,7 +64,7 @@
 |---|---|---|
 | Theme | `src/ClientApp/Shared/Theme/AppTheme.cs` | Single `MudTheme` instance: both palettes, typography, layout, shape. Nothing else constructs a `MudTheme`. |
 | Custom properties | `src/ClientApp/wwwroot/css/app.css` | `--ds-*` tokens that MudBlazor doesn't own (radii, scrims, card shadows, z-index, transitions). |
-| Component styles | `*.razor.css` (CSS isolation) | Component-scoped rules that reference tokens. Bundled as `ClientApp.styles.css`, which `index.html` links (it did not until PR 2.2, so no scoped style loaded). **No `<style>` blocks inside `.razor` files** — a `<style>` in a component is emitted once per instance, so a 300-card grid emits 300 copies. (Only `DatasetUploader` still has one; PR 2.5 splits it.) |
+| Component styles | `*.razor.css` (CSS isolation) | Component-scoped rules that reference tokens. Bundled as `ClientApp.styles.css`, which `index.html` links (it did not until PR 2.2, so no scoped style loaded). **No `<style>` blocks inside `.razor` files** — a `<style>` in a component is emitted once per instance, so a 300-card grid emits 300 copies. (None remain.) |
 
 The old `wwwroot/css/themes/*.css` files (never loaded, contradicting palette) are deleted. The
 saved `ThemeMode` (Light, Dark, System) is applied by `MainLayout` through `ThemeModeResolver`.
@@ -255,7 +255,7 @@ has logic, and a `.razor.css` when it has styles. Parameters are documented with
 | `LoadingState` | exists | `Variant` = `Spinner | CardGrid | Rows`. Was `LoadingIndicator`. |
 | `ErrorState` | exists | Inline outlined error alert with an optional retry. `ErrorBoundary` stays for render crashes. |
 | `ConfirmDialog` | exists | Open it with `IDialogService.ConfirmAsync(…)`; the answer comes back only as the dialog result. `destructive: true` makes the confirm button `Filled Error`. Dataset delete uses it. |
-| `IngestionProgressPanel` | **missing (extract)** | The upload/import progress block duplicated four times in `DatasetUploader.razor`. |
+| `IngestionProgressPanel` | exists (`Features/Datasets/Components`) | Indeterminate progress with the current step, shown by the create-dataset forms until the server accepts the job. |
 | `SourceOptionCard` | exists (`Features/Datasets/Components`) | One source choice on the Create page: a native button styled as a card, `aria-pressed` and the selection ring when chosen. The page's single primary action is Continue. |
 | `TagChipList` | **missing (extract)** | Tags are rendered four different ways today (detail panel, lightbox, list row, add-tag dialog). |
 | `InlineEditableText` | **missing (extract)** | Inline title edit is implemented twice (`ImageCard`, `ImageDetailPanel`). |
@@ -268,7 +268,7 @@ has logic, and a `.razor.css` when it has styles. Parameters are documented with
 | `VirtualizedItemView` / `ViewerContainer` | exist | Row-virtualised grid/list. |
 | `FilterPanel`, `DateRangeFilter` | exist | Filter inputs. Tag checkboxes use v6 names and never fire (§1.1). |
 | `SearchBar`, `FilterChips`, `DatasetInfo`, `DatasetStats`, `LanguageSelector` | exist, **unused** | `SearchBar` duplicates the field inside `FilterPanel`; `DatasetInfo`/`DatasetStats` are skeletons with TODO text. Delete or adopt. |
-| `DatasetUploader` + `HuggingFaceDatasetOptions` | exist | 1,500 lines across four tabs; split into one component per source (§6). |
+| `UploadSourceForm`, `HuggingFaceSourceForm` (+ `HuggingFaceDatasetOptions`), `FolderSourceForm`, `S3SourceForm` | exist | One form per source on the Create page, sharing `CreateSourceFormBase` (public switch, busy state, one inline error, open the dataset when accepted) and `IngestionWorkflowService`. Replaced the 1,500-line `DatasetUploader`. |
 | `DatasetSwitcher`, `LayoutSwitcher` | exist, **unused** | Delete or mount them. `LayoutSwitcher` depends on `Core.LayoutRegistry`, which nothing else uses. |
 | `ThemeSelector`, `ViewPreferences`, `LanguageSelector`, `ApiKeySettingsPanel` | exist | Settings panels. `ThemeSelector`, `ViewPreferences` and `ApiKeySettingsPanel` read and persist real state; `LanguageSelector` is unused. |
 
@@ -377,10 +377,9 @@ Alerts for the same statuses use `Severity.Normal / Info / Success / Error`.
 
 - A page file (`*.razor`) is markup and routing only; logic lives in `*.razor.cs`. Target
   ≤ 200 lines of markup, ≤ 300 lines of code-behind.
-- A component does one thing. `DatasetUploader` (419 + 1,117 lines) becomes
-  `UploadSourceForm`, `HuggingFaceSourceForm`, `FolderSourceForm`, `S3SourceForm` plus a thin
-  `CreateDataset` page that picks one. Shared upload progress/ingestion polling becomes
-  `IngestionProgress`.
+- A component does one thing. The old 1,500-line `DatasetUploader` is now `UploadSourceForm`,
+  `HuggingFaceSourceForm`, `FolderSourceForm` and `S3SourceForm` behind a thin `CreateDataset`
+  page; shared progress is `IngestionProgressPanel` and shared steps are `IngestionWorkflowService`.
 - State flows down through parameters; events flow up through `EventCallback`. Components
   don't reach into `DatasetState` unless they are the page or a top-level panel.
 - A component that subscribes to a state `OnChange` event implements `IDisposable` and

@@ -105,6 +105,7 @@ public sealed class DatasetCacheService : IDisposable
             }
 
             PageResponse<DatasetItemDto>? page = await FetchPageAsync(datasetId, pageSize: 100, cursor: null, dataset, cancellationToken).ConfigureAwait(false);
+            dataset = WithPageTotal(dataset, page);
 
             DatasetStudio.Core.DomainModels.Datasets.Dataset mappedDataset = MapDataset(dataset);
             List<DatasetItemDto> items = MapItems(dataset.Id, page?.Items ?? Array.Empty<DatasetItemDto>());
@@ -308,14 +309,45 @@ public sealed class DatasetCacheService : IDisposable
             return null;
         }
 
+        DatasetDetailDto? previous = CurrentDatasetDetail;
         DatasetDetailDto? detail = await _apiClient.GetDatasetAsync(CurrentDatasetId.Value, cancellationToken).ConfigureAwait(false);
-        if (detail != null)
+        if (detail == null)
         {
-            CurrentDatasetDetail = detail;
-            OnDatasetDetailChanged?.Invoke();
+            return null;
         }
 
+        if (FinishedIngesting(previous, detail))
+        {
+            // The viewer opened while the import was still running, so its first page was empty or
+            // partial and had no next cursor; status polling alone never showed the imported items.
+            // Reload the first page now that ingestion is done (LoadFirstPageAsync publishes the new
+            // detail). A failure is already reported through DatasetState by LoadFirstPageAsync.
+            try
+            {
+                await LoadFirstPageAsync(CurrentDatasetId.Value, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Reloading dataset {DatasetId} after ingestion finished failed", CurrentDatasetId);
+            }
+            return CurrentDatasetDetail;
+        }
+
+        CurrentDatasetDetail = detail;
+        OnDatasetDetailChanged?.Invoke();
         return detail;
+    }
+
+    /// <summary>
+    /// Whether a status refresh shows ingestion finishing: the previous status was Pending or
+    /// Processing and the new one is Completed. The viewer then reloads its first page.
+    /// </summary>
+    /// <param name="previous">The detail the viewer had.</param>
+    /// <param name="current">The detail just read.</param>
+    public static bool FinishedIngesting(DatasetDetailDto? previous, DatasetDetailDto current)
+    {
+        return previous is { Status: IngestionStatusDto.Pending or IngestionStatusDto.Processing }
+            && current.Status == IngestionStatusDto.Completed;
     }
 
     public Task SetIndexedDbEnabledAsync(bool enabled, CancellationToken cancellationToken = default)
@@ -382,6 +414,21 @@ public sealed class DatasetCacheService : IDisposable
         Modality = Modality.Image,
         TotalItems = dto.TotalItems > int.MaxValue ? int.MaxValue : (int)dto.TotalItems
     };
+
+    /// <summary>
+    /// Takes the item total from the first page when the dataset record doesn't have one yet. For a
+    /// HuggingFace streaming dataset the server learns the row count while serving that first page
+    /// (it back-fills it then), but the record was read just before, so a new dataset showed
+    /// "0 items" in the status band and no "loaded / total" until the next status refresh.
+    /// </summary>
+    /// <param name="dataset">The record read before the first page.</param>
+    /// <param name="firstPage">The first page, whose TotalCount the server sets when known.</param>
+    public static DatasetDetailDto WithPageTotal(DatasetDetailDto dataset, PageResponse<DatasetItemDto>? firstPage)
+    {
+        return dataset.TotalItems <= 0 && firstPage?.TotalCount is long total && total > 0
+            ? dataset with { TotalItems = total }
+            : dataset;
+    }
 
     /// <summary>
     /// Copies a page's items into the buffer, keeping every item. Items with neither an image nor a

@@ -1,0 +1,61 @@
+@inherits CreateSourceFormBase
+
+<MudStack Spacing="3">
+    <MudTextField T="string" @bind-Value="_repository"
+                  Label="Repository"
+                  Placeholder="owner/dataset"
+                  HelperText="A HuggingFace dataset repository, for example ylecun/mnist"
+                  Variant="Variant.Outlined"
+                  Immediate="true"
+                  Disabled="@IsBusy" />
+
+    <MudSwitch T="bool" @bind-Value="_isStreaming" Color="Color.Primary" Disabled="@IsBusy"
+               Label="Stream items from HuggingFace instead of importing a copy" />
+
+    <MudExpansionPanels Elevation="0" Outlined="true">
+        <MudExpansionPanel Text="More options">
+            <MudStack Spacing="3">
+                <MudTextField T="string" @bind-Value="_name" Label="Dataset name" HelperText="Defaults to the repository name"
+                              Variant="Variant.Outlined" Disabled="@IsBusy" />
+                <MudTextField T="string" @bind-Value="_description" Label="Description" Lines="2"
+                              Variant="Variant.Outlined" Disabled="@IsBusy" />
+                <MudTextField T="string" @bind-Value="_revision" Label="Revision" HelperText="Branch, tag or commit; defaults to main"
+                              Variant="Variant.Outlined" Disabled="@IsBusy" />
+                <MudTextField T="string" @bind-Value="_accessToken" Label="Access token" HelperText="Only needed for gated or private repositories"
+                              InputType="InputType.Password" Variant="Variant.Outlined" Disabled="@IsBusy" />
+            </MudStack>
+        </MudExpansionPanel>
+    </MudExpansionPanels>
+
+    <MudSwitch T="bool" @bind-Value="IsPublic" Color="Color.Primary" Disabled="@IsBusy"
+               Label="Make this dataset public (anyone can see it without an account)" />
+
+    @if (!string.IsNullOrEmpty(Error))
+    {
+        <MudAlert Severity="Severity.Error">@Error</MudAlert>
+    }
+
+    @if (_discovery is not null)
+    {
+        <HuggingFaceDatasetOptions DiscoveryResponse="@_discovery"
+                                   IsStreamingMode="@_isStreaming"
+                                   OnConfirm="@OnOptionsConfirmed"
+                                   OnCancel="@(() => _discovery = null)" />
+    }
+    else if (IsBusy)
+    {
+        <IngestionProgressPanel Title="Importing from HuggingFace" Status="@Status" />
+    }
+    else
+    {
+        <MudStack Row="true" Justify="Justify.FlexEnd">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Search"
+                       Disabled="@(_isDiscovering || string.IsNullOrWhiteSpace(_repository))"
+                       OnClick="@DiscoverAsync">
+                @(_isDiscovering ? "Looking up repository…" : "Continue")
+            </MudButton>
+        </MudStack>
+    }
+</MudStack>

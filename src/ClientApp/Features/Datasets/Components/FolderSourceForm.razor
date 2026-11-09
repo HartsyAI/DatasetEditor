@@ -1,0 +1,41 @@
+@inherits CreateSourceFormBase
+
+<MudStack Spacing="3">
+    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+        Index a folder of images that is already on the server. Images are served from that folder; nothing is copied.
+    </MudText>
+
+    <MudTextField T="string" @bind-Value="_folderPath"
+                  Label="Folder path"
+                  Placeholder="/data/my-images"
+                  HelperText="Absolute path on the server, scanned recursively for images"
+                  Variant="Variant.Outlined"
+                  Immediate="true"
+                  Disabled="@IsBusy" />
+
+    <MudTextField T="string" @bind-Value="_name" Label="Dataset name" HelperText="Defaults to the folder name"
+                  Variant="Variant.Outlined" Disabled="@IsBusy" />
+
+    <MudSwitch T="bool" @bind-Value="IsPublic" Color="Color.Primary" Disabled="@IsBusy"
+               Label="Make this dataset public (anyone can see it without an account)" />
+
+    @if (!string.IsNullOrEmpty(Error))
+    {
+        <MudAlert Severity="Severity.Error">@Error</MudAlert>
+    }
+
+    @if (IsBusy)
+    {
+        <IngestionProgressPanel Title="Importing a server folder" Status="@Status" />
+    }
+
+    <MudStack Row="true" Justify="Justify.FlexEnd">
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Folder"
+                   Disabled="@(IsBusy || string.IsNullOrWhiteSpace(_folderPath))"
+                   OnClick="@ImportAsync">
+            Import folder
+        </MudButton>
+    </MudStack>
+</MudStack>

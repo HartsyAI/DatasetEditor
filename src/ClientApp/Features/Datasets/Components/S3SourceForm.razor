@@ -1,0 +1,53 @@
+@inherits CreateSourceFormBase
+
+<MudStack Spacing="3">
+    <MudText Typo="Typo.body2" Class="mud-text-secondary">
+        Stream images from an S3 or S3-compatible bucket (MinIO, R2, Backblaze). Images stay in the bucket and are served through the API on demand.
+    </MudText>
+
+    <MudTextField T="string" @bind-Value="_profile"
+                  Label="Storage profile"
+                  Placeholder="minio-dev"
+                  HelperText="A storage profile the server operator configured (not your own credentials)"
+                  Variant="Variant.Outlined"
+                  Immediate="true"
+                  Disabled="@IsBusy" />
+
+    <MudTextField T="string" @bind-Value="_bucket"
+                  Label="Bucket"
+                  Placeholder="my-dataset-bucket"
+                  HelperText="Must be one of the profile's allowed buckets"
+                  Variant="Variant.Outlined"
+                  Immediate="true"
+                  Disabled="@IsBusy" />
+
+    <MudTextField T="string" @bind-Value="_prefix" Label="Prefix" Placeholder="images/"
+                  HelperText="Only objects under this key prefix belong to the dataset"
+                  Variant="Variant.Outlined" Disabled="@IsBusy" />
+
+    <MudTextField T="string" @bind-Value="_name" Label="Dataset name" HelperText="Defaults to the bucket name"
+                  Variant="Variant.Outlined" Disabled="@IsBusy" />
+
+    <MudSwitch T="bool" @bind-Value="IsPublic" Color="Color.Primary" Disabled="@IsBusy"
+               Label="Make this dataset public (anyone can see it without an account)" />
+
+    @if (!string.IsNullOrEmpty(Error))
+    {
+        <MudAlert Severity="Severity.Error">@Error</MudAlert>
+    }
+
+    @if (IsBusy)
+    {
+        <IngestionProgressPanel Title="Connecting the bucket" Status="@Status" />
+    }
+
+    <MudStack Row="true" Justify="Justify.FlexEnd">
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Storage"
+                   Disabled="@(IsBusy || string.IsNullOrWhiteSpace(_profile) || string.IsNullOrWhiteSpace(_bucket))"
+                   OnClick="@ConnectAsync">
+            Connect bucket
+        </MudButton>
+    </MudStack>
+</MudStack>

@@ -206,9 +206,14 @@ existing dataset is supported and rolling back would destroy earlier data.
 
 **Gaps.** `.parquet` upload is *not* supported despite earlier docs (I-6). The queue is
 in-memory: a restart loses queued jobs and strands datasets in Pending/Processing (I-1).
-Strictly serial (I-3). On the
-client, the uploader buffers ZIPs in a `MemoryStream`, so >2 GB fails
-despite the 5 GB limit (U-14); the client waits fixed `Task.Delay`s instead of polling status.
+Strictly serial (I-3).
+
+**Client.** `/datasets/create` has one form per source. Upload takes one CSV, TSV, JSON, JSONL or
+ZIP file (drop or choose), streams it to `POST /api/datasets/{id}/upload` without an in-memory
+copy, and opens the viewer as soon as the server accepts it; the viewer's status band follows
+ingestion. HuggingFace streaming waits for the real status (not a fixed delay) to offer an
+import when the repository can't be streamed. The browser still buffers the request body once
+(fetch request streaming is not used), so very large uploads depend on browser memory.
 
 ### 4.4 HuggingFace streaming — Working
 
