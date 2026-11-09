@@ -156,7 +156,10 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
                 await terminate.ExecuteNonQueryAsync();
             }
 
-            await using NpgsqlCommand dropDb = new($"DROP DATABASE IF EXISTS \"{_databaseName}\"", adminConnection);
+            // WITH (FORCE) because a background service (ingestion polling, the thumbnail sweep) can
+            // open a new connection between the terminate above and the drop, which failed the drop
+            // with 55006 "being accessed by other users" and the test with it.
+            await using NpgsqlCommand dropDb = new($"DROP DATABASE IF EXISTS \"{_databaseName}\" WITH (FORCE)", adminConnection);
             await dropDb.ExecuteNonQueryAsync();
         }
 
