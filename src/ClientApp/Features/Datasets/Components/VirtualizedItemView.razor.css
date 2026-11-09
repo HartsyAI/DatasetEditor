@@ -1,0 +1,29 @@
+/* Moved from a <style> block (audit U-1). Gap and padding match GridLayout.Gap/SidePadding,
+   which the row-height calculation uses, so keep them in step. */
+.ds-viv-root {
+    height: 100%;
+}
+
+.viv-container {
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.viv-row {
+    display: grid;
+    gap: 16px;
+    padding: 0 16px 16px 16px;
+    align-content: start;
+    box-sizing: border-box;
+}
+
+.viv-cell {
+    min-width: 0;
+}
+
+/* Zero-size marker at the end of the list, watched by an IntersectionObserver. */
+.viv-sentinel {
+    height: 1px;
+}

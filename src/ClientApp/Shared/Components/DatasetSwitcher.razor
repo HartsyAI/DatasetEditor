@@ -71,7 +71,7 @@
 
     private void SwitchToDataset(DatasetSummaryDto dataset)
     {
-        Navigation.NavigateTo($"/dataset-viewer?id={dataset.Id}");
+        Navigation.NavigateTo($"/datasets/{dataset.Id}");
     }
 
     private void BrowseAll()

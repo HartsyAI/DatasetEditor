@@ -1,0 +1,42 @@
+@* md and up: a column beside the grid. *@
+<MudHidden Breakpoint="Breakpoint.SmAndDown">
+    @if (Open)
+    {
+        <aside class="ds-detail-sidebar" aria-label="Item details">
+            @if (Item is not null)
+            {
+                <ImageDetailPanel Item="@Item" />
+            }
+            else
+            {
+                <EmptyState Headline="No item selected"
+                            Description="Select an item to see and edit its details."
+                            Icon="@Icons.Material.Filled.Info" />
+            }
+        </aside>
+    }
+</MudHidden>
+
+@* Below md: a bottom sheet over the grid, instead of a column squeezed under it. *@
+<MudHidden Breakpoint="Breakpoint.MdAndUp">
+    <MudDrawer Open="@(Open && Item is not null)"
+               OpenChanged="@OnSheetOpenChanged"
+               Anchor="Anchor.Bottom"
+               Variant="DrawerVariant.Temporary"
+               Elevation="2"
+               Height="75vh"
+               aria-label="Item details">
+        <div class="ds-detail-sheet">
+            <div class="ds-detail-sheet-header">
+                <MudText Typo="Typo.subtitle1">Details</MudText>
+                <MudTooltip Text="Close details">
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="@OnClose" aria-label="Close details" />
+                </MudTooltip>
+            </div>
+            @if (Item is not null)
+            {
+                <ImageDetailPanel Item="@Item" />
+            }
+        </div>
+    </MudDrawer>
+</MudHidden>

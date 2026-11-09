@@ -98,7 +98,9 @@ html[data-ds-boot="light"] body:has(#ds-boot-loader) {
     min-height: 100vh;
 }
 
-.mud-drawer {
+/* The navigation drawer spans the full height. Scoped to its own class: a bare .mud-drawer rule
+   also pinned the viewer's bottom sheet to the top of the screen. */
+.ds-nav-drawer {
     top: 0 !important;
     height: 100vh;
 }
@@ -192,7 +194,7 @@ html[data-ds-boot="light"] body:has(#ds-boot-loader) {
 
 @media print {
     #blazor-error-ui,
-    .mud-drawer {
+    .ds-nav-drawer {
         display: none !important;
     }
 }

@@ -1,12 +1,10 @@
+@page "/datasets/{DatasetId:guid}"
 @page "/dataset-viewer"
-@using DatasetStudio.ClientApp.Features.Datasets.Components
-@using DatasetStudio.Core.Utilities
-@using DatasetStudio.DTO.Datasets
-@using DatasetStudio.ClientApp.Shared.Presentation
 
 <PageTitle>@(_datasetState.CurrentDataset?.Name ?? "Dataset viewer") - Dataset Studio</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.False" Class="pa-0">
+@* Plain root: anchors this page's scoped CSS. The viewer is full bleed (DESIGN.md §3.1). *@
+<div class="ds-viewer-root">
     @if (_isLoading)
     {
         <LoadingState Variant="LoadingVariant.Spinner" Message="Loading dataset" />
@@ -41,150 +39,46 @@
     }
     else
     {
-        <!-- Dataset Loaded - Show Viewer -->
-        <MudGrid Spacing="0" Class="dataset-viewer-grid">
-            <!-- Main Content - Viewer (center column) -->
-            <MudItem Xs="12" 
-                     Md="@(_viewState.ShowDetailPanel ? 9 : 12)" 
-                     Lg="@(_viewState.ShowDetailPanel ? 9 : 12)"
-                     Class="dataset-viewer-main">
-                <MudStack Spacing="2" Class="pa-4">
-                    @if (_datasetDetail is not null)
-                    {
-                        <MudAlert Severity="@StatusPresentation.For(_datasetDetail.Status).Severity" Variant="Variant.Outlined" Dense="true">
-                            <MudStack Spacing="1">
-                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
-                                    <MudText Typo="Typo.subtitle2">Ingestion status</MudText>
-                                    <StatusChip Status="@_datasetDetail.Status" />
-                                    <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                                        Last updated @(_datasetDetail.UpdatedAt.ToLocalTime().ToString("g")) • @_datasetDetail.TotalItems.ToString("N0") items
-                                    </MudText>
-                                    <MudTooltip Text="Refresh status now">
-                                        <MudIconButton Icon="@Icons.Material.Filled.Refresh"
-                                                       Disabled="@_isStatusRefreshing"
-                                                       Color="Color.Default"
-                                                       OnClick="@(() => RefreshStatusAsync())"
-                                                       aria-label="Refresh status now" />
-                                    </MudTooltip>
-                                </MudStack>
+        @* Full-height row: the item list is the scroll container, so <Virtualize> and the
+           end-of-list sentinel both measure against it rather than the whole page. *@
+        <div class="ds-viewer-layout">
+            <div class="ds-viewer-main">
+                @if (_datasetDetail is not null)
+                {
+                    <IngestionStatusBanner Detail="@_datasetDetail"
+                                           IsRefreshing="@_isStatusRefreshing"
+                                           OnRefresh="@RefreshStatusAsync" />
+                }
 
-                                @if (_datasetDetail.Status == IngestionStatusDto.Pending || _datasetDetail.Status == IngestionStatusDto.Processing)
-                                {
-                                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
-                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                                        Ingestion still running—viewer auto-refreshes every few seconds until completion.
-                                    </MudText>
-                                }
-                            </MudStack>
-                        </MudAlert>
-                    }
+                <ViewerToolbar DatasetName="@_datasetState.CurrentDataset.Name"
+                               ItemCountLabel="@GetItemCountLabel()"
+                               IsBuffering="@_isBuffering"
+                               SelectedCount="@_datasetState.SelectedCount"
+                               ViewMode="@_viewMode"
+                               OnViewModeChanged="@SetViewMode"
+                               FiltersOpen="@_viewState.ShowFilterPanel"
+                               OnToggleFilters="@_viewState.ToggleFilterPanel"
+                               DetailsOpen="@_viewState.ShowDetailPanel"
+                               OnToggleDetails="@_viewState.ToggleDetailPanel"
+                               IndexedDbEnabled="@_isIndexedDbEnabled"
+                               OnIndexedDbChanged="@ToggleOfflineCacheAsync" />
 
-                    <!-- Top Action Bar -->
+                @if (_viewState.ShowFilterPanel)
+                {
                     <MudPaper Elevation="1" Class="pa-3">
-                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                                <MudTooltip Text="Toggle filters"><MudIconButton Icon="@Icons.Material.Filled.FilterList" 
-                                             Color="Color.Primary" 
-                                             OnClick="@_viewState.ToggleFilterPanel"
-                                             aria-label="Toggle filters" /></MudTooltip>
-                                <MudText Typo="Typo.h6">@_datasetState.CurrentDataset.Name</MudText>
-                                <MudChip T="string" Value="@GetItemCountLabel()"
-                                         Size="Size.Small"
-                                         Color="Color.Info">
-                                    @GetItemCountLabel()
-                                </MudChip>
-                                @if (_isBuffering)
-                                {
-                                    <MudTooltip Text="Fetching more images from the server">
-                                        <MudProgressCircular Size="Size.Small" Color="Color.Primary" Class="ml-2" />
-                                    </MudTooltip>
-                                }
-                                @if (_datasetState.HasSelection)
-                                {
-                                    <MudChip T="string" Value="@(_datasetState.SelectedCount.ToString())"
-                                             Size="Size.Small"
-                                             Color="Color.Primary">
-                                        @_datasetState.SelectedCount selected
-                                    </MudChip>
-                                }
-                            </MudStack>
-                            
-                            <MudStack Row="true" Spacing="1">
-                                <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
-                                    <MudTooltip Text="Grid view"><MudIconButton Icon="@Icons.Material.Filled.GridView" 
-                                                 Color="@(_viewMode == ViewMode.Grid ? Color.Primary : Color.Default)"
-                                                 OnClick="@(() => SetViewMode(ViewMode.Grid))"
-                                                 aria-label="Grid view" /></MudTooltip>
-                                    <MudTooltip Text="List view"><MudIconButton Icon="@Icons.Material.Filled.ViewList" 
-                                                 Color="@(_viewMode == ViewMode.List ? Color.Primary : Color.Default)"
-                                                 OnClick="@(() => SetViewMode(ViewMode.List))"
-                                                 aria-label="List view" /></MudTooltip>
-                                    <MudTooltip Text="Gallery view"><MudIconButton Icon="@Icons.Material.Filled.ViewModule" 
-                                                 Color="@(_viewMode == ViewMode.Gallery ? Color.Primary : Color.Default)"
-                                                 OnClick="@(() => SetViewMode(ViewMode.Gallery))"
-                                                 aria-label="Gallery view" /></MudTooltip>
-                                </MudButtonGroup>
-                                
-                                <MudTooltip Text="Toggle details"><MudIconButton Icon="@Icons.Material.Filled.Info" 
-                                             Color="Color.Default" 
-                                             OnClick="@_viewState.ToggleDetailPanel"
-                                             aria-label="Toggle details" /></MudTooltip>
-
-                                <MudTooltip Text="Store paged results locally so paging is faster when you revisit the dataset.">
-                                    <MudSwitch T="bool"
-                                               Value="@_isIndexedDbEnabled"
-                                               ValueChanged="@((bool enabled) => ToggleOfflineCacheAsync(enabled))"
-                                               Color="Color.Primary"
-                                               Label="IndexedDB cache (beta)" />
-                                </MudTooltip>
-                            </MudStack>
-                        </MudStack>
+                        <FilterPanel />
                     </MudPaper>
-                    
-                    @if (_viewState.ShowFilterPanel)
-                    {
-                        <MudCollapse Expanded="_viewState.ShowFilterPanel">
-                            <MudPaper Elevation="1" Class="pa-3 mt-2">
-                                <FilterPanel />
-                            </MudPaper>
-                        </MudCollapse>
-                    }
-                    
-                    <!-- Viewer Container -->
+                }
+
+                <div class="ds-viewer-items">
                     <ViewerContainer OnItemSelected="@HandleItemSelected"
                                      OnLoadMore="@HandleLoadMoreAsync" />
-                </MudStack>
-            </MudItem>
+                </div>
+            </div>
 
-            <!-- Right Panel - Detail (optional) -->
-            @if (_viewState.ShowDetailPanel)
-            {
-                <MudItem Xs="12" Md="3" Lg="3" Class="dataset-viewer-detail">
-                    @if (_datasetState.SelectedItem is DatasetItemDto selectedDto)
-                    {
-                        <ImageDetailPanel Item="@selectedDto" />
-                    }
-                </MudItem>
-            }
-        </MudGrid>
+            <DetailSidebar Item="@(_datasetState.SelectedItem as DatasetItemDto)"
+                           Open="@_viewState.ShowDetailPanel"
+                           OnClose="@CloseDetailPanel" />
+        </div>
     }
-</MudContainer>
-
-
-<style>
-    .dataset-viewer-grid {
-        height: 100vh;
-        overflow: hidden;
-    }
-
-    .dataset-viewer-main {
-        height: 100%;
-        overflow-y: auto;
-    }
-
-    .dataset-viewer-detail {
-        height: 100%;
-        overflow-y: auto;
-        border-left: 1px solid var(--mud-palette-divider);
-    }
-</style>
+</div>

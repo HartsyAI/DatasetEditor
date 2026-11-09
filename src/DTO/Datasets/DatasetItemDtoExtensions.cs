@@ -104,7 +104,11 @@ public static class DatasetItemDtoExtensions
         string url = item.ImageUrl ?? item.ThumbnailUrl ?? string.Empty;
         if (!string.IsNullOrEmpty(url))
         {
-            string extension = System.IO.Path.GetExtension(url).TrimStart('.');
+            // Signed URLs (HuggingFace, S3) carry a query string; read the extension from the path only,
+            // or the detail panel shows "JPG?EXPIRES=…" as the format.
+            int queryStart = url.IndexOfAny(new[] { '?', '#' });
+            string path = queryStart >= 0 ? url.Substring(0, queryStart) : url;
+            string extension = System.IO.Path.GetExtension(path).TrimStart('.');
             if (!string.IsNullOrEmpty(extension))
             {
                 return extension.ToUpperInvariant();

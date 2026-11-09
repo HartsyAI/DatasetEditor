@@ -383,23 +383,16 @@ public sealed class DatasetCacheService : IDisposable
         TotalItems = dto.TotalItems > int.MaxValue ? int.MaxValue : (int)dto.TotalItems
     };
 
-    private static List<DatasetItemDto> MapItems(Guid datasetId, IReadOnlyList<DatasetItemDto> items)
+    /// <summary>
+    /// Copies a page's items into the buffer, keeping every item. Items with neither an image nor a
+    /// thumbnail URL used to be dropped here, so the grid showed fewer items than the server reported
+    /// and the count label drifted (audit U-30); the card now renders a "No image" placeholder.
+    /// </summary>
+    /// <param name="datasetId">The dataset the page belongs to.</param>
+    /// <param name="items">The page's items.</param>
+    public static List<DatasetItemDto> MapItems(Guid datasetId, IReadOnlyList<DatasetItemDto> items)
     {
-        List<DatasetItemDto> mapped = new(items.Count);
-
-        foreach (DatasetItemDto item in items)
-        {
-            string primaryImage = item.ImageUrl ?? item.ThumbnailUrl ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(primaryImage))
-            {
-                continue;
-            }
-
-            // Items are already DatasetItemDto, just add them
-            mapped.Add(item);
-        }
-
-        return mapped;
+        return new List<DatasetItemDto>(items);
     }
 
     private void SetBuffering(bool value)

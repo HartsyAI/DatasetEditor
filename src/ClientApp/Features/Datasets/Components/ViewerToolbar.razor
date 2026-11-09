@@ -1,0 +1,62 @@
+@* Plain root: anchors this component's scoped CSS. *@
+<div class="ds-viewer-toolbar">
+<Toolbar Class="">
+    <Start>
+        <MudTooltip Text="@(FiltersOpen ? "Hide filters" : "Show filters")">
+            <MudIconButton Icon="@Icons.Material.Filled.FilterList"
+                           Color="@(FiltersOpen ? Color.Primary : Color.Default)"
+                           OnClick="@OnToggleFilters"
+                           aria-label="@(FiltersOpen ? "Hide filters" : "Show filters")"
+                           aria-pressed="@(FiltersOpen ? "true" : "false")" />
+        </MudTooltip>
+        @* The viewer's page title: h6 by DESIGN.md §2.3, rendered as h1 so focus moves here on navigation. *@
+        <MudText Typo="Typo.h6" HtmlTag="h1" Class="ds-viewer-title">@DatasetName</MudText>
+        <MudChip T="string" Size="Size.Small" Color="Color.Info">@ItemCountLabel</MudChip>
+        @if (IsBuffering)
+        {
+            <MudTooltip Text="Loading more items">
+                <MudProgressCircular Size="Size.Small" Color="Color.Primary" Indeterminate="true" />
+            </MudTooltip>
+        }
+        @if (SelectedCount > 0)
+        {
+            <MudChip T="string" Size="Size.Small" Color="Color.Primary">@SelectedCount.ToString("N0") selected</MudChip>
+        }
+    </Start>
+    <End>
+        <MudToggleGroup T="ViewMode"
+                        Value="@ViewMode"
+                        ValueChanged="@OnViewModeChanged"
+                        Color="Color.Primary"
+                        Outlined="true"
+                        Size="Size.Small"
+                        aria-label="View mode">
+            <MudToggleItem T="ViewMode" Value="ViewMode.Grid">
+                <MudTooltip Text="Grid"><MudIcon Icon="@Icons.Material.Filled.GridView" Size="Size.Small" aria-label="Grid" /></MudTooltip>
+            </MudToggleItem>
+            <MudToggleItem T="ViewMode" Value="ViewMode.List">
+                <MudTooltip Text="List"><MudIcon Icon="@Icons.Material.Filled.ViewList" Size="Size.Small" aria-label="List" /></MudTooltip>
+            </MudToggleItem>
+            <MudToggleItem T="ViewMode" Value="ViewMode.Gallery">
+                <MudTooltip Text="Gallery"><MudIcon Icon="@Icons.Material.Filled.ViewModule" Size="Size.Small" aria-label="Gallery" /></MudTooltip>
+            </MudToggleItem>
+        </MudToggleGroup>
+
+        <MudTooltip Text="@(DetailsOpen ? "Hide details" : "Show details")">
+            <MudIconButton Icon="@Icons.Material.Filled.Info"
+                           Color="@(DetailsOpen ? Color.Primary : Color.Default)"
+                           OnClick="@OnToggleDetails"
+                           aria-label="@(DetailsOpen ? "Hide details" : "Show details")"
+                           aria-pressed="@(DetailsOpen ? "true" : "false")" />
+        </MudTooltip>
+
+        <MudTooltip Text="Keep loaded pages in this browser so revisiting the dataset is faster.">
+            <MudSwitch T="bool"
+                       Value="@IndexedDbEnabled"
+                       ValueChanged="@OnIndexedDbChanged"
+                       Color="Color.Primary"
+                       Label="Cache pages (beta)" />
+        </MudTooltip>
+    </End>
+</Toolbar>
+</div>

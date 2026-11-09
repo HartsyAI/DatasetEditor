@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Blazored.LocalStorage;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web.Virtualization;
 using MudBlazor;
@@ -18,10 +19,19 @@ using DatasetStudio.Core.Utilities.Logging;
 
 namespace DatasetStudio.ClientApp.Features.Datasets.Pages;
 
-/// <summary>Main dataset viewing page with filters, viewer, and details panels.</summary>
+/// <summary>
+/// The dataset viewer (<c>/datasets/{id}</c>; <c>/dataset-viewer?id=</c> still works): status band,
+/// toolbar, optional filters, the virtualized items, and the detail panel. More items are fetched
+/// only when the end of the list nears the viewport (<see cref="HandleLoadMoreAsync"/>, from
+/// VirtualizedItemView). The page used to start another prefetch every time a page arrived, which
+/// chained requests until the whole dataset (up to 100,000 items) was in memory (audit U-5).
+/// </summary>
 public partial class DatasetViewer : IDisposable
 {
-    private const int PrefetchWindow = 120;
+    /// <summary>The dataset id from the <c>/datasets/{id}</c> route.</summary>
+    [Parameter] public Guid? DatasetId { get; set; }
+
+    [Inject] private ILocalStorageService _localStorage { get; set; } = default!;
     [Inject] public DatasetState _datasetState { get; set; } = default!;
     [Inject] public FilterState _filterState { get; set; } = default!;
     [Inject] public ViewState _viewState { get; set; } = default!;
@@ -42,10 +52,11 @@ public partial class DatasetViewer : IDisposable
     private bool _isIndexedDbEnabled;
     private bool _isBuffering;
     private bool _isStatusRefreshing;
-    // The dataset id from the query string, kept so the error state can retry the same load.
+    // The requested dataset id (route or ?id=), kept so the error state can retry the same load.
     private Guid? _requestedDatasetId;
+    private bool _parametersApplied;
 
-    /// <summary>Initializes component and subscribes to state changes.</summary>
+    /// <summary>Subscribes to state changes.</summary>
     protected override void OnInitialized()
     {
         _datasetState.OnChange += HandleDatasetStateChanged;
@@ -57,13 +68,33 @@ public partial class DatasetViewer : IDisposable
         _viewMode = _viewState.ViewMode;
         _datasetDetail = _datasetCache.CurrentDatasetDetail;
         _isIndexedDbEnabled = _datasetCache.IsIndexedDbEnabled;
+    }
 
-        // Check for dataset id in query string first
-        string? idParam = _navigationService.GetQueryParameter("id");
-        if (!string.IsNullOrWhiteSpace(idParam) && Guid.TryParse(idParam, out Guid requestedId))
+    /// <summary>
+    /// Loads the requested dataset. Runs on every parameter change because Blazor reuses this
+    /// component when navigating from one <c>/datasets/{id}</c> to another.
+    /// </summary>
+    protected override void OnParametersSet()
+    {
+        Guid? requested = DatasetId;
+        if (requested is null)
         {
-            _requestedDatasetId = requestedId;
-            // If the requested dataset is already loaded, just apply filters
+            string? idParam = _navigationService.GetQueryParameter("id");
+            if (!string.IsNullOrWhiteSpace(idParam) && Guid.TryParse(idParam, out Guid queryId))
+            {
+                requested = queryId;
+            }
+        }
+
+        if (_parametersApplied && requested == _requestedDatasetId)
+        {
+            return;
+        }
+        _parametersApplied = true;
+        _requestedDatasetId = requested;
+
+        if (requested is Guid requestedId)
+        {
             if (_datasetCache.CurrentDatasetId == requestedId && _datasetState.CurrentDataset != null)
             {
                 ApplyFilters();
@@ -71,18 +102,16 @@ public partial class DatasetViewer : IDisposable
             }
             else
             {
-                // Fire-and-forget dataset load; DatasetState/Cache events will drive the UI
+                // Fire-and-forget; DatasetState and cache events drive the UI.
                 _ = LoadDatasetFromNavigationAsync(requestedId);
             }
         }
         else if (_datasetState.CurrentDataset != null)
         {
-            // Fallback to existing behavior when no id is provided
+            // No id: show the dataset already open in this session.
             ApplyFilters();
             EnsureStatusPolling();
         }
-
-        Logs.Info("DatasetViewer page initialized");
     }
 
     // WaitForItemsAsync and SignalItemsUpdated removed - we now use RefreshDataAsync instead
@@ -100,16 +129,10 @@ public partial class DatasetViewer : IDisposable
         {
             Logs.Info($"[DATASET STATE CHANGE] Items grew from {_lastFilteredSourceCount} to {_datasetState.Items.Count}");
             
-            // Update filters WITHOUT calling StateHasChanged
+            // Update filters WITHOUT calling StateHasChanged. No prefetch here: each appended page
+            // used to start the next one, chaining through the whole dataset (U-5). More pages
+            // come only from HandleLoadMoreAsync, when the end of the list nears the viewport.
             ApplyFiltersQuiet();
-            
-            // Prefetch more data to keep buffer full
-            if (_datasetCache.HasMorePages)
-            {
-                int bufferTarget = _datasetState.Items.Count + PrefetchWindow;
-                Logs.Info($"[DATASET STATE CHANGE] Triggering background prefetch up to {bufferTarget}");
-                _ = _datasetCache.EnsureBufferedAsync(bufferTarget, CancellationToken.None);
-            }
         }
         
         // Only re-render if we're in a loading/error state that needs UI updates
@@ -194,11 +217,21 @@ public partial class DatasetViewer : IDisposable
 
     /// <summary>Sets the current view mode (Grid, List, Gallery).</summary>
     /// <param name="mode">View mode to set.</param>
-    public void SetViewMode(ViewMode mode)
+    public async Task SetViewMode(ViewMode mode)
     {
         _viewState.SetViewMode(mode);
         _viewMode = mode;
-        Logs.Info($"View mode changed to: {mode}");
+        // Saved like the Settings page saves it, so the viewer reopens in the mode last used.
+        await _viewState.SaveToStorageAsync(_localStorage);
+    }
+
+    /// <summary>Closes the detail panel (the small-screen sheet's close button or backdrop).</summary>
+    private void CloseDetailPanel()
+    {
+        if (_viewState.ShowDetailPanel)
+        {
+            _viewState.ToggleDetailPanel();
+        }
     }
 
     /// <summary>Handles item selection from the viewer.</summary>

@@ -28,7 +28,7 @@ public partial class ViewerContainer : IDisposable
     /// <summary>Fixed row height (px) used for the virtualized list view.</summary>
     private const double ListRowHeight = 168;
 
-    /// <summary>Columns for the current view mode (single column in list view).</summary>
+    /// <summary>Preferred columns (the Settings value); VirtualizedItemView uses fewer when the container is narrow.</summary>
     private int CurrentColumns => _viewMode == ViewMode.List ? 1 : ViewState.GridColumns;
 
     /// <summary>Initializes component and subscribes to state changes.</summary>
@@ -54,8 +54,6 @@ public partial class ViewerContainer : IDisposable
 
     /// <summary>Whether the given item is currently selected.</summary>
     public bool IsItemSelected(DatasetItemDto item) => DatasetState.IsSelected(item);
-
-    // OnParametersSet removed - modality determined from DatasetState only
 
     /// <summary>Determines the modality of the current dataset.</summary>
     public void DetermineModality()
@@ -116,7 +114,4 @@ public partial class ViewerContainer : IDisposable
         ViewState.OnChange -= HandleViewStateChanged;
     }
     
-    // TODO: Add dynamic component loading for modality providers
-    // TODO: Add caching of viewer components to avoid re-creation
-    // TODO: Add transition animations when switching viewers
 }

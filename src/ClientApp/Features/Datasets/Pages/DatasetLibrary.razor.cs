@@ -87,7 +87,7 @@ public partial class DatasetLibrary : ComponentBase
 
     private void ViewDataset(DatasetSummaryDto dataset)
     {
-        Navigation.NavigateTo($"/dataset-viewer?id={dataset.Id}");
+        Navigation.NavigateTo($"/datasets/{dataset.Id}");
     }
 
     private async Task DeleteDatasetAsync(DatasetSummaryDto dataset)

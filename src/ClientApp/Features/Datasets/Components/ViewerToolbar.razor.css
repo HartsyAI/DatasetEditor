@@ -1,0 +1,7 @@
+/* The dataset name can be long; let it shrink and ellipsize instead of pushing controls off-row. */
+.ds-viewer-toolbar ::deep .ds-viewer-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

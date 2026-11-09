@@ -1,0 +1,33 @@
+<MudAlert Severity="@StatusPresentation.For(Detail.Status).Severity" Variant="Variant.Outlined" Dense="true">
+    <MudStack Spacing="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+            <MudText Typo="Typo.subtitle2">Ingestion status</MudText>
+            <StatusChip Status="@Detail.Status" />
+            <MudTooltip Text="@RelativeTime.Absolute(Detail.UpdatedAt)">
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    Updated @RelativeTime.Format(Detail.UpdatedAt) • @Detail.TotalItems.ToString("N0") items
+                </MudText>
+            </MudTooltip>
+            <MudTooltip Text="Refresh status now">
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                               Disabled="@IsRefreshing"
+                               Color="Color.Default"
+                               Size="Size.Small"
+                               OnClick="@OnRefresh"
+                               aria-label="Refresh status now" />
+            </MudTooltip>
+        </MudStack>
+
+        @if (IsRunning)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                Still importing. The status refreshes every few seconds until it finishes.
+            </MudText>
+        }
+        else if (Detail.Status == IngestionStatusDto.Failed && !string.IsNullOrWhiteSpace(Detail.ErrorMessage))
+        {
+            <MudText Typo="Typo.body2">@Detail.ErrorMessage</MudText>
+        }
+    </MudStack>
+</MudAlert>

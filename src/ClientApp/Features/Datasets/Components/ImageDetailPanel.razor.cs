@@ -149,32 +149,13 @@ public partial class ImageDetailPanel
         }
     }
 
-    public void HandleDownload()
+    /// <summary>Opens the lightbox from the keyboard: Enter or Space on the focused preview.</summary>
+    private Task HandleImageKeyDown(KeyboardEventArgs args)
     {
-        // TODO: Implement download
-        Notifications.ShowInfo("Download feature coming soon");
+        return args.Key is "Enter" or " " ? OpenLightboxAsync() : Task.CompletedTask;
     }
 
-    public void HandleShare()
-    {
-        // TODO: Implement share
-        Notifications.ShowInfo("Share feature coming soon");
-    }
-
-    public async Task HandleDelete()
-    {
-        bool? confirm = await DialogService.ShowMessageBox(
-            "Delete Image",
-            "Are you sure you want to delete this image from the dataset?",
-            yesText: "Delete", cancelText: "Cancel");
-        
-        if (confirm == true)
-        {
-            // TODO: Implement delete
-            Notifications.ShowInfo("Delete feature coming soon");
-        }
-    }
-
+    /// <summary>Opens the full-size lightbox (a dialog: Escape closes it and it traps focus).</summary>
     public async Task OpenLightboxAsync()
     {
         if (Item is null)

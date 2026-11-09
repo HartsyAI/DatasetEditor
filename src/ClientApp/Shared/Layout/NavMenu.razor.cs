@@ -79,7 +79,7 @@ public partial class NavMenu : IDisposable
     /// <returns>URL with the dataset id as query parameter.</returns>
     public string GetDatasetUrl(string datasetId)
     {
-        return $"/dataset-viewer?id={Uri.EscapeDataString(datasetId)}";
+        return $"/datasets/{Uri.EscapeDataString(datasetId)}";
     }
 
     /// <summary>Unsubscribes from state changes on disposal.</summary>

@@ -1,0 +1,67 @@
+/* Moved from a <style> block, which was emitted once per component instance and leaked
+generic class names app-wide (audit U-1). Scoped to .ds-lightbox-root via CSS isolation. */
+.ds-lightbox-root ::deep .lightbox-content {
+    padding-bottom: 0;
+}
+
+.ds-lightbox-root ::deep .lightbox-image-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.ds-lightbox-root ::deep .lightbox-description {
+    padding: 12px;
+    border-radius: 6px;
+    background: var(--mud-palette-surface);
+}
+
+.ds-lightbox-root ::deep .lightbox-panel {
+    padding: 16px;
+    height: 100%;
+    overflow-y: auto;
+}
+
+.ds-lightbox-root ::deep .color-chip {
+    width: 32px;
+    height: 32px;
+    border-radius: 24px;
+    border: 1px solid var(--mud-palette-divider);
+}
+
+.ds-lightbox-root ::deep .tag-section {
+    margin-top: 8px;
+}
+
+.ds-lightbox-root ::deep .metadata-section {
+    width: 100%;
+}
+
+.ds-lightbox-root ::deep .metadata-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px 12px;
+}
+
+.ds-lightbox-root ::deep .metadata-row {
+    display: contents;
+}
+
+.ds-lightbox-root ::deep .metadata-key {
+    font-size: 0.85rem;
+    color: var(--mud-palette-text-secondary);
+    text-transform: capitalize;
+}
+
+.ds-lightbox-root ::deep .metadata-value {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--mud-palette-text-primary);
+    word-break: break-word;
+}
+
+@media (max-width: 900px) {
+    .ds-lightbox-root ::deep .metadata-grid {
+        grid-template-columns: 1fr;
+    }
+}
