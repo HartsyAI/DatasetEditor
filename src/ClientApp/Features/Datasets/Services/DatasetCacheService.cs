@@ -105,6 +105,7 @@ public sealed class DatasetCacheService : IDisposable
             }
 
             PageResponse<DatasetItemDto>? page = await FetchPageAsync(datasetId, pageSize: 100, cursor: null, dataset, cancellationToken).ConfigureAwait(false);
+            dataset = WithPageTotal(dataset, page);
 
             DatasetStudio.Core.DomainModels.Datasets.Dataset mappedDataset = MapDataset(dataset);
             List<DatasetItemDto> items = MapItems(dataset.Id, page?.Items ?? Array.Empty<DatasetItemDto>());
@@ -382,6 +383,21 @@ public sealed class DatasetCacheService : IDisposable
         Modality = Modality.Image,
         TotalItems = dto.TotalItems > int.MaxValue ? int.MaxValue : (int)dto.TotalItems
     };
+
+    /// <summary>
+    /// Takes the item total from the first page when the dataset record doesn't have one yet. For a
+    /// HuggingFace streaming dataset the server learns the row count while serving that first page
+    /// (it back-fills it then), but the record was read just before, so a new dataset showed
+    /// "0 items" in the status band and no "loaded / total" until the next status refresh.
+    /// </summary>
+    /// <param name="dataset">The record read before the first page.</param>
+    /// <param name="firstPage">The first page, whose TotalCount the server sets when known.</param>
+    public static DatasetDetailDto WithPageTotal(DatasetDetailDto dataset, PageResponse<DatasetItemDto>? firstPage)
+    {
+        return dataset.TotalItems <= 0 && firstPage?.TotalCount is long total && total > 0
+            ? dataset with { TotalItems = total }
+            : dataset;
+    }
 
     /// <summary>
     /// Copies a page's items into the buffer, keeping every item. Items with neither an image nor a

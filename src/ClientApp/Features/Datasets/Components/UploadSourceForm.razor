@@ -1,0 +1,63 @@
+@inherits CreateSourceFormBase
+
+<MudStack Spacing="3">
+    @* The file input covers the whole drop zone (transparent), so dropping a file onto the zone
+       and clicking it both use the browser's own file handling. *@
+    <div class="ds-dropzone @(_isDragging ? "ds-dropzone-dragging" : string.Empty) @(IsBusy ? "ds-dropzone-disabled" : string.Empty)"
+         @ondragenter="@(() => _isDragging = true)"
+         @ondragleave="@(() => _isDragging = false)"
+         @ondrop="@(() => _isDragging = false)">
+        <MudStack AlignItems="AlignItems.Center" Spacing="1">
+            <MudIcon Icon="@Icons.Material.Filled.CloudUpload" Size="Size.Large" Color="Color.Primary" />
+            <MudText Typo="Typo.subtitle1">Drop a file here or click to choose one</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">CSV, TSV, JSON, JSONL or a ZIP of them, up to 5 GB</MudText>
+        </MudStack>
+        <InputFile @key="_inputKey"
+                   OnChange="@OnFileSelected"
+                   accept="@IngestionWorkflowService.AcceptedUploadExtensions"
+                   disabled="@IsBusy"
+                   aria-label="Choose a dataset file"
+                   class="ds-dropzone-input" />
+    </div>
+
+    @if (_file is not null)
+    {
+        <MudPaper Outlined="true" Elevation="0" Class="pa-3">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                <MudIcon Icon="@Icons.Material.Filled.InsertDriveFile" Class="mud-text-secondary" />
+                <MudStack Spacing="0" Class="flex-grow-1">
+                    <MudText Typo="Typo.body1">@_file.Name</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@FormatSize(_file.Size)</MudText>
+                </MudStack>
+                <MudTooltip Text="Remove file">
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" Disabled="@IsBusy" OnClick="@ClearFile" aria-label="Remove file" />
+                </MudTooltip>
+            </MudStack>
+        </MudPaper>
+
+        <MudTextField T="string" @bind-Value="_name" Label="Dataset name" Variant="Variant.Outlined" Immediate="true" Disabled="@IsBusy" />
+    }
+
+    <MudSwitch T="bool" @bind-Value="IsPublic" Color="Color.Primary" Disabled="@IsBusy"
+               Label="Make this dataset public (anyone can see it without an account)" />
+
+    @if (!string.IsNullOrEmpty(Error))
+    {
+        <MudAlert Severity="Severity.Error">@Error</MudAlert>
+    }
+
+    @if (IsBusy)
+    {
+        <IngestionProgressPanel Title="Uploading" Status="@Status" />
+    }
+
+    <MudStack Row="true" Justify="Justify.FlexEnd">
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.CloudUpload"
+                   Disabled="@(IsBusy || _file is null || string.IsNullOrWhiteSpace(_name))"
+                   OnClick="@UploadAsync">
+            Upload and import
+        </MudButton>
+    </MudStack>
+</MudStack>

@@ -46,7 +46,21 @@
                         </MudButton>
                         <MudText Typo="Typo.body2" Class="mud-text-secondary">@SelectedTitle</MudText>
                     </MudStack>
-                    <DatasetUploader InitialTabIndex="@UploaderTabIndex(source)" @key="source" />
+                    @switch (source)
+                    {
+                        case CreateSource.Upload:
+                            <UploadSourceForm />
+                            break;
+                        case CreateSource.HuggingFace:
+                            <HuggingFaceSourceForm />
+                            break;
+                        case CreateSource.Folder:
+                            <FolderSourceForm />
+                            break;
+                        case CreateSource.S3:
+                            <S3SourceForm />
+                            break;
+                    }
                 </MudStack>
             }
         </MudTabPanel>
