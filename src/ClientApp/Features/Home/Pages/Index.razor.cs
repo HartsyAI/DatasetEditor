@@ -1,4 +1,5 @@
 using DatasetStudio.ClientApp.Services.StateManagement;
+using DatasetStudio.ClientApp.Features.Home;
 using DatasetStudio.ClientApp.Shared.Services;
 using Microsoft.AspNetCore.Components;
 
@@ -33,11 +34,10 @@ public partial class Index : IDisposable
 
     private void ReadStatistics()
     {
-        _currentDatasetName = DatasetState.CurrentDataset?.Name;
-        // The dataset's own size, not DatasetState.TotalCount (the items buffered so far), which read 0
-        // for a dataset whose rows had not been paged in yet.
-        _totalItems = DatasetState.CurrentDataset?.TotalItems ?? 0;
-        _selectedItems = DatasetState.SelectedCount;
+        DashboardSession session = DashboardSession.From(DatasetState);
+        _currentDatasetName = session.DatasetName;
+        _totalItems = session.TotalItems;
+        _selectedItems = session.SelectedItems;
     }
 
     private void ResumeViewer()
