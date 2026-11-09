@@ -1,0 +1,27 @@
+/* A native button styled as an elevation-1 card. */
+.ds-source-option {
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 16px;
+    text-align: left;
+    font: inherit;
+    color: var(--mud-palette-text-primary);
+    background: var(--mud-palette-surface);
+    border: 0;
+    border-radius: var(--ds-radius-md);
+    box-shadow: var(--mud-elevation-1);
+    cursor: pointer;
+    transition: transform var(--ds-transition), box-shadow var(--ds-transition);
+}
+
+.ds-source-option:hover {
+    transform: var(--ds-hover-lift);
+    box-shadow: var(--mud-elevation-2);
+}
+
+/* Selected: the 3px primary ring (DESIGN.md §5.2), never a different background. */
+.ds-source-option-selected,
+.ds-source-option-selected:hover {
+    box-shadow: var(--ds-selection-ring);
+}
