@@ -124,6 +124,11 @@ internal static class DatasetEndpoints
         [FromQuery] int pageSize = 50,
         CancellationToken cancellationToken = default)
     {
+        // Clamp rather than reject: the client asks for 50, and an unbounded value would otherwise
+        // be passed straight to the query (audit D-3). The clamped value is what gets echoed back.
+        pageSize = PageLimits.ClampPageSize(pageSize);
+        page = Math.Max(0, page);
+
         DatasetVisibilityFilter visibility = BuildVisibilityFilter(httpContext.User);
         List<DatasetDto> pagedDatasets = await datasetRepository.GetAllAsync(page, pageSize, visibility, cancellationToken);
         long totalCount = await datasetRepository.GetCountAsync(visibility, cancellationToken);
@@ -185,7 +190,13 @@ internal static class DatasetEndpoints
         // once there's actually something to ingest. There is deliberately no
         // StartIngestionAsync(id, uploadLocation: null) call here: that method treats a
         // missing upload location as a failure and throws, which would 500 every create.
-        DatasetDto created = dataset with { Id = createdId };
+        // Return the row as persisted. CreateAsync stamps CreatedAt/UpdatedAt on the entity it
+        // inserts but returns only the id, so the DTO built above still carries 0001-01-01 (audit D-1).
+        DatasetDto? created = await repository.GetByIdAsync(createdId, cancellationToken);
+        if (created is null)
+        {
+            return Results.Problem("Dataset was created but could not be read back.", statusCode: StatusCodes.Status500InternalServerError);
+        }
 
         return Results.Created($"/api/datasets/{createdId}", created.ToDetailDto());
     }
@@ -229,6 +240,7 @@ internal static class DatasetEndpoints
         IFormFile file,
         Core.Abstractions.Repositories.IDatasetRepository repository,
         IngestionQueue ingestionQueue,
+        IConfiguration configuration,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
         CancellationToken cancellationToken)
@@ -255,8 +267,13 @@ internal static class DatasetEndpoints
             return Results.BadRequest("No file uploaded or file is empty.");
         }
 
+        // Stage under Storage:UploadPath, the same root the ingestion service uses for its own
+        // downloads. Path.GetTempPath() is ephemeral /tmp in the container, not the mounted volume,
+        // so an upload could be lost on restart and was never on the configured disk (audit I-5).
+        string uploadPath = configuration["Storage:UploadPath"] ?? "./uploads";
+        Directory.CreateDirectory(uploadPath);
         string tempFilePath = Path.Combine(
-            Path.GetTempPath(),
+            uploadPath,
             $"dataset-{datasetId}-{Guid.NewGuid()}{Path.GetExtension(file.FileName)}");
 
         await using (FileStream stream = File.Create(tempFilePath))
@@ -312,7 +329,7 @@ internal static class DatasetEndpoints
             return Results.NotFound();
         }
 
-        int size = pageSize.GetValueOrDefault(100);
+        int size = PageLimits.ClampPageSize(pageSize.GetValueOrDefault(100));
 
         // Handle S3-sourced datasets: lists bucket objects live, on every page request, the
         // same "no bulk ingestion" design as the HuggingFace-streaming branch below. Checked
@@ -340,6 +357,14 @@ internal static class DatasetEndpoints
             // /size and /rows without it (audit H-1(2)).
             StringValues headerValues = httpContext.Request.Headers["X-HF-Access-Token"];
             string? accessToken = headerValues.Count > 0 ? headerValues[0] : null;
+
+            // HF cursors are row offsets. Reject anything else up front: a malformed cursor used to
+            // restart at row 0 without a signal (audit G-3).
+            if (!string.IsNullOrWhiteSpace(cursor) &&
+                !int.TryParse(cursor, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out _))
+            {
+                return Results.BadRequest(new { error = $"Malformed cursor '{cursor}'; expected a non-negative row offset." });
+            }
 
             // Auto-discover config/split if not set
             if (string.IsNullOrWhiteSpace(split))
@@ -380,12 +405,8 @@ internal static class DatasetEndpoints
                 }
             }
 
-            // Parse cursor as offset
-            int offset = 0;
-            if (!string.IsNullOrWhiteSpace(cursor) && int.TryParse(cursor, out int parsedCursor) && parsedCursor >= 0)
-            {
-                offset = parsedCursor;
-            }
+            // Validated above; NumberStyles.None rejects a sign, so the offset is non-negative.
+            int offset = string.IsNullOrWhiteSpace(cursor) ? 0 : int.Parse(cursor, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture);
 
             // Fetch rows from HuggingFace datasets-server
             HuggingFaceRowsPage? page;
@@ -443,7 +464,13 @@ internal static class DatasetEndpoints
             });
         }
 
-        // Handle local datasets (uploaded files)
+        // Handle local datasets (uploaded files). Reject a malformed cursor before it reaches the
+        // reader, which would otherwise restart from the first shard (audit G-3).
+        if (!string.IsNullOrEmpty(cursor) && !DataAccess.Parquet.ParquetItemReader.TryParseCursor(cursor, out _, out _))
+        {
+            return Results.BadRequest(new { error = $"Malformed cursor '{cursor}'; expected 'shardIndex:rowIndex'." });
+        }
+
         (IReadOnlyList<DatasetItemDto> items, string? repositoryNextCursor) = await itemRepository.GetPageAsync(
             datasetId,
             null,
@@ -455,7 +482,8 @@ internal static class DatasetEndpoints
         {
             Items = items,
             NextCursor = repositoryNextCursor,
-            TotalCount = null
+            // The dataset row carries the cached cumulative count written at ingestion (audit G-1).
+            TotalCount = dataset.TotalItems
         });
     }
 

@@ -304,22 +304,49 @@ public class ParquetItemWriter : IDisposable
     }
 
     /// <summary>
-    /// Deletes a single shard file (used for shard-scoped rewrites).
+    /// Replaces a shard's contents for a shard-scoped rewrite. The replacement is written to a
+    /// temp file beside the shard and only then renamed over it, so the original shard stays
+    /// intact until the new one is complete. The earlier delete-then-write sequence lost the whole
+    /// shard if the request was cancelled between the two steps (the cancellation reached the
+    /// write, not the delete). Cancelling here discards the temp file and leaves the original as it was.
+    /// The temp name ends in <c>.tmp</c>, so shard discovery (<c>dataset_*.parquet</c>) never reads it.
     /// </summary>
-    public void DeleteShard(Guid datasetId, int shardIndex)
+    /// <param name="datasetId">The dataset ID.</param>
+    /// <param name="shardIndex">The shard being rewritten.</param>
+    /// <param name="items">The complete, updated contents of the shard.</param>
+    /// <param name="cancellationToken">Cancellation token; honoured only before the rename.</param>
+    public async Task ReplaceShardAsync(
+        Guid datasetId,
+        int shardIndex,
+        List<DatasetItemDto> items,
+        CancellationToken cancellationToken)
     {
         var fileName = ParquetSchemaDefinition.GetShardFileName(datasetId, shardIndex);
         var filePath = Path.Combine(_dataDirectory, fileName);
+        var tempPath = filePath + "." + Guid.NewGuid().ToString("N") + ".rewrite.tmp";
+
+        var columns = ConvertToColumns(items);
         try
         {
-            if (File.Exists(filePath))
-            {
-                File.Delete(filePath);
-            }
+            await CreateFileAsync(tempPath, columns, cancellationToken);
+
+            // The rename is the commit point. It is synchronous and not cancellable, so once it
+            // starts the shard is either fully the old version or fully the new one.
+            File.Move(tempPath, filePath, overwrite: true);
         }
-        catch (IOException)
+        finally
         {
-            // File might be in use, ignore
+            try
+            {
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+            }
+            catch (IOException)
+            {
+                // Leftover temp file is harmless (never read as a shard); nothing to recover.
+            }
         }
     }
 

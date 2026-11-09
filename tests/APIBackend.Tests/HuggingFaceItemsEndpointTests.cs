@@ -162,5 +162,24 @@ namespace DatasetStudio.Tests.APIBackend
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             _hfServerClientMock.Verify(c => c.GetRowsAsync(Repo, It.IsAny<string?>(), "train", 0, 10, It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Once);
         }
+
+        [Theory]
+        [InlineData("abc")]
+        [InlineData("-5")]
+        [InlineData("1.5")]
+        public async Task GetItems_MalformedStreamingCursor_Returns400BeforeAnyUpstreamCall(string cursor)
+        {
+            // Audit G-3: a malformed offset used to restart at row 0 silently. It is rejected up front,
+            // before /size discovery or /rows, so no upstream request is made for it.
+            DatasetDetailDto dataset = await CreateStreamingDatasetAsync(split: "train");
+
+            HttpResponseMessage response = await _client.GetAsync(
+                $"/api/datasets/{dataset.Id}/items?pageSize=10&cursor={Uri.EscapeDataString(cursor)}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            _hfServerClientMock.Verify(
+                c => c.GetRowsAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
     }
 }

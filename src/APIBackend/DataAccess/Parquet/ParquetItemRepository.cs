@@ -253,11 +253,11 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
 
                     if (shardChanged)
                     {
-                        _writer.DeleteShard(datasetId, shardIndex);
-                        // Re-anchor to the same shard: every item index stays < ItemsPerShard,
-                        // so the whole list is written back into this shard only.
-                        long shardStartIndex = (long)shardIndex * ParquetSchemaDefinition.ItemsPerShard;
-                        await _writer.WriteBatchAsync(datasetId, shardItems, shardStartIndex, cancellationToken);
+                        // Each shard is replaced atomically (temp file, then rename), so a cancelled
+                        // request never leaves a shard missing or half-written. A multi-shard batch
+                        // cancelled between shards keeps the shards already rewritten; each one is
+                        // complete, but the batch as a whole is not all-or-nothing.
+                        await _writer.ReplaceShardAsync(datasetId, shardIndex, shardItems, cancellationToken);
                         rewrittenShards++;
                     }
                 }
