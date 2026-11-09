@@ -136,7 +136,7 @@ refer to [docs/refactor-audit.md](docs/refactor-audit.md).
 | 4.9 | Virtualised viewer (grid / list / detail / lightbox) | Working (caveats) |
 | 4.10 | Item editing (single, bulk) | Partial (local datasets; broken in the dev setup) |
 | 4.11 | Filtering and search | Placeholder (UI only) |
-| 4.12 | Settings, theme, language | Partial (theme, view preferences, API keys; no i18n) |
+| 4.12 | Settings, theme, language | Partial (theme, viewer preferences, HuggingFace token; no i18n) |
 | 4.13 | AI tools | Placeholder |
 | 4.14 | Extensions | Partial (one example) |
 | 4.15 | Production deployment | Working |
@@ -353,8 +353,9 @@ library's "Only ready datasets" switch doesn't re-filter.
 ### 4.12 Settings, theme, language — Partial
 
 **What.** A Settings page with theme (Light, Dark or System), view preferences (view mode,
-grid columns, metadata overlay) and API keys (HuggingFace token stored in browser local
-storage). The drawer also has a one-click light/dark switch.
+grid columns, hover details) and the HuggingFace access token, each in a `SectionCard`. The
+token is kept in browser local storage and sent to the API only with HuggingFace item requests
+(`X-HF-Access-Token`), which forward it upstream. The drawer also has a one-click light/dark switch.
 
 **How.** `Shared/Theme/AppTheme.cs` is the one `MudTheme` (DESIGN.md §2.2); app-level tokens
 are `--ds-*` custom properties in `wwwroot/css/app.css`. `MainLayout` loads `ViewState` from

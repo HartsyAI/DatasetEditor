@@ -1,100 +1,34 @@
-@using DatasetStudio.Core.Enumerations
-
-@* Controls for view mode, grid density, and detail panel visibility. *@
 <MudStack Spacing="3">
-    <MudText Typo="Typo.subtitle1">View preferences</MudText>
-
-    <MudToggleGroup T="string"
-                    Value="@_selectedViewModeLabel"
-                    ValueChanged="@OnViewModeChangedAsync"
-                    Color="Color.Primary"
-                    Outlined="true">
-        @foreach (var mode in _viewModes)
-        {
-            <MudToggleItem T="string" Value="@mode" Text="@mode" />
-        }
-    </MudToggleGroup>
+    <MudStack Spacing="1">
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">Default view</MudText>
+        <MudToggleGroup T="ViewMode"
+                        Value="@SelectedViewMode"
+                        ValueChanged="@OnViewModeChanged"
+                        Color="Color.Primary"
+                        Outlined="true"
+                        aria-label="Default view">
+            <MudToggleItem T="ViewMode" Value="ViewMode.Grid" Text="Grid" />
+            <MudToggleItem T="ViewMode" Value="ViewMode.Gallery" Text="Gallery" />
+            <MudToggleItem T="ViewMode" Value="ViewMode.List" Text="List" />
+        </MudToggleGroup>
+    </MudStack>
 
     <MudStack Spacing="1">
-        <MudText Typo="Typo.caption" Class="mud-text-secondary">Grid columns</MudText>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">Grid columns: @GridColumns</MudText>
         <MudSlider T="int"
                    Min="1"
-                   Max="6"
+                   Max="8"
                    Step="1"
                    Value="@GridColumns"
-                   ValueChanged="@OnGridColumnsChangedAsync"
+                   ValueChanged="@OnGridColumnsChanged"
                    Color="Color.Primary"
-                   Immediate="true" />
+                   Immediate="true"
+                   aria-label="Grid columns" />
     </MudStack>
 
     <MudSwitch T="bool"
                Value="@ShowMetadataOverlay"
-               ValueChanged="OnShowMetadataOverlayChangedAsync"
+               ValueChanged="@OnShowMetadataOverlayChanged"
                Color="Color.Primary"
-               Label="Show metadata overlay" />
+               Label="Show details when hovering an image" />
 </MudStack>
-
-@code {
-    private readonly IEnumerable<string> _viewModes = new[]
-    {
-        ViewMode.Grid.ToString(),
-        ViewMode.Gallery.ToString(),
-        ViewMode.List.ToString()
-    };
-
-    private string _selectedViewModeLabel => SelectedViewMode.ToString();
-
-    /// <summary>
-    /// Selected view mode. Settings page should bind to ViewState.Settings.ViewMode.
-    /// </summary>
-    [Parameter] public ViewMode SelectedViewMode { get; set; } = ViewMode.Grid;
-
-    /// <summary>
-    /// Raised when a new view mode is selected.
-    /// </summary>
-    [Parameter] public EventCallback<ViewMode> OnViewModeChanged { get; set; }
-
-    /// <summary>
-    /// Number of grid columns to render. Bind to ViewState.Settings.GridColumns.
-    /// </summary>
-    [Parameter] public int GridColumns { get; set; } = 4;
-
-    /// <summary>
-    /// Occurs when grid columns slider changes.
-    /// </summary>
-    [Parameter] public EventCallback<int> OnGridColumnsChanged { get; set; }
-
-    /// <summary>
-    /// Controls whether metadata overlay appears on image cards.
-    /// </summary>
-    [Parameter] public bool ShowMetadataOverlay { get; set; } = true;
-
-    /// <summary>
-    /// Raised when metadata overlay toggle changes.
-    /// </summary>
-    [Parameter] public EventCallback<bool> OnShowMetadataOverlayChanged { get; set; }
-
-    private async Task OnViewModeChangedAsync(string? value)
-    {
-        if (Enum.TryParse<ViewMode>(value, out var mode) && OnViewModeChanged.HasDelegate)
-        {
-            await OnViewModeChanged.InvokeAsync(mode);
-        }
-    }
-
-    private async Task OnGridColumnsChangedAsync(int value)
-    {
-        if (OnGridColumnsChanged.HasDelegate)
-        {
-            await OnGridColumnsChanged.InvokeAsync(value);
-        }
-    }
-
-    private async Task OnShowMetadataOverlayChangedAsync(bool value)
-    {
-        if (OnShowMetadataOverlayChanged.HasDelegate)
-        {
-            await OnShowMetadataOverlayChanged.InvokeAsync(value);
-        }
-    }
-}
