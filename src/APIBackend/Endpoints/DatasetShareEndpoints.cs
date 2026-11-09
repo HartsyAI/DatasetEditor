@@ -99,8 +99,9 @@ internal static class DatasetShareEndpoints
             return Error("The end date has to be in the future.");
         }
 
+        // Like login: an '@' means an email first, but older usernames can contain '@' too.
         UserDto? target = who.Contains('@')
-            ? await users.GetByEmailAsync(who, cancellationToken)
+            ? await users.GetByEmailAsync(who, cancellationToken) ?? await users.GetByUsernameAsync(who, cancellationToken)
             : await users.GetByUsernameAsync(who, cancellationToken);
         if (target is null || !target.IsActive)
         {

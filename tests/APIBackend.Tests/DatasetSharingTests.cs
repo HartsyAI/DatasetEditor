@@ -267,6 +267,29 @@ namespace DatasetStudio.Tests.APIBackend
             (await grants.GetAsync(dataset.Id, targetUser.Id))!.AccessLevel.Should().Be("Read");
         }
 
+        /// <summary>
+        /// PR 5.2 review: a username containing '@' (allowed before registration validation) was
+        /// looked up only as an email, so sharing with it, or editing its share from the dialog
+        /// (which fills in the username), always said no such account.
+        /// </summary>
+        [Fact]
+        public async Task Share_WithAUsernameContainingAt_FindsTheAccount()
+        {
+            (HttpClient owner, _) = await SignUpAsync("sh-owner10");
+            DatasetDetailDto dataset = await CreatePrivateDatasetAsync(owner, "at-username");
+            using (IServiceScope scope = _factory.Services.CreateScope())
+            {
+                Core.Abstractions.Repositories.IUserRepository users =
+                    scope.ServiceProvider.GetRequiredService<Core.Abstractions.Repositories.IUserRepository>();
+                await users.CreateAsync(new UserDto { Id = Guid.NewGuid(), Username = "old@name", Email = "different@example.com", PasswordHash = "x" });
+            }
+
+            HttpResponseMessage shared = await ShareAsync(owner, dataset.Id, new ShareDatasetRequest("old@name"));
+
+            shared.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await shared.Content.ReadFromJsonAsync<DatasetShareDto>())!.Username.Should().Be("old@name");
+        }
+
         [Fact]
         public async Task Share_RejectsUnknownAccountsOwnerSelfAndPastDates()
         {
