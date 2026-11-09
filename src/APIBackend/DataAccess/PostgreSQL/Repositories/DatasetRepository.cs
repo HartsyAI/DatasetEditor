@@ -107,10 +107,12 @@ public sealed class DatasetRepository : IDatasetRepository
             throw new ArgumentException("original and updated must be the same dataset.", nameof(updated));
         }
 
-        // A few attempts: the row's xmin token makes SaveChanges fail if anything (typically a
-        // background status or count write) touched the row between this read and the write.
-        // Each retry re-reads and re-checks, so those writes are kept, never reverted.
-        const int MaxAttempts = 3;
+        // The row's xmin token makes SaveChanges fail if anything (typically a background status
+        // or count write, or another patch) touched the row between this read and the write. Each
+        // retry re-reads and re-checks, so those writes are kept, never reverted. Three attempts
+        // weren't enough with five concurrent writers: a patch that conflicted with nothing failed
+        // with a false 409. Retries back off with jitter so contending writers spread out.
+        const int MaxAttempts = 10;
         for (int attempt = 1; ; attempt++)
         {
             // AsTracking(): the DbContext defaults to NoTracking, which would make this
@@ -203,6 +205,7 @@ public sealed class DatasetRepository : IDatasetRepository
                 {
                     throw new DatasetUpdateConflictException(updated.Id, patch.ChangedFields);
                 }
+                await Task.Delay(Random.Shared.Next(5, 20) * attempt, cancellationToken);
             }
         }
     }
@@ -268,9 +271,10 @@ public sealed class DatasetRepository : IDatasetRepository
                 await _dbContext.SaveChangesAsync(cancellationToken);
                 return;
             }
-            catch (DbUpdateConcurrencyException) when (attempt < 3)
+            catch (DbUpdateConcurrencyException) when (attempt < 10)
             {
                 _dbContext.Entry(entity).State = EntityState.Detached;
+                await Task.Delay(Random.Shared.Next(5, 20) * attempt, cancellationToken);
             }
         }
     }

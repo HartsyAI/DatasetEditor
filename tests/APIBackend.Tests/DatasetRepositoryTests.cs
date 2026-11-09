@@ -272,6 +272,33 @@ namespace DatasetStudio.Tests.APIBackend
             (loaded.HuggingFaceRepository, loaded.HuggingFaceSplit, loaded.TotalItems).Should().Be(("org/ds", "train", 7L));
         }
 
+        /// <summary>
+        /// Twelve writers patching different fields (plus status and count writes) at once all land.
+        /// With three token retries, a patch that conflicted with nothing could exhaust them and fail
+        /// with a false conflict; this was seen as an intermittent failure of the five-writer test below.
+        /// </summary>
+        [Fact]
+        public async Task UpdateAsync_HeavyContentionOnDifferentFields_NoFalseConflicts()
+        {
+            DatasetDto snapshot = await CreateAsync("Contention");
+
+            List<Task> writers = new();
+            for (int round = 0; round < 3; round++)
+            {
+                writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { SourceFileName = "a.csv" }))));
+                writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { Description = "described" }))));
+                writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { IsPublic = true }))));
+                writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { Format = "CSV2" }))));
+                writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateItemCountAsync(snapshot.Id, 42))));
+                writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateStatusAsync(snapshot.Id, IngestionStatusDto.Processing))));
+            }
+
+            await Task.WhenAll(writers);
+
+            DatasetDto loaded = (await GetAsync(snapshot.Id))!;
+            (loaded.SourceFileName, loaded.Description, loaded.IsPublic, loaded.Format).Should().Be(("a.csv", "described", true, "CSV2"));
+        }
+
         /// <summary>Many concurrent patches of different fields all land.</summary>
         [Fact]
         public async Task UpdateAsync_ConcurrentPatchesOfDifferentFields_AllLand()
