@@ -110,10 +110,19 @@ internal sealed class HuggingFaceDiscoveryService : IHuggingFaceDiscoveryService
         try
         {
             // Get ALL available config/split combinations
-            List<HuggingFaceDatasetSplitInfo>? allSplits = await _datasetServerClient.GetAllSplitsAsync(
-                repository,
-                accessToken,
-                cancellationToken);
+            List<HuggingFaceDatasetSplitInfo>? allSplits;
+            try
+            {
+                allSplits = await _datasetServerClient.GetAllSplitsAsync(
+                    repository,
+                    accessToken,
+                    cancellationToken);
+            }
+            catch (HuggingFaceUpstreamException)
+            {
+                // Same as an empty /size: fall through to the rows probe below. The client already logged the cause.
+                allSplits = null;
+            }
 
             if (allSplits != null && allSplits.Count > 0)
             {

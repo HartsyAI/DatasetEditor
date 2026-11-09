@@ -67,6 +67,36 @@ public class DatasetIngestionService : IDatasetIngestionService
         await IngestAsync(datasetId, fileStream, fileName, cancellationToken);
     }
 
+    /// <summary>
+    /// Chooses the config/split a streaming import counts. A requested split must match exactly
+    /// within the requested config. It is never swapped for another config's split, because the match
+    /// is persisted as the dataset's source. With no split given, the default is the "train" split of
+    /// the requested config, or the first split datasets-server lists.
+    /// </summary>
+    private static HuggingFaceDatasetSplitInfo? PickStreamingSplit(
+        IReadOnlyList<HuggingFaceDatasetSplitInfo>? splits,
+        string? config,
+        string? split)
+    {
+        if (splits is null || splits.Count == 0)
+        {
+            return null;
+        }
+
+        IEnumerable<HuggingFaceDatasetSplitInfo> inConfig = string.IsNullOrWhiteSpace(config)
+            ? splits
+            : splits.Where(s => string.Equals(s.Config, config, StringComparison.Ordinal));
+
+        if (!string.IsNullOrWhiteSpace(split))
+        {
+            return inConfig.FirstOrDefault(s => string.Equals(s.Split, split, StringComparison.Ordinal));
+        }
+
+        return inConfig.FirstOrDefault(s => string.Equals(s.Split, "train", StringComparison.Ordinal))
+            ?? inConfig.FirstOrDefault();
+    }
+
+    /// <summary>Runs an import and, for streaming datasets, records the default config/split and its row count.</summary>
     public async Task ImportFromHuggingFaceAsync(Guid datasetId, ImportHuggingFaceDatasetRequest request, CancellationToken cancellationToken = default)
     {
         try
@@ -91,10 +121,22 @@ public class DatasetIngestionService : IDatasetIngestionService
                 {
                     List<HuggingFaceDatasetSplitInfo>? splits = await _huggingFaceDatasetServerClient.GetAllSplitsAsync(
                         request.Repository, request.AccessToken, cancellationToken);
-                    HuggingFaceDatasetSplitInfo? match = splits?.FirstOrDefault(s =>
-                        string.Equals(s.Config, request.Config, StringComparison.Ordinal) &&
-                        string.Equals(s.Split, request.Split, StringComparison.Ordinal));
-                    match ??= splits?.FirstOrDefault(s => string.Equals(s.Split, request.Split, StringComparison.Ordinal));
+                    // A null config/split means "use the default". Matching it with Ordinal equality never
+                    // succeeded, so the count was silently skipped (audit H-1(1)).
+                    HuggingFaceDatasetSplitInfo? match = PickStreamingSplit(splits, request.Config, request.Split);
+
+                    if (match != null)
+                    {
+                        // Persist the resolved config/split. The items endpoint streams from these fields;
+                        // leaving them unset would make every page request re-run /size discovery.
+                        DatasetDto? current = await _datasetRepository.GetByIdAsync(datasetId, cancellationToken);
+                        if (current != null)
+                        {
+                            await _datasetRepository.UpdateAsync(
+                                current with { HuggingFaceConfig = match.Config, HuggingFaceSplit = match.Split },
+                                cancellationToken);
+                        }
+                    }
 
                     if (match is { NumRows: > 0 })
                     {

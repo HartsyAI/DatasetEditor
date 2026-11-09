@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Primitives;
 using DatasetStudio.APIBackend.Extensions;
@@ -273,6 +274,25 @@ internal static class DatasetEndpoints
         return Results.Accepted($"/api/datasets/{datasetId}", new { datasetId, fileName = file.FileName });
     }
 
+    /// <summary>
+    /// Turns a datasets-server failure into an HTTP reason the client can show (audit H-6). An auth
+    /// refusal is 403 because the caller can fix it by supplying a token. Everything else is 502,
+    /// because the upstream service, not this request, failed.
+    /// </summary>
+    private static IResult HuggingFaceUpstreamFailure(HuggingFaceUpstreamException ex, string repository)
+    {
+        if (ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        {
+            return Results.Json(
+                new { error = $"HuggingFace denied access to {repository}. It may be private or gated; supply an access token." },
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        return Results.Json(
+            new { error = $"HuggingFace datasets-server could not serve {repository}: {ex.Message}" },
+            statusCode: StatusCodes.Status502BadGateway);
+    }
+
     /// <summary>Gets items for a dataset with pagination (supports both streaming and local)</summary>
     public static async Task<IResult> GetDatasetItems(
         Guid datasetId,
@@ -316,15 +336,30 @@ internal static class DatasetEndpoints
             string? config = dataset.HuggingFaceConfig;
             string? split = dataset.HuggingFaceSplit;
 
+            // Read the token before any upstream call: gated and private datasets answer 401/403 to
+            // /size and /rows without it (audit H-1(2)).
+            StringValues headerValues = httpContext.Request.Headers["X-HF-Access-Token"];
+            string? accessToken = headerValues.Count > 0 ? headerValues[0] : null;
+
             // Auto-discover config/split if not set
             if (string.IsNullOrWhiteSpace(split))
             {
-                HuggingFaceDatasetSizeInfo? sizeInfo = await huggingFaceDatasetServerClient.GetDatasetSizeAsync(
-                    repository,
-                    config,
-                    split,
-                    null,
-                    cancellationToken);
+                HuggingFaceDatasetSizeInfo? sizeInfo;
+                try
+                {
+                    sizeInfo = await huggingFaceDatasetServerClient.GetDatasetSizeAsync(
+                        repository,
+                        config,
+                        split,
+                        accessToken,
+                        cancellationToken);
+                }
+                catch (HuggingFaceUpstreamException)
+                {
+                    // /size is best-effort: some datasets (and imports from before it was read) have none.
+                    // Keep the train fallback and let the rows request report a real upstream failure.
+                    sizeInfo = null;
+                }
 
                 if (sizeInfo != null)
                 {
@@ -352,28 +387,36 @@ internal static class DatasetEndpoints
                 offset = parsedCursor;
             }
 
-            // Get access token from header
-            StringValues headerValues = httpContext.Request.Headers["X-HF-Access-Token"];
-            string? accessToken = headerValues.Count > 0 ? headerValues[0] : null;
-
             // Fetch rows from HuggingFace datasets-server
-            HuggingFaceRowsPage? page = await huggingFaceDatasetServerClient.GetRowsAsync(
-                repository,
-                config,
-                split!,
-                offset,
-                size,
-                accessToken,
-                cancellationToken);
+            HuggingFaceRowsPage? page;
+            try
+            {
+                page = await huggingFaceDatasetServerClient.GetRowsAsync(
+                    repository,
+                    config,
+                    split!,
+                    offset,
+                    size,
+                    accessToken,
+                    cancellationToken);
+            }
+            catch (HuggingFaceUpstreamException ex)
+            {
+                return HuggingFaceUpstreamFailure(ex, repository);
+            }
 
             if (page == null)
             {
-                return Results.Ok(new PageResponse<DatasetItemDto>
-                {
-                    Items = Array.Empty<DatasetItemDto>(),
-                    NextCursor = null,
-                    TotalCount = 0
-                });
+                return HuggingFaceUpstreamFailure(
+                    new HuggingFaceUpstreamException("datasets-server returned no page"), repository);
+            }
+
+            // The rows response carries the row total for this config/split, which is the only count
+            // the library can rely on for streaming datasets. Back-fill it when the stored value differs
+            // (audit H-1(3)); the stored value starts at 0 for datasets imported before the count resolved.
+            if (dataset.TotalItems != page.NumRowsTotal)
+            {
+                await datasetRepository.UpdateItemCountAsync(datasetId, page.NumRowsTotal, cancellationToken);
             }
 
             // Map HuggingFace rows to DatasetItemDto

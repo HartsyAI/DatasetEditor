@@ -73,11 +73,20 @@ public sealed class HuggingFaceRowPageCache : IHuggingFaceRowPageCache
         string? accessToken,
         CancellationToken cancellationToken)
     {
-        HuggingFaceRowsPage? page = await client.GetRowsAsync(
-            dataset, config, split, (int)pageStart, PageSize, accessToken, cancellationToken);
+        HuggingFaceRowsPage? page;
+        try
+        {
+            page = await client.GetRowsAsync(
+                dataset, config, split, (int)pageStart, PageSize, accessToken, cancellationToken);
+        }
+        catch (HuggingFaceUpstreamException)
+        {
+            // The client has already logged the cause. Treat it as "no page" so a thumbnail request
+            // 404s rather than failing with a 500.
+            page = null;
+        }
 
-        // A null page here means GetRowsAsync itself already swallowed a failure (transient
-        // network error, upstream 5xx, etc. -- it has its own try/catch). Caching that failure
+        // A null page here means the lookup failed (see above). Caching that failure
         // for the full TTL would turn one transient hiccup into every thumbnail in this page's
         // 100-row window 404ing for the next 5 minutes. Cache it as already-expired instead, so
         // the very next request for this page retries rather than reusing the failure.

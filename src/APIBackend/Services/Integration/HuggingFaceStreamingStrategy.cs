@@ -38,12 +38,22 @@ internal static class HuggingFaceStreamingStrategy
         }
 
         // First, try /size to obtain default config/split and total row count.
-        HuggingFaceDatasetSizeInfo? sizeInfo = await datasetServerClient.GetDatasetSizeAsync(
-            repository,
-            config: null,
-            split: null,
-            accessToken,
-            cancellationToken);
+        HuggingFaceDatasetSizeInfo? sizeInfo;
+        try
+        {
+            sizeInfo = await datasetServerClient.GetDatasetSizeAsync(
+                repository,
+                config: null,
+                split: null,
+                accessToken,
+                cancellationToken);
+        }
+        catch (HuggingFaceUpstreamException)
+        {
+            // /size can be unavailable (very large or gated datasets). Fall through to the /rows probe,
+            // which reports its own failure, so the plan still reflects what datasets-server can serve.
+            sizeInfo = null;
+        }
 
         if (sizeInfo != null)
         {
