@@ -129,7 +129,7 @@ namespace DatasetStudio.Tests.APIBackend
         // racing the request's DI scope (and its scoped DbContext) being disposed right after
         // the handler returns 202. Streaming mode reaches a real DbContext write
         // (UpdateStatusAsync, twice) without any network call, so this deterministically
-        // exercises the fixed code path (routed through IngestionQueue/
+        // exercises the fixed code path (routed through the ingestion_jobs queue and
         // IngestionBackgroundService, each job getting its own scope) without depending on
         // HuggingFace being reachable from the test environment.
         [Fact]

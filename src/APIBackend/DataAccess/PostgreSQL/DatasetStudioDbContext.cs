@@ -42,6 +42,9 @@ public class DatasetStudioDbContext : DbContext
     /// </summary>
     public DbSet<PermissionEntity> Permissions { get; set; } = null!;
 
+    /// <summary>Queued, running and finished ingestion jobs (audit I-1).</summary>
+    public DbSet<IngestionJobEntity> IngestionJobs { get; set; } = null!;
+
     /// <summary>
     /// Configure model relationships and constraints
     /// </summary>
@@ -169,6 +172,26 @@ public class DatasetStudioDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(p => p.GrantedByUserId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<IngestionJobEntity>(entity =>
+        {
+            // Claim order: oldest queued job first.
+            entity.HasIndex(e => new { e.State, e.CreatedAt });
+
+            // At most one running job per dataset. Two workers can each pick a different queued
+            // job for the same dataset in the same instant (SKIP LOCKED only stops them taking the
+            // same row), and ingestion appends to the dataset's shards, so the loser of this
+            // index fails its claim and tries again later.
+            entity.HasIndex(e => e.DatasetId)
+                .IsUnique()
+                .HasFilter("state = 1")
+                .HasDatabaseName("ix_ingestion_jobs_one_running_per_dataset");
+
+            entity.HasOne(j => j.Dataset)
+                .WithMany()
+                .HasForeignKey(j => j.DatasetId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // Seed data for single-user mode (optional)
