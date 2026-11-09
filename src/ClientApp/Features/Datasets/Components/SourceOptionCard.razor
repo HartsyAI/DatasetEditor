@@ -1,0 +1,10 @@
+<button type="button"
+        class="ds-source-option @(Selected ? "ds-source-option-selected" : string.Empty)"
+        aria-pressed="@(Selected ? "true" : "false")"
+        @onclick="@OnSelect">
+    <MudStack Spacing="2">
+        <MudIcon Icon="@Icon" Color="Color.Primary" Size="Size.Large" />
+        <MudText Typo="Typo.subtitle1" HtmlTag="span">@Title</MudText>
+        <MudText Typo="Typo.body2" HtmlTag="span" Class="mud-text-secondary">@Description</MudText>
+    </MudStack>
+</button>
