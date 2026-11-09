@@ -232,6 +232,65 @@ namespace DatasetStudio.Tests.APIBackend
             (_written.Single(i => i.Title == "lower").Width).Should().Be(5);
         }
 
+        /// <summary>Codex review on #20: "../images/a.png" from a data file in a sibling folder links to images/a.png.</summary>
+        [Fact]
+        public async Task Upload_ZipRowWithDotDotPath_LinksToTheImage()
+        {
+            string path = Path.Combine(_root, "dotdot.zip");
+            using (ZipArchive zip = ZipFile.Open(path, ZipArchiveMode.Create))
+            {
+                await WriteEntryAsync(zip, "images/a.png", Png(4, 4));
+                await WriteEntryAsync(zip, "metadata/train.csv", "title,image\ncaptioned,../images/a.png\n");
+            }
+
+            await CreateService().StartIngestionAsync(_datasetId, path, CancellationToken.None);
+
+            DatasetItemDto item = _written.Should().ContainSingle("the row describes the only image").Subject;
+            item.Title.Should().Be("captioned");
+            item.ImageUrl.Should().Be($"/api/datasets/{_datasetId}/files/images/a.png");
+        }
+
+        /// <summary>
+        /// Codex review on #20: a Parquet image struct with no bytes and only a path refers to an
+        /// image shipped beside it in the ZIP; the row links to that image.
+        /// </summary>
+        [Fact]
+        public async Task Upload_ZipWithPathOnlyParquetImages_LinksRowsToTheImages()
+        {
+            string parquet = Path.Combine(_root, "refs.parquet");
+            ParquetSchema schema = new(
+                new DataField<string>("text"),
+                new StructField("image", new DataField<byte[]>("bytes"), new DataField<string>("path")));
+            await WriteParquetAsync(parquet, schema,
+                new[] { "first" },
+                new byte[]?[] { null },
+                new[] { "images/a.png" });
+
+            string path = Path.Combine(_root, "parquet-refs.zip");
+            using (ZipArchive zip = ZipFile.Open(path, ZipArchiveMode.Create))
+            {
+                await WriteEntryAsync(zip, "images/a.png", Png(6, 2));
+                await WriteEntryAsync(zip, "data.parquet", await File.ReadAllBytesAsync(parquet));
+            }
+
+            await CreateService().StartIngestionAsync(_datasetId, path, CancellationToken.None);
+
+            DatasetItemDto item = _written.Should().ContainSingle().Subject;
+            item.Title.Should().Be("first");
+            item.ImageUrl.Should().Be($"/api/datasets/{_datasetId}/files/images/a.png");
+            (item.Width, item.Height).Should().Be((6, 2));
+        }
+
+        [Theory]
+        [InlineData("a/./b/../c.png", "a/c.png")]
+        [InlineData("metadata/../images/a.png", "images/a.png")]
+        [InlineData("../outside.png", null)]
+        [InlineData("a/../../outside.png", null)]
+        public void NormalizeArchivePath_ResolvesDotSegmentsAndRefusesToLeaveTheArchive(string input, string? expected)
+        {
+            DatasetIngestionService.NormalizeArchivePath(input).Should().Be(expected);
+        }
+
         /// <summary>Audit I-8: a download that fails to parse is deleted, not left in the upload folder.</summary>
         [Fact]
         public async Task HuggingFaceDownload_ParseFailure_DeletesTheDownloadedFile()

@@ -745,7 +745,9 @@ public class DatasetIngestionService : IDatasetIngestionService
         List<string> candidates = new();
         foreach (KeyValuePair<string, string> pair in row.Metadata)
         {
-            if (string.Equals(pair.Key, "file_name", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(pair.Value))
+            bool isPathColumn = string.Equals(pair.Key, "file_name", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(pair.Key, "image_file_name", StringComparison.Ordinal);
+            if (isPathColumn && !string.IsNullOrWhiteSpace(pair.Value))
             {
                 candidates.Add(pair.Value);
             }
@@ -758,22 +760,45 @@ public class DatasetIngestionService : IDatasetIngestionService
         foreach (string candidate in candidates)
         {
             string relative = candidate.Replace('\\', '/');
-            while (relative.StartsWith("./", StringComparison.Ordinal))
+            if (dataFileFolder.Length > 0 && NormalizeArchivePath($"{dataFileFolder}/{relative}") is { } besideDataFile
+                && extractedImages.Find(besideDataFile) is { } nearMatch)
             {
-                relative = relative[2..];
+                return nearMatch;
             }
-            relative = relative.TrimStart('/');
-
-            if (dataFileFolder.Length > 0 && extractedImages.Find($"{dataFileFolder}/{relative}") is { } besideDataFile)
-            {
-                return besideDataFile;
-            }
-            if (extractedImages.Find(relative) is { } match)
+            if (NormalizeArchivePath(relative) is { } fromRoot && extractedImages.Find(fromRoot) is { } match)
             {
                 return match;
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// Resolves "." and ".." segments in a path inside the archive, so "metadata/../images/a.png"
+    /// finds "images/a.png" (Codex review on #20). Returns null for a path that climbs above the
+    /// archive root: nothing outside the extraction folder can be linked.
+    /// </summary>
+    internal static string? NormalizeArchivePath(string path)
+    {
+        Stack<string> segments = new();
+        foreach (string segment in path.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (segment == ".")
+            {
+                continue;
+            }
+            if (segment == "..")
+            {
+                if (segments.Count == 0)
+                {
+                    return null;
+                }
+                segments.Pop();
+                continue;
+            }
+            segments.Push(segment);
+        }
+        return segments.Count == 0 ? null : string.Join('/', segments.Reverse());
     }
 
     /// <summary>
@@ -817,6 +842,14 @@ public class DatasetIngestionService : IDatasetIngestionService
         await foreach (ParquetRow row in ParquetRowReader.ReadAsync(stream, cancellationToken))
         {
             DatasetItemDto item = DatasetRowMapper.Map(datasetId, row.Values);
+            // Kept whether or not there are bytes: an image struct with only a path refers to a
+            // file shipped beside the Parquet (in a ZIP), which linking resolves from this
+            // (Codex review on #20).
+            if (!string.IsNullOrWhiteSpace(row.ImageName))
+            {
+                item.Metadata["image_file_name"] = row.ImageName;
+            }
+
             string? extension = row.ImageBytes is { Length: > 0 } bytes ? ImageFiles.SniffExtension(bytes) : null;
             if (extension is null)
             {
@@ -836,10 +869,6 @@ public class DatasetIngestionService : IDatasetIngestionService
                 ? (item.Width, item.Height)
                 : ImageFiles.ReadDimensions(row.ImageBytes!);
             string url = BuildServeFileUrl(datasetId, relativePath);
-            if (!string.IsNullOrWhiteSpace(row.ImageName))
-            {
-                item.Metadata["image_file_name"] = row.ImageName;
-            }
             yield return item with { ImageUrl = url, ThumbnailUrl = url, Width = width, Height = height };
         }
     }
