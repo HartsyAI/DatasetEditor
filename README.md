@@ -199,7 +199,7 @@ linked to it. Parquet flat columns become fields; an `image: {bytes, path}` stru
 **How.** `DatasetEndpoints.UploadDatasetFile` → staged file under `Storage:UploadPath` → a row in
 `ingestion_jobs` (`IIngestionJobQueue`) → `IngestionBackgroundService` →
 `DatasetIngestionService.IngestAsync`. Each parser is an `IAsyncEnumerable<DatasetItemDto>`;
-`WriteInChunksAsync` drains it in 2,000-row chunks into `ParquetItemRepository.AddRangeAsync`,
+`WriteInChunksAsync` drains it in 10,000-row chunks into `ParquetItemRepository.AddRangeAsync`,
 which appends a row group to the current shard (`dataset_{id}_shard_{n}.parquet`, 10M rows per
 shard), and updates the dataset's item count after each chunk so the viewer shows progress. On
 failure the dataset is marked Failed with a message and already-written rows are kept.
