@@ -309,14 +309,45 @@ public sealed class DatasetCacheService : IDisposable
             return null;
         }
 
+        DatasetDetailDto? previous = CurrentDatasetDetail;
         DatasetDetailDto? detail = await _apiClient.GetDatasetAsync(CurrentDatasetId.Value, cancellationToken).ConfigureAwait(false);
-        if (detail != null)
+        if (detail == null)
         {
-            CurrentDatasetDetail = detail;
-            OnDatasetDetailChanged?.Invoke();
+            return null;
         }
 
+        if (FinishedIngesting(previous, detail))
+        {
+            // The viewer opened while the import was still running, so its first page was empty or
+            // partial and had no next cursor; status polling alone never showed the imported items.
+            // Reload the first page now that ingestion is done (LoadFirstPageAsync publishes the new
+            // detail). A failure is already reported through DatasetState by LoadFirstPageAsync.
+            try
+            {
+                await LoadFirstPageAsync(CurrentDatasetId.Value, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Reloading dataset {DatasetId} after ingestion finished failed", CurrentDatasetId);
+            }
+            return CurrentDatasetDetail;
+        }
+
+        CurrentDatasetDetail = detail;
+        OnDatasetDetailChanged?.Invoke();
         return detail;
+    }
+
+    /// <summary>
+    /// Whether a status refresh shows ingestion finishing: the previous status was Pending or
+    /// Processing and the new one is Completed. The viewer then reloads its first page.
+    /// </summary>
+    /// <param name="previous">The detail the viewer had.</param>
+    /// <param name="current">The detail just read.</param>
+    public static bool FinishedIngesting(DatasetDetailDto? previous, DatasetDetailDto current)
+    {
+        return previous is { Status: IngestionStatusDto.Pending or IngestionStatusDto.Processing }
+            && current.Status == IngestionStatusDto.Completed;
     }
 
     public Task SetIndexedDbEnabledAsync(bool enabled, CancellationToken cancellationToken = default)
