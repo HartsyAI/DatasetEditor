@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using DatasetStudio.APIBackend.Services.Storage;
@@ -152,6 +154,75 @@ namespace DatasetStudio.Tests.APIBackend
 
             result.Outcome.Should().Be(ThumbnailOutcome.Generated);
             DecodeDimensions(result.Bytes!).Width.Should().BeLessThanOrEqualTo(1024);
+        }
+        private ThumbnailService CreateService(ThumbnailOptions options) => new(_cacheRoot, NullLogger<ThumbnailService>.Instance, options);
+
+        /// <summary>Audit T-1: the cache is cut back to its size cap, oldest thumbnails first.</summary>
+        [Fact]
+        public async Task SweepAsync_TrimsTheCacheToItsCap_OldestFirst()
+        {
+            ThumbnailService service = CreateService(new ThumbnailOptions { MaxCacheBytes = 4_000, SweepEveryWrites = int.MaxValue });
+            byte[] original = MakeTestImage(300, 300, SKColors.SeaGreen);
+            for (int i = 0; i < 12; i++)
+            {
+                await service.GetOrCreateJpegAsync($"sweep-{i}", 200, _ => Task.FromResult<byte[]?>(original), CancellationToken.None);
+            }
+            List<FileInfo> before = new DirectoryInfo(_cacheRoot).EnumerateFiles("*.jpg", SearchOption.AllDirectories).ToList();
+            before.Sum(f => f.Length).Should().BeGreaterThan(4_000, "the test needs a cache over its cap");
+            FileInfo newest = before.OrderBy(f => f.LastWriteTimeUtc).Last();
+
+            await service.SweepAsync();
+
+            List<FileInfo> after = new DirectoryInfo(_cacheRoot).EnumerateFiles("*.jpg", SearchOption.AllDirectories).ToList();
+            after.Sum(f => f.Length).Should().BeLessThanOrEqualTo(4_000);
+            after.Select(f => f.FullName).Should().Contain(newest.FullName, "the most recent thumbnails are kept");
+        }
+
+        /// <summary>Audit S-2, T-3: an original over the byte limit isn't thumbnailed, and the loader's bounded read stops early.</summary>
+        [Fact]
+        public async Task GetOrCreateJpegAsync_SourceOverByteLimit_IsTooLarge()
+        {
+            ThumbnailService service = CreateService(new ThumbnailOptions { MaxSourceBytes = 500 });
+            byte[] original = MakeTestImage(300, 300, SKColors.Navy);
+            original.Length.Should().BeGreaterThan(500);
+
+            ThumbnailResult direct = await service.GetOrCreateJpegAsync("big-a", 100, _ => Task.FromResult<byte[]?>(original), CancellationToken.None);
+            ThumbnailResult streamed = await service.GetOrCreateJpegAsync("big-b", 100,
+                ct => ThumbnailSource.ReadLimitedAsync(new MemoryStream(original), service.MaxSourceBytes, ct)!, CancellationToken.None);
+
+            direct.Outcome.Should().Be(ThumbnailOutcome.TooLarge);
+            streamed.Outcome.Should().Be(ThumbnailOutcome.TooLarge);
+        }
+
+        /// <summary>Audit T-3: an image whose header claims too many pixels is refused before decoding.</summary>
+        [Fact]
+        public async Task GetOrCreateJpegAsync_TooManyPixels_IsRefusedBeforeDecoding()
+        {
+            ThumbnailService service = CreateService(new ThumbnailOptions { MaxSourcePixels = 1_000 });
+            byte[] original = MakeTestImage(50, 50, SKColors.Orange);
+
+            ThumbnailResult result = await service.GetOrCreateJpegAsync("bomb", 32, _ => Task.FromResult<byte[]?>(original), CancellationToken.None);
+
+            result.Outcome.Should().Be(ThumbnailOutcome.TooLarge);
+            result.Bytes.Should().BeNull();
+        }
+
+        /// <summary>A large JPEG is decoded at reduced scale and still comes out at exactly the requested size.</summary>
+        [Fact]
+        public async Task GetOrCreateJpegAsync_LargeJpeg_ScaledDecodeKeepsExactSize()
+        {
+            ThumbnailService service = CreateService();
+            using SKSurface surface = SKSurface.Create(new SKImageInfo(4000, 3000));
+            surface.Canvas.Clear(SKColors.Teal);
+            using SKImage image = surface.Snapshot();
+            using SKData jpeg = image.Encode(SKEncodedImageFormat.Jpeg, 90);
+            byte[] original = jpeg.ToArray();
+
+            ThumbnailResult result = await service.GetOrCreateJpegAsync("scaled", 256, _ => Task.FromResult<byte[]?>(original), CancellationToken.None);
+
+            result.Outcome.Should().Be(ThumbnailOutcome.Generated);
+            result.Width.Should().Be(256);
+            DecodeDimensions(result.Bytes!).Should().Be((256, 192));
         }
     }
 }

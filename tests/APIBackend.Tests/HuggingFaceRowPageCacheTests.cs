@@ -102,5 +102,44 @@ namespace DatasetStudio.Tests.APIBackend
             second!.RowIndex.Should().Be(5);
             callCount.Should().Be(2, "the retry must actually hit the upstream client again, not reuse the cached failure");
         }
+        /// <summary>Audit H-7: the cache holds at most its page limit, evicting the least recently used.</summary>
+        [Fact]
+        public async Task GetRowAsync_ManyPages_KeepsAtMostTheLimit()
+        {
+            Mock<IHuggingFaceDatasetServerClient> client = new();
+            client.Setup(c => c.GetRowsAsync("fake/dataset", null, "train", It.IsAny<int>(), 100, null, It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string _, string? _, string _, int offset, int _, string? _, CancellationToken _) => MakePage(offset, 100));
+            HuggingFaceRowPageCache cache = new(maxPages: 3);
+
+            for (int page = 0; page < 10; page++)
+            {
+                await cache.GetRowAsync(client.Object, "fake/dataset", null, "train", page * 100, null, CancellationToken.None);
+            }
+
+            cache.Count.Should().Be(3);
+        }
+
+        /// <summary>
+        /// Audit H-7: one caller cancelling doesn't fail another caller waiting on the same page.
+        /// The first caller's token used to be the shared fetch's token.
+        /// </summary>
+        [Fact]
+        public async Task GetRowAsync_FirstCallerCancels_SecondCallerStillGetsTheRow()
+        {
+            TaskCompletionSource<HuggingFaceRowsPage?> upstream = new();
+            Mock<IHuggingFaceDatasetServerClient> client = new();
+            client.Setup(c => c.GetRowsAsync("fake/dataset", null, "train", 0, 100, null, It.IsAny<CancellationToken>()))
+                .Returns((string _, string? _, string _, int _, int _, string? _, CancellationToken token) => upstream.Task.WaitAsync(token));
+            HuggingFaceRowPageCache cache = new();
+            using CancellationTokenSource firstCaller = new();
+
+            Task<HuggingFaceRow?> first = cache.GetRowAsync(client.Object, "fake/dataset", null, "train", 1, null, firstCaller.Token);
+            Task<HuggingFaceRow?> second = cache.GetRowAsync(client.Object, "fake/dataset", null, "train", 2, null, CancellationToken.None);
+            firstCaller.Cancel();
+            upstream.SetResult(MakePage(0, 100));
+
+            await FluentActions.Awaiting(() => first).Should().ThrowAsync<OperationCanceledException>();
+            (await second)!.RowIndex.Should().Be(2);
+        }
     }
 }

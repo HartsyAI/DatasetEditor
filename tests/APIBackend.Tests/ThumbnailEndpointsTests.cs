@@ -150,6 +150,33 @@ namespace DatasetStudio.Tests.APIBackend
             secondBytes.Should().Equal(firstBytes);
         }
 
+        /// <summary>
+        /// Audit T-2: replacing a file gets a fresh thumbnail. The cache key was the path alone, so
+        /// the old image's thumbnail was served forever. The served width is reported in a header.
+        /// </summary>
+        [Fact]
+        public async Task ServeDatasetFile_FileReplaced_ServesANewThumbnail()
+        {
+            HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
+                "/api/datasets", new CreateDatasetRequest("thumb-local-replaced", null));
+            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            PlantImageFile(created.Id, "thumb-local-replaced", "photo.png", MakeTestPng(200, 100, SKColors.Red));
+            HttpResponseMessage first = await _client.GetAsync($"/api/datasets/{created.Id}/files/photo.png?w=80");
+            (await DecodeDimensionsAsync(first)).Should().Be((80, 40));
+
+            PlantImageFile(created.Id, "thumb-local-replaced", "photo.png", MakeTestPng(100, 200, SKColors.Blue));
+            HttpResponseMessage second = await _client.GetAsync($"/api/datasets/{created.Id}/files/photo.png?w=80");
+
+            (await DecodeDimensionsAsync(second)).Should().Be((80, 160), "the replaced file is portrait, so its thumbnail is too");
+            second.Headers.GetValues("X-Thumbnail-Width").Should().Equal("80");
+        }
+
+        private static async Task<(int Width, int Height)> DecodeDimensionsAsync(HttpResponseMessage response)
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            return DecodeDimensions(await response.Content.ReadAsByteArrayAsync());
+        }
+
         private async Task<(DatasetDetailDto Dataset, Guid UserId)> CreateStreamingDatasetAsync(bool isPublic = true)
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
@@ -208,6 +235,31 @@ namespace DatasetStudio.Tests.APIBackend
             DecodeDimensions(bytes).Width.Should().Be(120);
         }
 
+        /// <summary>
+        /// Codex review on #25: an upstream that sends headers and then stalls mid-body is cut off
+        /// by the fetch timeout (404), instead of hanging the request with no deadline.
+        /// </summary>
+        [Fact]
+        public async Task GetHuggingFaceThumbnail_UpstreamStallsMidBody_TimesOutAsNotFound()
+        {
+            (DatasetDetailDto dataset, _) = await CreateStreamingDatasetAsync();
+            SetupHfRow(0, "https://fake-hf-asset.example.test/stalls.png");
+            TimeSpan previous = DatasetStudio.APIBackend.Endpoints.DatasetEndpoints.HuggingFaceThumbnailFetchTimeout;
+            DatasetStudio.APIBackend.Endpoints.DatasetEndpoints.HuggingFaceThumbnailFetchTimeout = TimeSpan.FromSeconds(1);
+            try
+            {
+                System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+                HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{dataset.Id}/hf-thumbnail?offset=0&w=120");
+
+                response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+                watch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10), "the body read must be inside the timeout");
+            }
+            finally
+            {
+                DatasetStudio.APIBackend.Endpoints.DatasetEndpoints.HuggingFaceThumbnailFetchTimeout = previous;
+            }
+        }
+
         [Fact]
         public async Task GetHuggingFaceThumbnail_NonStreamingDataset_ReturnsNotFound()
         {
@@ -263,10 +315,37 @@ namespace DatasetStudio.Tests.APIBackend
         }
 
         /// <summary>Always returns a real, decodable PNG regardless of the requested URL.</summary>
+        /// <summary>A body that never produces a byte until it is cancelled.</summary>
+        private sealed class StallingStream : System.IO.Stream
+        {
+            public override bool CanRead => true;
+            public override bool CanSeek => false;
+            public override bool CanWrite => false;
+            public override long Length => throw new NotSupportedException();
+            public override long Position { get => 0; set => throw new NotSupportedException(); }
+            public override void Flush() { }
+            public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+            public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+                return 0;
+            }
+            public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+                ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+            public override long Seek(long offset, System.IO.SeekOrigin origin) => throw new NotSupportedException();
+            public override void SetLength(long value) => throw new NotSupportedException();
+            public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        }
+
         private sealed class FakeImageHttpMessageHandler : HttpMessageHandler
         {
             protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
+                if (request.RequestUri!.AbsolutePath.EndsWith("/stalls.png", StringComparison.Ordinal))
+                {
+                    // Headers arrive at once; the body never does.
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new StallingStream()) });
+                }
                 byte[] bytes = MakeTestPng(500, 250, SKColors.SeaGreen);
                 HttpResponseMessage response = new(HttpStatusCode.OK)
                 {
