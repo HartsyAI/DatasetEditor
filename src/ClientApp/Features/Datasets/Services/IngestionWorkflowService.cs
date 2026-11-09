@@ -19,7 +19,7 @@ public sealed class IngestionWorkflowService
     public const long MaxUploadBytes = 5L * 1024 * 1024 * 1024;
 
     /// <summary>File types the server can parse; anything else fails after the upload.</summary>
-    public const string AcceptedUploadExtensions = ".csv,.tsv,.json,.jsonl,.ndjson,.zip";
+    public const string AcceptedUploadExtensions = ".csv,.tsv,.json,.jsonl,.ndjson,.parquet,.zip";
 
     private readonly DatasetApiClient _api;
 

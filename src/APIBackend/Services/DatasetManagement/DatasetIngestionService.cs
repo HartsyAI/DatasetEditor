@@ -4,6 +4,8 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using CsvHelper;
 using CsvHelper.Configuration;
+using DatasetStudio.APIBackend.Models;
+using DatasetStudio.APIBackend.Services.DatasetManagement.Parsing;
 using DatasetStudio.APIBackend.Services.Integration;
 using DatasetStudio.DTO.Datasets;
 using Microsoft.Extensions.Configuration;
@@ -177,45 +179,51 @@ public class DatasetIngestionService : IDatasetIngestionService
 
             // Determine which file to download
             string? fileToDownload = request.DataFilePath;
+            HuggingFaceDatasetFile? listedFile = string.IsNullOrEmpty(fileToDownload)
+                ? PickDownloadFile(datasetInfo.Files)
+                : datasetInfo.Files.FirstOrDefault(f => string.Equals(f.Path, fileToDownload, StringComparison.Ordinal));
+            // An empty DataFilePath means "pick one" too, as it always did (Codex review on #20).
             if (string.IsNullOrEmpty(fileToDownload))
             {
-                // Try to find a parquet or CSV file automatically
-                fileToDownload = datasetInfo.Files
-                    .FirstOrDefault(f => f.Path.EndsWith(".parquet", StringComparison.OrdinalIgnoreCase) ||
-                                        f.Path.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
-                    ?.Path;
+                fileToDownload = listedFile?.Path;
+            }
+            if (string.IsNullOrEmpty(fileToDownload))
+            {
+                throw new InvalidOperationException($"No suitable data file found in {request.Repository}. Please specify DataFilePath.");
+            }
 
-                if (string.IsNullOrEmpty(fileToDownload))
-                {
-                    throw new InvalidOperationException($"No suitable data file found in {request.Repository}. Please specify DataFilePath.");
-                }
+            // Refuse an oversized file before fetching any of it; the client also enforces the
+            // limit while streaming, for files the tree didn't size (audit H-4).
+            long maxDownloadBytes = MaxDownloadBytes;
+            if (listedFile is { Size: > 0 } && listedFile.Size > maxDownloadBytes)
+            {
+                throw new InvalidOperationException(HuggingFaceClient.DownloadTooLargeMessage(fileToDownload, maxDownloadBytes));
             }
 
             // Download the file
             var downloadPath = Path.Combine(_uploadPath, $"hf_{datasetId}_{Path.GetFileName(fileToDownload)}");
             Directory.CreateDirectory(_uploadPath);
 
-            _logger.LogInformation("[HF Import] Downloading {FileToDownload} to {DownloadPath}", fileToDownload, downloadPath);
-            await _huggingFaceClient.DownloadFileAsync(
-                request.Repository,
-                fileToDownload,
-                downloadPath,
-                request.Revision,
-                request.AccessToken,
-                cancellationToken);
-
-            // Parse the downloaded file
-            using var fileStream = File.OpenRead(downloadPath);
-            await IngestAsync(datasetId, fileStream, Path.GetFileName(fileToDownload), cancellationToken);
-
-            // Cleanup
             try
             {
-                File.Delete(downloadPath);
+                _logger.LogInformation("[HF Import] Downloading {FileToDownload} to {DownloadPath}", fileToDownload, downloadPath);
+                await _huggingFaceClient.DownloadFileAsync(
+                    request.Repository,
+                    fileToDownload,
+                    downloadPath,
+                    request.Revision,
+                    request.AccessToken,
+                    maxDownloadBytes,
+                    cancellationToken);
+
+                // Parse the downloaded file
+                using var fileStream = File.OpenRead(downloadPath);
+                await IngestAsync(datasetId, fileStream, Path.GetFileName(fileToDownload), cancellationToken);
             }
-            catch (Exception ex)
+            finally
             {
-                _logger.LogWarning(ex, "[HF Import] Failed to cleanup download file {DownloadPath}", downloadPath);
+                // Deleted on failure too: a parse error used to leave uploads/hf_* behind (audit I-8).
+                TryDeleteFile(downloadPath);
             }
 
             _logger.LogInformation("[HF Import] Successfully imported dataset from {Repository}", request.Repository);
@@ -244,6 +252,7 @@ public class DatasetIngestionService : IDatasetIngestionService
                 ".json" => ParseJsonAsync(datasetId, fileStream, cancellationToken),
                 ".jsonl" or ".ndjson" => ParseJsonLinesAsync(datasetId, fileStream, cancellationToken),
                 ".zip" => ParseZipAsync(datasetId, fileStream, cancellationToken),
+                ".parquet" => ParseParquetAsync(datasetId, fileStream, cancellationToken),
                 _ => throw new NotSupportedException($"File format '{extension}' is not supported")
             };
 
@@ -343,7 +352,11 @@ public class DatasetIngestionService : IDatasetIngestionService
             {
                 throw new InvalidOperationException($"Folder not found: {normalizedFolderPath}");
             }
-            await _datasetRepository.UpdateAsync(dataset with { StoragePath = normalizedFolderPath }, cancellationToken);
+            // SourceType used to stay LocalUpload, so the library labelled a server folder as an
+            // uploaded file and its source filter couldn't find it (audit F-3).
+            await _datasetRepository.UpdateAsync(
+                dataset with { StoragePath = normalizedFolderPath, SourceType = DatasetSourceType.LocalFolder },
+                cancellationToken);
 
             totalWritten = await WriteInChunksAsync(
                 datasetId, EnumerateFolderImagesAsync(datasetId, normalizedFolderPath, cancellationToken), cancellationToken);
@@ -381,13 +394,11 @@ public class DatasetIngestionService : IDatasetIngestionService
     private async IAsyncEnumerable<DatasetItemDto> EnumerateFolderImagesAsync(
         Guid datasetId, string normalizedFolderPath, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var supportedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif" };
-
         foreach (var imagePath in Directory.EnumerateFiles(normalizedFolderPath, "*.*", SearchOption.AllDirectories))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!supportedExtensions.Contains(Path.GetExtension(imagePath).ToLowerInvariant()))
+            if (!ImageFiles.IsSupported(imagePath))
             {
                 continue;
             }
@@ -398,6 +409,8 @@ public class DatasetIngestionService : IDatasetIngestionService
             // address client-side) — NOT a file:// URI, which points at the server's own
             // filesystem and a browser has no way to fetch.
             var apiUrl = BuildServeFileUrl(datasetId, relativePath);
+            // Header only, no pixel decode. Items used to be stored 0x0 (audit I-10).
+            (int width, int height) = ImageFiles.ReadDimensions(imagePath);
 
             yield return new DatasetItemDto
             {
@@ -407,14 +420,14 @@ public class DatasetIngestionService : IDatasetIngestionService
                 Title = Path.GetFileNameWithoutExtension(fileName),
                 ImageUrl = apiUrl,
                 ThumbnailUrl = apiUrl,
-                // Image dimensions can be populated later or by client
-                Width = 0,
-                Height = 0,
+                Width = width,
+                Height = height,
                 Tags = new List<string>(),
                 IsFavorite = false,
+                // Relative only: the absolute server path (original_path) was shown to every
+                // reader of the dataset (audit I-10). The dataset's StoragePath holds the root.
                 Metadata = new Dictionary<string, string>
                 {
-                    ["original_path"] = imagePath,
                     ["relative_path"] = relativePath
                 },
                 CreatedAt = DateTime.UtcNow,
@@ -550,8 +563,6 @@ public class DatasetIngestionService : IDatasetIngestionService
         string extractContainmentPrefix = normalizedExtractRoot.EndsWith(Path.DirectorySeparatorChar)
             ? normalizedExtractRoot
             : normalizedExtractRoot + Path.DirectorySeparatorChar;
-        var supportedExtensions = new[] { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif" };
-
         bool completedSuccessfully = false;
         try
         {
@@ -562,10 +573,14 @@ public class DatasetIngestionService : IDatasetIngestionService
             // the link target — as a plain file) — but validating containment explicitly here
             // doesn't depend on either of those framework internals holding across versions,
             // and matches the same trailing-separator-safe check used when serving these files
-            // back out (ServeDatasetFile). Only image entries get extracted at all (rather than
-            // extracting everything and filtering afterward) — one pass, no dead files left on
-            // disk for non-image archive members.
+            // back out (ServeDatasetFile). Only image entries are extracted; data files are
+            // read straight from the archive.
             using ZipArchive archive = new(stream, ZipArchiveMode.Read, leaveOpen: true);
+
+            // Pass 1: extract images and note data files. Images are listed after the data rows,
+            // because a row may describe an image (and then the image isn't listed on its own).
+            List<string> extractedImages = new();
+            List<ZipArchiveEntry> dataEntries = new();
             foreach (ZipArchiveEntry entry in archive.Entries)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -574,9 +589,14 @@ public class DatasetIngestionService : IDatasetIngestionService
                 {
                     continue; // directory entry
                 }
-                if (!supportedExtensions.Contains(Path.GetExtension(entry.Name).ToLowerInvariant()))
+                if (IsZipDataFile(entry.Name))
                 {
-                    continue; // not a supported image type
+                    dataEntries.Add(entry);
+                    continue;
+                }
+                if (!ImageFiles.IsSupported(entry.Name))
+                {
+                    continue;
                 }
 
                 string destinationPath = Path.GetFullPath(Path.Combine(normalizedExtractRoot, entry.FullName));
@@ -588,19 +608,58 @@ public class DatasetIngestionService : IDatasetIngestionService
 
                 Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
                 entry.ExtractToFile(destinationPath, overwrite: true);
+                extractedImages.Add(Path.GetRelativePath(normalizedExtractRoot, destinationPath).Replace('\\', '/'));
+            }
 
-                string relativePath = Path.GetRelativePath(normalizedExtractRoot, destinationPath);
-                string fileName = Path.GetFileName(destinationPath);
+            // Pass 2: rows from data files inside the archive. A ZIP of CSVs used to ingest 0
+            // items (audit I-6). A row that names an extracted image (HuggingFace imagefolder's
+            // metadata.csv/metadata.jsonl `file_name`, or a relative path in an image column)
+            // is linked to it.
+            // Exact archive paths: on a case-sensitive filesystem A.png and a.png are two images.
+            ZipImageIndex imageSet = new(extractedImages);
+            HashSet<string> describedImages = new(StringComparer.Ordinal);
+            foreach (ZipArchiveEntry dataEntry in dataEntries)
+            {
+                string entryFolder = (Path.GetDirectoryName(dataEntry.FullName) ?? string.Empty).Replace('\\', '/');
+                await foreach (DatasetItemDto row in ParseZipDataEntryAsync(datasetId, dataEntry, cancellationToken))
+                {
+                    string? linkedImage = FindLinkedImage(row, entryFolder, imageSet);
+                    if (linkedImage is null)
+                    {
+                        yield return row;
+                        continue;
+                    }
+
+                    describedImages.Add(linkedImage);
+                    string url = BuildServeFileUrl(datasetId, linkedImage);
+                    (int width, int height) = row.Width > 0 && row.Height > 0
+                        ? (row.Width, row.Height)
+                        : ImageFiles.ReadDimensions(Path.Combine(normalizedExtractRoot, linkedImage));
+                    yield return row with { ImageUrl = url, ThumbnailUrl = url, Width = width, Height = height };
+                }
+            }
+
+            // Pass 3: every image no row described becomes an item of its own, as before.
+            foreach (string relativePath in extractedImages)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (describedImages.Contains(relativePath))
+                {
+                    continue;
+                }
+
+                string url = BuildServeFileUrl(datasetId, relativePath);
+                (int width, int height) = ImageFiles.ReadDimensions(Path.Combine(normalizedExtractRoot, relativePath));
                 yield return new DatasetItemDto
                 {
                     Id = Guid.NewGuid(),
                     DatasetId = datasetId,
                     ExternalId = relativePath,
-                    Title = Path.GetFileNameWithoutExtension(fileName),
-                    ImageUrl = BuildServeFileUrl(datasetId, relativePath),
-                    ThumbnailUrl = BuildServeFileUrl(datasetId, relativePath),
-                    Width = 0,
-                    Height = 0,
+                    Title = Path.GetFileNameWithoutExtension(relativePath),
+                    ImageUrl = url,
+                    ThumbnailUrl = url,
+                    Width = width,
+                    Height = height,
                     Tags = new List<string>(),
                     IsFavorite = false,
                     Metadata = new Dictionary<string, string>
@@ -630,6 +689,245 @@ public class DatasetIngestionService : IDatasetIngestionService
         }
     }
 
+    /// <summary>Data files read from inside a ZIP, by extension.</summary>
+    private static bool IsZipDataFile(string fileName)
+    {
+        return Path.GetExtension(fileName).ToLowerInvariant() is ".csv" or ".tsv" or ".json" or ".jsonl" or ".ndjson" or ".parquet";
+    }
+
+    /// <summary>Parses one data file inside a ZIP with the parser for its extension.</summary>
+    private async IAsyncEnumerable<DatasetItemDto> ParseZipDataEntryAsync(
+        Guid datasetId, ZipArchiveEntry entry, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        string extension = Path.GetExtension(entry.Name).ToLowerInvariant();
+        if (extension == ".parquet")
+        {
+            // Parquet's footer is at the end of the file, so it needs a seekable stream, which a
+            // ZIP entry isn't. Copy it to the staging folder first.
+            Directory.CreateDirectory(_uploadPath);
+            string tempPath = Path.Combine(_uploadPath, $"zip_{datasetId:N}_{Guid.NewGuid():N}.parquet");
+            try
+            {
+                await using (Stream source = entry.Open())
+                await using (FileStream target = File.Create(tempPath))
+                {
+                    await source.CopyToAsync(target, cancellationToken);
+                }
+
+                await using FileStream parquet = File.OpenRead(tempPath);
+                await foreach (DatasetItemDto item in ParseParquetAsync(datasetId, parquet, cancellationToken))
+                {
+                    yield return item;
+                }
+            }
+            finally
+            {
+                TryDeleteFile(tempPath);
+            }
+            yield break;
+        }
+
+        await using Stream entryStream = entry.Open();
+        IAsyncEnumerable<DatasetItemDto> items = extension switch
+        {
+            ".csv" => ParseCsvAsync(datasetId, entryStream, cancellationToken),
+            ".tsv" => ParseTsvAsync(datasetId, entryStream, cancellationToken),
+            ".json" => ParseJsonAsync(datasetId, entryStream, cancellationToken),
+            _ => ParseJsonLinesAsync(datasetId, entryStream, cancellationToken)
+        };
+        await foreach (DatasetItemDto item in items.WithCancellation(cancellationToken))
+        {
+            yield return item;
+        }
+    }
+
+    /// <summary>
+    /// The extracted image a row refers to: its <c>file_name</c> (HuggingFace imagefolder) or a
+    /// relative path in its image column, resolved against the data file's folder first.
+    /// </summary>
+    private static string? FindLinkedImage(DatasetItemDto row, string dataFileFolder, ZipImageIndex extractedImages)
+    {
+        List<string> candidates = new();
+        foreach (KeyValuePair<string, string> pair in row.Metadata)
+        {
+            bool isPathColumn = string.Equals(pair.Key, "file_name", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(pair.Key, "image_file_name", StringComparison.Ordinal);
+            if (isPathColumn && !string.IsNullOrWhiteSpace(pair.Value))
+            {
+                candidates.Add(pair.Value);
+            }
+        }
+        if (!string.IsNullOrWhiteSpace(row.ImageUrl) && !row.ImageUrl.Contains("://", StringComparison.Ordinal))
+        {
+            candidates.Add(row.ImageUrl);
+        }
+
+        foreach (string candidate in candidates)
+        {
+            string relative = candidate.Replace('\\', '/');
+            if (dataFileFolder.Length > 0 && NormalizeArchivePath($"{dataFileFolder}/{relative}") is { } besideDataFile
+                && extractedImages.Find(besideDataFile) is { } nearMatch)
+            {
+                return nearMatch;
+            }
+            if (NormalizeArchivePath(relative) is { } fromRoot && extractedImages.Find(fromRoot) is { } match)
+            {
+                return match;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Resolves "." and ".." segments in a path inside the archive, so "metadata/../images/a.png"
+    /// finds "images/a.png" (Codex review on #20). Returns null for a path that climbs above the
+    /// archive root: nothing outside the extraction folder can be linked.
+    /// </summary>
+    internal static string? NormalizeArchivePath(string path)
+    {
+        Stack<string> segments = new();
+        foreach (string segment in path.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (segment == ".")
+            {
+                continue;
+            }
+            if (segment == "..")
+            {
+                if (segments.Count == 0)
+                {
+                    return null;
+                }
+                segments.Pop();
+                continue;
+            }
+            segments.Push(segment);
+        }
+        return segments.Count == 0 ? null : string.Join('/', segments.Reverse());
+    }
+
+    /// <summary>
+    /// Looks up extracted ZIP images by archive path: an exact match first, then a
+    /// case-insensitive one only when exactly one image matches. A plain case-insensitive set
+    /// merged A.png and a.png, so a row naming either got the other's image and one image was
+    /// dropped from the dataset (Codex review on #20).
+    /// </summary>
+    private sealed class ZipImageIndex
+    {
+        private readonly HashSet<string> _exact;
+        private readonly ILookup<string, string> _ignoringCase;
+
+        public ZipImageIndex(IEnumerable<string> paths)
+        {
+            List<string> all = paths.ToList();
+            _exact = new HashSet<string>(all, StringComparer.Ordinal);
+            _ignoringCase = all.Distinct(StringComparer.Ordinal).ToLookup(p => p, StringComparer.OrdinalIgnoreCase);
+        }
+
+        public string? Find(string path)
+        {
+            if (_exact.Contains(path))
+            {
+                return path;
+            }
+            List<string> matches = _ignoringCase[path].ToList();
+            return matches.Count == 1 ? matches[0] : null;
+        }
+    }
+
+    /// <summary>
+    /// Parses a Parquet file (audit I-6). Images embedded in the file (HuggingFace's
+    /// <c>image: {bytes, path}</c>) are written to the dataset's storage folder and served from
+    /// there, like images extracted from a ZIP.
+    /// </summary>
+    internal async IAsyncEnumerable<DatasetItemDto> ParseParquetAsync(
+        Guid datasetId, Stream stream, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        string? imageRoot = null;
+        await foreach (ParquetRow row in ParquetRowReader.ReadAsync(stream, cancellationToken))
+        {
+            DatasetItemDto item = DatasetRowMapper.Map(datasetId, row.Values);
+            // Kept whether or not there are bytes: an image struct with only a path refers to a
+            // file shipped beside the Parquet (in a ZIP), which linking resolves from this
+            // (Codex review on #20).
+            if (!string.IsNullOrWhiteSpace(row.ImageName))
+            {
+                item.Metadata["image_file_name"] = row.ImageName;
+            }
+
+            string? extension = row.ImageBytes is { Length: > 0 } bytes ? ImageFiles.SniffExtension(bytes) : null;
+            if (extension is null)
+            {
+                yield return item;
+                continue;
+            }
+
+            imageRoot ??= await GetDatasetFolderAsync(datasetId, cancellationToken);
+            // A fresh name per image, so importing a second file into the dataset never
+            // overwrites images the first one wrote.
+            string relativePath = $"images/{Guid.NewGuid():N}{extension}";
+            string fullPath = Path.Combine(imageRoot, "images", Path.GetFileName(relativePath));
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+            await File.WriteAllBytesAsync(fullPath, row.ImageBytes!, cancellationToken);
+
+            (int width, int height) = item.Width > 0 && item.Height > 0
+                ? (item.Width, item.Height)
+                : ImageFiles.ReadDimensions(row.ImageBytes!);
+            string url = BuildServeFileUrl(datasetId, relativePath);
+            yield return item with { ImageUrl = url, ThumbnailUrl = url, Width = width, Height = height };
+        }
+    }
+
+    /// <summary>The dataset's managed storage folder (ServeDatasetFile's {root}/{slug}-{shortId}).</summary>
+    private async Task<string> GetDatasetFolderAsync(Guid datasetId, CancellationToken cancellationToken)
+    {
+        DatasetDto? dataset = await _datasetRepository.GetByIdAsync(datasetId, cancellationToken)
+            ?? throw new InvalidOperationException($"Dataset {datasetId} not found");
+        string folder = Path.GetFullPath(Services.Storage.DatasetStorageConventions.GetDatasetFolderPath(_datasetRootPath, datasetId, dataset.Name));
+        Directory.CreateDirectory(folder);
+        return folder;
+    }
+
+    /// <summary>
+    /// Largest file HuggingFace download mode fetches (<c>Ingestion:MaxDownloadBytes</c>), by
+    /// default the same 5 GB an upload may be (audit H-4).
+    /// </summary>
+    private long MaxDownloadBytes =>
+        _configuration.GetValue<long?>("Ingestion:MaxDownloadBytes") ?? Configuration.UploadRequestBodyLimit.MaxUploadBodyBytes;
+
+    /// <summary>
+    /// The repository file download mode imports when the request doesn't name one: a format
+    /// this service parses, Parquet first (HuggingFace's own conversion format), preferring a
+    /// train split.
+    /// </summary>
+    internal static HuggingFaceDatasetFile? PickDownloadFile(IEnumerable<HuggingFaceDatasetFile> files)
+    {
+        string[] preference = { ".parquet", ".jsonl", ".ndjson", ".csv", ".tsv", ".json" };
+        return files
+            .Select(f => (File: f, Rank: Array.IndexOf(preference, Path.GetExtension(f.Path).ToLowerInvariant())))
+            .Where(c => c.Rank >= 0)
+            .OrderBy(c => c.Rank)
+            .ThenBy(c => c.File.Path.Contains("train", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(c => c.File.Path, StringComparer.Ordinal)
+            .Select(c => c.File)
+            .FirstOrDefault();
+    }
+
+    private void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Ingestion] Could not delete temporary file {Path}", path);
+        }
+    }
+
     /// <summary>Builds the server-relative API URL ServeDatasetFile will resolve a stored file from.</summary>
     private static string BuildServeFileUrl(Guid datasetId, string relativePath)
     {
@@ -643,7 +941,7 @@ public class DatasetIngestionService : IDatasetIngestionService
     /// <summary>
     /// Parse CSV/TSV row to DatasetItemDto
     /// </summary>
-    private DatasetItemDto ParseRowToItem(Guid datasetId, CsvReader csv, string[] headers)
+    private static DatasetItemDto ParseRowToItem(Guid datasetId, CsvReader csv, string[] headers)
     {
         var row = new Dictionary<string, string>();
         foreach (var header in headers)
@@ -651,53 +949,7 @@ public class DatasetIngestionService : IDatasetIngestionService
             row[header.ToLowerInvariant()] = csv.GetField(header) ?? string.Empty;
         }
 
-        // Try to find common column names
-        var imageUrl = row.GetValueOrDefault("image_url")
-            ?? row.GetValueOrDefault("imageurl")
-            ?? row.GetValueOrDefault("url")
-            ?? row.GetValueOrDefault("image")
-            ?? string.Empty;
-
-        var title = row.GetValueOrDefault("title")
-            ?? row.GetValueOrDefault("name")
-            ?? row.GetValueOrDefault("caption")
-            ?? row.GetValueOrDefault("text")
-            ?? $"Item {Guid.NewGuid()}";
-
-        var description = row.GetValueOrDefault("description")
-            ?? row.GetValueOrDefault("desc")
-            ?? row.GetValueOrDefault("caption");
-
-        var externalId = row.GetValueOrDefault("id")
-            ?? row.GetValueOrDefault("image_id")
-            ?? row.GetValueOrDefault("item_id")
-            ?? Guid.NewGuid().ToString();
-
-        int.TryParse(row.GetValueOrDefault("width") ?? "0", out var width);
-        int.TryParse(row.GetValueOrDefault("height") ?? "0", out var height);
-
-        var tags = new List<string>();
-        if (row.TryGetValue("tags", out var tagsStr) && !string.IsNullOrEmpty(tagsStr))
-        {
-            tags = tagsStr.Split(',', ';').Select(t => t.Trim()).Where(t => !string.IsNullOrEmpty(t)).ToList();
-        }
-
-        return new DatasetItemDto
-        {
-            Id = Guid.NewGuid(),
-            DatasetId = datasetId,
-            ExternalId = externalId,
-            Title = title,
-            Description = description,
-            ImageUrl = imageUrl,
-            Width = width,
-            Height = height,
-            Tags = tags,
-            IsFavorite = false,
-            Metadata = row,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
+        return DatasetRowMapper.Map(datasetId, row);
     }
 
     /// <summary>
