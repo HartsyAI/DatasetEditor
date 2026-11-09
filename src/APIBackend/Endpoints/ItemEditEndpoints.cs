@@ -36,9 +36,10 @@ public static class ItemEditEndpoints
         Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
-        ILogger<Program> logger)
+        ILogger<Program> logger,
+        CancellationToken cancellationToken)
     {
-        DatasetItemDto? item = await itemRepository.GetItemAsync(itemId);
+        DatasetItemDto? item = await itemRepository.GetItemAsync(itemId, cancellationToken);
 
         if (item == null)
         {
@@ -47,7 +48,7 @@ public static class ItemEditEndpoints
 
         // Item edits are a write on the owning dataset -- resolve it and apply the same
         // owner/admin/granted-write rule as DatasetEndpoints' mutation routes.
-        DatasetDto? owningDataset = await datasetRepository.GetByIdAsync(item.DatasetId);
+        DatasetDto? owningDataset = await datasetRepository.GetByIdAsync(item.DatasetId, cancellationToken);
         if (owningDataset is null)
         {
             return Results.Forbid();
@@ -55,11 +56,11 @@ public static class ItemEditEndpoints
         // Same existence-leak guard as DatasetEndpoints' mutation routes: if the caller can't
         // even read the owning dataset (private, not theirs, no grant), the item itself must
         // read as not-found, not "exists but forbidden".
-        if (!await permissionService.CanReadAsync(owningDataset, httpContext.User))
+        if (!await permissionService.CanReadAsync(owningDataset, httpContext.User, cancellationToken))
         {
             return Results.NotFound(new { message = $"Item {itemId} not found" });
         }
-        if (!await permissionService.CanWriteAsync(owningDataset, httpContext.User))
+        if (!await permissionService.CanWriteAsync(owningDataset, httpContext.User, cancellationToken))
         {
             return Results.Forbid();
         }
@@ -102,7 +103,7 @@ public static class ItemEditEndpoints
         item = item with { UpdatedAt = DateTime.UtcNow };
 
         // Save to database
-        await itemRepository.UpdateItemAsync(item);
+        await itemRepository.UpdateItemAsync(item, cancellationToken);
 
         logger.LogInformation("Updated item {ItemId}: Title={Title}, Tags={TagCount}", itemId, request.Title, request.Tags?.Count ?? 0);
 
@@ -115,7 +116,8 @@ public static class ItemEditEndpoints
         Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
-        ILogger<Program> logger)
+        ILogger<Program> logger,
+        CancellationToken cancellationToken)
     {
         if (!request.ItemIds.Any())
         {
@@ -130,14 +132,14 @@ public static class ItemEditEndpoints
 
         foreach (Guid itemId in request.ItemIds)
         {
-            DatasetItemDto? item = await itemRepository.GetItemAsync(itemId);
+            DatasetItemDto? item = await itemRepository.GetItemAsync(itemId, cancellationToken);
             if (item == null)
                 continue;
 
             if (!writePermissionByDataset.TryGetValue(item.DatasetId, out bool canWrite))
             {
-                DatasetDto? owningDataset = await datasetRepository.GetByIdAsync(item.DatasetId);
-                canWrite = owningDataset is not null && await permissionService.CanWriteAsync(owningDataset, httpContext.User);
+                DatasetDto? owningDataset = await datasetRepository.GetByIdAsync(item.DatasetId, cancellationToken);
+                canWrite = owningDataset is not null && await permissionService.CanWriteAsync(owningDataset, httpContext.User, cancellationToken);
                 writePermissionByDataset[item.DatasetId] = canWrite;
             }
             if (!canWrite)
@@ -199,7 +201,7 @@ public static class ItemEditEndpoints
         }
 
         // Bulk update in database
-        await itemRepository.UpdateItemsAsync(itemsToUpdate);
+        await itemRepository.UpdateItemsAsync(itemsToUpdate, cancellationToken);
 
         logger.LogInformation("Bulk updated {ItemCount} items", itemsToUpdate.Count);
 

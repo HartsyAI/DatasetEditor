@@ -58,7 +58,9 @@ public class DatasetIngestionService : IDatasetIngestionService
     {
         if (string.IsNullOrEmpty(uploadLocation) || !File.Exists(uploadLocation))
         {
-            await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Failed, "Upload file not found", cancellationToken);
+            // Failure writes use a non-cancellable token: a cancelled request/shutdown would
+            // otherwise make the status write itself throw, leaving the dataset stuck in Processing (audit I-2).
+            await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Failed, "Upload file not found", CancellationToken.None);
             throw new FileNotFoundException($"Upload file not found: {uploadLocation}");
         }
 
@@ -220,7 +222,7 @@ public class DatasetIngestionService : IDatasetIngestionService
         catch (Exception ex)
         {
             _logger.LogError(ex, "[HF Import] Failed to import from HuggingFace");
-            await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Failed, ex.Message, cancellationToken);
+            await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Failed, ex.Message, CancellationToken.None);
             throw;
         }
     }
@@ -274,7 +276,9 @@ public class DatasetIngestionService : IDatasetIngestionService
                 ? $"Failed after writing {totalWritten} item(s): {ex.Message}"
                 : ex.Message;
             _logger.LogError(ex, "[Ingestion] Failed to ingest dataset {DatasetId}: {Message}", datasetId, message);
-            await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Failed, message, cancellationToken);
+            // Non-cancellable: this is the write that records the failure, so it must land even when
+            // the cancellation being handled is the reason for the failure (audit I-2).
+            await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Failed, message, CancellationToken.None);
             throw;
         }
     }
@@ -358,7 +362,8 @@ public class DatasetIngestionService : IDatasetIngestionService
                 ? $"Failed after writing {totalWritten} item(s): {ex.Message}"
                 : ex.Message;
             _logger.LogError(ex, "[Ingestion] Failed to ingest folder for dataset {DatasetId}: {Message}", datasetId, message);
-            await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Failed, message, cancellationToken);
+            // Non-cancellable for the same reason as IngestAsync's failure write (audit I-2).
+            await _datasetRepository.UpdateStatusAsync(datasetId, IngestionStatusDto.Failed, message, CancellationToken.None);
             throw;
         }
     }

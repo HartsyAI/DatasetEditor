@@ -68,7 +68,9 @@ timestamps). Rich image attributes (photographer, average color, engagement coun
 ## 4. Server: paging, editing, ingestion
 
 ### Paging
-`GET /api/datasets/{id}/items?cursor=…&pageSize=…` returns `PageResponse<DatasetItemDto>`:
+`GET /api/datasets/{id}/items?cursor=…&pageSize=…` returns `PageResponse<DatasetItemDto>`.
+`pageSize` is clamped to 1–100 on the list and item endpoints; a malformed cursor returns `400`
+rather than restarting the read from the beginning.
 
 - **Local datasets:** cursor is the opaque Parquet `"shard:row"` token. `ReadPageAsync` reads row
   groups sequentially starting from the cursor's position until the page fills — cost is bounded
@@ -88,7 +90,7 @@ the whole dataset. Writes are serialized **per dataset** (a keyed semaphore), so
 dataset never blocks another.
 
 ### Ingestion
-Uploads are saved to a temp file and **queued** (`IngestionQueue`); the endpoint returns `202`
+Uploads are saved to a staging file under `Storage:UploadPath` (not the OS temp dir) and **queued** (`IngestionQueue`); the endpoint returns `202`
 immediately. A hosted `IngestionBackgroundService` drains the queue off the request thread, parses
 the file (CSV/TSV/JSON/JSONL/ZIP/image folders — Parquet upload is **not** supported, see
 `docs/refactor-audit.md` I-6) and writes items in batches. On failure it

@@ -24,12 +24,16 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
         private const string ConnectionStringEnvVar = "ConnectionStrings__DatasetStudio";
         private const string DatasetRootPathEnvVar = "Storage__DatasetRootPath";
         private const string ThumbnailPathEnvVar = "Storage__ThumbnailPath";
+        private const string ParquetPathEnvVar = "Storage__ParquetPath";
+        private const string UploadPathEnvVar = "Storage__UploadPath";
 
         private readonly string _baseConnectionString;
         private readonly string _databaseName = $"dataset_studio_test_{Guid.NewGuid():N}";
         private readonly string? _previousConnectionStringEnvVar;
         private readonly string? _previousDatasetRootPathEnvVar;
         private readonly string? _previousThumbnailPathEnvVar;
+        private readonly string? _previousParquetPathEnvVar;
+        private readonly string? _previousUploadPathEnvVar;
         private string DatabaseConnectionString =>
             new NpgsqlConnectionStringBuilder(_baseConnectionString) { Database = _databaseName }.ConnectionString;
 
@@ -45,6 +49,14 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
         /// </summary>
         public string ThumbnailPath { get; } =
             Path.Combine(Path.GetTempPath(), "DatasetStudioTests", "thumbnails", Guid.NewGuid().ToString("N"));
+
+        /// <summary>This factory's isolated Parquet item store (Storage:ParquetPath).</summary>
+        public string ParquetPath { get; } =
+            Path.Combine(Path.GetTempPath(), "DatasetStudioTests", "parquet", Guid.NewGuid().ToString("N"));
+
+        /// <summary>This factory's isolated upload staging root (Storage:UploadPath).</summary>
+        public string UploadPath { get; } =
+            Path.Combine(Path.GetTempPath(), "DatasetStudioTests", "uploads", Guid.NewGuid().ToString("N"));
 
         /// <summary>
         /// Optional test-supplied DI overrides (e.g. swapping IHuggingFaceDatasetServerClient
@@ -91,6 +103,15 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
 
             _previousThumbnailPathEnvVar = Environment.GetEnvironmentVariable(ThumbnailPathEnvVar);
             Environment.SetEnvironmentVariable(ThumbnailPathEnvVar, ThumbnailPath);
+
+            // Parquet and upload roots are read once at startup (AddDatasetServices), so they must be
+            // set here, before the host is built, like the connection string. Without these overrides
+            // local-dataset tests write into the shared ./data and ./uploads of the test output folder.
+            _previousParquetPathEnvVar = Environment.GetEnvironmentVariable(ParquetPathEnvVar);
+            Environment.SetEnvironmentVariable(ParquetPathEnvVar, ParquetPath);
+
+            _previousUploadPathEnvVar = Environment.GetEnvironmentVariable(UploadPathEnvVar);
+            Environment.SetEnvironmentVariable(UploadPathEnvVar, UploadPath);
         }
 
         /// <summary>Creates this factory's throwaway database. Call once before the first request.</summary>
@@ -128,6 +149,8 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
             Environment.SetEnvironmentVariable(ConnectionStringEnvVar, _previousConnectionStringEnvVar);
             Environment.SetEnvironmentVariable(DatasetRootPathEnvVar, _previousDatasetRootPathEnvVar);
             Environment.SetEnvironmentVariable(ThumbnailPathEnvVar, _previousThumbnailPathEnvVar);
+            Environment.SetEnvironmentVariable(ParquetPathEnvVar, _previousParquetPathEnvVar);
+            Environment.SetEnvironmentVariable(UploadPathEnvVar, _previousUploadPathEnvVar);
             try
             {
                 if (Directory.Exists(DatasetRootPath))
@@ -137,6 +160,14 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
                 if (Directory.Exists(ThumbnailPath))
                 {
                     Directory.Delete(ThumbnailPath, recursive: true);
+                }
+                if (Directory.Exists(ParquetPath))
+                {
+                    Directory.Delete(ParquetPath, recursive: true);
+                }
+                if (Directory.Exists(UploadPath))
+                {
+                    Directory.Delete(UploadPath, recursive: true);
                 }
             }
             catch

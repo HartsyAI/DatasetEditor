@@ -24,6 +24,38 @@ public class ParquetItemReader
     }
 
     /// <summary>
+    /// Parses a page cursor of the form "shardIndex:rowIndex". Both parts must be non-negative
+    /// integers: a negative shard index would index <c>shardFiles[-1]</c>, and a cursor from
+    /// another dataset is not detectable here (cursors are not bound to a dataset).
+    /// </summary>
+    /// <param name="cursor">The cursor to parse.</param>
+    /// <param name="shardIndex">The parsed shard index, or 0 when parsing fails.</param>
+    /// <param name="rowIndex">The parsed row index, or 0 when parsing fails.</param>
+    /// <returns>True when the cursor is well formed.</returns>
+    public static bool TryParseCursor(string? cursor, out int shardIndex, out int rowIndex)
+    {
+        shardIndex = 0;
+        rowIndex = 0;
+
+        if (string.IsNullOrEmpty(cursor))
+        {
+            return false;
+        }
+
+        string[] parts = cursor.Split(':');
+        if (parts.Length != 2 ||
+            !int.TryParse(parts[0], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int shard) ||
+            !int.TryParse(parts[1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int row))
+        {
+            return false;
+        }
+
+        shardIndex = shard;
+        rowIndex = row;
+        return true;
+    }
+
+    /// <summary>
     /// Reads a page of items from Parquet files with cursor-based pagination.
     /// </summary>
     /// <param name="datasetId">The dataset ID.</param>
@@ -47,15 +79,13 @@ public class ParquetItemReader
         int startShardIndex = 0;
         int startRowIndex = 0;
 
+        // A malformed cursor used to fall back silently to 0:0, so a client resuming a
+        // paginated read restarted from the top with no signal (audit G-3). Reject it instead.
         if (!string.IsNullOrEmpty(cursor))
         {
-            var parts = cursor.Split(':');
-            if (parts.Length == 2 &&
-                int.TryParse(parts[0], out var shardIdx) &&
-                int.TryParse(parts[1], out var rowIdx))
+            if (!TryParseCursor(cursor, out startShardIndex, out startRowIndex))
             {
-                startShardIndex = shardIdx;
-                startRowIndex = rowIdx;
+                throw new ArgumentException($"Malformed cursor '{cursor}'; expected 'shardIndex:rowIndex'.", nameof(cursor));
             }
         }
 
