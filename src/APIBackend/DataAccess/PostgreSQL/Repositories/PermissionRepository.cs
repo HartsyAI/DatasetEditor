@@ -3,6 +3,8 @@ using DatasetStudio.Core.Abstractions.Repositories;
 using DatasetStudio.DTO.Auth;
 using DatasetStudio.DTO.Datasets;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using NpgsqlTypes;
 
 namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
@@ -75,54 +77,54 @@ public sealed class PermissionRepository : IPermissionRepository
         }).ToList();
     }
 
-    public async Task UpsertAsync(PermissionDto grant, CancellationToken cancellationToken = default)
+    public async Task<bool> UpsertAsync(PermissionDto grant, Guid? onlyReplacingGrantsBy, CancellationToken cancellationToken = default)
     {
-        // Two attempts: a simultaneous first share with the same user loses the insert race on the
-        // (dataset_id, user_id) unique index, and then updates the row the other request created.
-        for (int attempt = 0; ; attempt++)
+        // One statement, so the "only replace your own grants" rule holds under concurrency. Read
+        // first and written after, a delegated sharer racing the owner to share with the same
+        // account could pass the check, then overwrite the owner's new grant and take it over.
+        // The unique (dataset_id, user_id) index makes a simultaneous first share an update of the
+        // row the other request inserted, subject to the same rule.
+        DateTime now = DateTime.UtcNow;
+        List<NpgsqlParameter> parameters = new()
         {
-            PermissionEntity? entity = await _dbContext.Permissions
-                .AsTracking()
-                .FirstOrDefaultAsync(p => p.DatasetId == grant.DatasetId && p.UserId == grant.UserId, cancellationToken);
-            DateTime now = DateTime.UtcNow;
-            if (entity is null)
-            {
-                entity = new PermissionEntity
-                {
-                    Id = Guid.NewGuid(),
-                    DatasetId = grant.DatasetId,
-                    UserId = grant.UserId,
-                    GrantedAt = now
-                };
-                _dbContext.Permissions.Add(entity);
-            }
-            else
-            {
-                entity.UpdatedAt = now;
-            }
-            entity.AccessLevel = grant.AccessLevel;
-            entity.CanDelete = grant.CanDelete;
-            entity.CanShare = grant.CanShare;
-            entity.ExpiresAt = grant.ExpiresAt;
-            entity.GrantedByUserId = grant.GrantedByUserId;
+            new NpgsqlParameter("id", NpgsqlDbType.Uuid) { Value = Guid.NewGuid() },
+            new NpgsqlParameter("dataset", NpgsqlDbType.Uuid) { Value = grant.DatasetId },
+            new NpgsqlParameter("user", NpgsqlDbType.Uuid) { Value = grant.UserId },
+            new NpgsqlParameter("level", NpgsqlDbType.Varchar) { Value = grant.AccessLevel },
+            new NpgsqlParameter("share", NpgsqlDbType.Boolean) { Value = grant.CanShare },
+            new NpgsqlParameter("delete", NpgsqlDbType.Boolean) { Value = grant.CanDelete },
+            new NpgsqlParameter("expires", NpgsqlDbType.TimestampTz) { Value = (object?)grant.ExpiresAt ?? DBNull.Value },
+            new NpgsqlParameter("now", NpgsqlDbType.TimestampTz) { Value = now },
+            new NpgsqlParameter("grantor", NpgsqlDbType.Uuid) { Value = (object?)grant.GrantedByUserId ?? DBNull.Value }
+        };
+        // The restriction is a parameter, not SQL text: with @only null, any existing grant is
+        // replaced; otherwise only one granted by @only.
+        parameters.Add(new NpgsqlParameter("only", NpgsqlDbType.Uuid) { Value = (object?)onlyReplacingGrantsBy ?? DBNull.Value });
 
-            try
-            {
-                await _dbContext.SaveChangesAsync(cancellationToken);
-                return;
-            }
-            catch (DbUpdateException ex) when (attempt == 0 && ex.InnerException is Npgsql.PostgresException { SqlState: "23505" })
-            {
-                _dbContext.Entry(entity).State = EntityState.Detached;
-            }
-        }
+        const string upsert = """
+            INSERT INTO permissions (id, dataset_id, user_id, access_level, can_share, can_delete, expires_at, granted_at, granted_by_user_id)
+            VALUES (@id, @dataset, @user, @level, @share, @delete, @expires, @now, @grantor)
+            ON CONFLICT (dataset_id, user_id) DO UPDATE SET
+                access_level = EXCLUDED.access_level,
+                can_share = EXCLUDED.can_share,
+                can_delete = EXCLUDED.can_delete,
+                expires_at = EXCLUDED.expires_at,
+                granted_by_user_id = EXCLUDED.granted_by_user_id,
+                updated_at = @now
+            WHERE @only IS NULL OR permissions.granted_by_user_id = @only
+            """;
+        int affected = await _dbContext.Database.ExecuteSqlRawAsync(upsert, parameters, cancellationToken);
+        return affected > 0;
     }
 
-    public async Task<bool> DeleteAsync(Guid datasetId, Guid userId, CancellationToken cancellationToken = default)
+    public async Task<bool> DeleteAsync(Guid datasetId, Guid userId, Guid? onlyIfGrantedBy, CancellationToken cancellationToken = default)
     {
-        int deleted = await _dbContext.Permissions
-            .Where(p => p.DatasetId == datasetId && p.UserId == userId)
-            .ExecuteDeleteAsync(cancellationToken);
+        IQueryable<PermissionEntity> grants = _dbContext.Permissions.Where(p => p.DatasetId == datasetId && p.UserId == userId);
+        if (onlyIfGrantedBy is Guid grantor)
+        {
+            grants = grants.Where(p => p.GrantedByUserId == grantor);
+        }
+        int deleted = await grants.ExecuteDeleteAsync(cancellationToken);
         return deleted > 0;
     }
 

@@ -202,6 +202,71 @@ namespace DatasetStudio.Tests.APIBackend
             (await sharer.DeleteAsync($"/api/datasets/{dataset.Id}/shares/{thirdUser.Id}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
         }
 
+        /// <summary>
+        /// PR 5.2 review: a user sharing through an expiring share could give a share with no end
+        /// (or a later one), keeping access through another account after their own ran out.
+        /// </summary>
+        [Fact]
+        public async Task ResharingThroughAnExpiringShare_CantOutlastIt()
+        {
+            (HttpClient owner, _) = await SignUpAsync("sh-owner8");
+            (HttpClient sharer, _) = await SignUpAsync("sh-sharer8");
+            await SignUpAsync("sh-third8");
+            DatasetDetailDto dataset = await CreatePrivateDatasetAsync(owner, "expiring-reshare");
+            DateTime ownEnd = DateTime.UtcNow.AddDays(1);
+            await ShareAsync(owner, dataset.Id, new ShareDatasetRequest("sh-sharer8", CanShare: true, ExpiresAt: ownEnd));
+
+            HttpResponseMessage forever = await ShareAsync(sharer, dataset.Id, new ShareDatasetRequest("sh-third8"));
+            forever.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            (await ErrorOfAsync(forever)).Should().Contain("Your own access ends on");
+
+            (await ShareAsync(sharer, dataset.Id, new ShareDatasetRequest("sh-third8", ExpiresAt: ownEnd.AddDays(1)))).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+            (await ShareAsync(sharer, dataset.Id, new ShareDatasetRequest("sh-third8", ExpiresAt: ownEnd.AddHours(-6)))).StatusCode.Should().Be(HttpStatusCode.OK);
+
+            // The owner isn't bound by anyone's end date.
+            (await ShareAsync(owner, dataset.Id, new ShareDatasetRequest("sh-third8"))).StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        /// <summary>
+        /// PR 5.2 review: the "change only shares you granted" rule was checked before the write, so
+        /// a delegated sharer racing the owner could overwrite the owner's new share and take it over.
+        /// The rule is now part of the write (and of the delete); this calls the repository directly,
+        /// as the endpoint does once its earlier checks have passed.
+        /// </summary>
+        [Fact]
+        public async Task DelegatedUpsertAndDelete_LeaveAShareSomeoneElseGranted()
+        {
+            (HttpClient owner, AuthUserDto ownerUser) = await SignUpAsync("sh-owner9");
+            (_, AuthUserDto sharerUser) = await SignUpAsync("sh-sharer9");
+            (_, AuthUserDto targetUser) = await SignUpAsync("sh-target9");
+            DatasetDetailDto dataset = await CreatePrivateDatasetAsync(owner, "atomic");
+            await ShareAsync(owner, dataset.Id, new ShareDatasetRequest("sh-target9", DatasetAccessLevel.Write));
+
+            using IServiceScope scope = _factory.Services.CreateScope();
+            Core.Abstractions.Repositories.IPermissionRepository grants =
+                scope.ServiceProvider.GetRequiredService<Core.Abstractions.Repositories.IPermissionRepository>();
+
+            bool replaced = await grants.UpsertAsync(new PermissionDto
+            {
+                DatasetId = dataset.Id,
+                UserId = targetUser.Id,
+                AccessLevel = "Read",
+                GrantedByUserId = sharerUser.Id
+            }, onlyReplacingGrantsBy: sharerUser.Id);
+            replaced.Should().BeFalse();
+
+            bool deleted = await grants.DeleteAsync(dataset.Id, targetUser.Id, onlyIfGrantedBy: sharerUser.Id);
+            deleted.Should().BeFalse();
+
+            PermissionDto? kept = await grants.GetAsync(dataset.Id, targetUser.Id);
+            kept!.GrantedByUserId.Should().Be(ownerUser.Id);
+            kept.AccessLevel.Should().Be("Write");
+
+            // Without the restriction (the owner's own call) the same upsert replaces it.
+            (await grants.UpsertAsync(kept with { AccessLevel = "Read" }, onlyReplacingGrantsBy: null)).Should().BeTrue();
+            (await grants.GetAsync(dataset.Id, targetUser.Id))!.AccessLevel.Should().Be("Read");
+        }
+
         [Fact]
         public async Task Share_RejectsUnknownAccountsOwnerSelfAndPastDates()
         {

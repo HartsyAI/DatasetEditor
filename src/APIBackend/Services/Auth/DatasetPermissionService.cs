@@ -55,6 +55,7 @@ public sealed class DatasetPermissionService : IDatasetPermissionService
             CanWrite: grant.AccessLevel is "Write" or "Admin" or "Owner",
             CanDelete: grant.CanDelete,
             CanShare: grant.CanShare,
-            IsOwnerOrAdmin: false);
+            IsOwnerOrAdmin: false,
+            ExpiresAt: grant.ExpiresAt);
     }
 }

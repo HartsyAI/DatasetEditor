@@ -127,14 +127,18 @@ internal static class DatasetShareEndpoints
             {
                 return Forbidden("You can't let others delete this dataset, because you can't delete it yourself.");
             }
-            PermissionDto? existing = await grants.GetAsync(datasetId, target.Id, cancellationToken);
-            if (existing is not null && existing.GrantedByUserId != callerId)
+            // A share given through an expiring share would otherwise outlive it, turning
+            // temporary access into permanent access for any account the sharer controls.
+            if (access.ExpiresAt is DateTime ownEnd
+                && (request.ExpiresAt is null || request.ExpiresAt.Value.ToUniversalTime() > ownEnd))
             {
-                return Forbidden("Someone else shared this dataset with that account; only they or the owner can change it.");
+                return Forbidden($"Your own access ends on {ownEnd:yyyy-MM-dd HH:mm} UTC, so shares you give have to end by then.");
             }
         }
 
-        await grants.UpsertAsync(new PermissionDto
+        // For a delegated sharer the repository replaces an existing share only if they granted it,
+        // in the same statement that writes it.
+        bool saved = await grants.UpsertAsync(new PermissionDto
         {
             DatasetId = datasetId,
             UserId = target.Id,
@@ -143,7 +147,11 @@ internal static class DatasetShareEndpoints
             CanShare = request.CanShare,
             ExpiresAt = request.ExpiresAt?.ToUniversalTime(),
             GrantedByUserId = callerId
-        }, cancellationToken);
+        }, access.IsOwnerOrAdmin ? null : callerId, cancellationToken);
+        if (!saved)
+        {
+            return Forbidden("Someone else shared this dataset with that account; only they or the owner can change it.");
+        }
 
         List<DatasetShareDto> shares = await grants.ListSharesAsync(datasetId, cancellationToken);
         return Results.Ok(shares.Single(s => s.UserId == target.Id));
@@ -175,15 +183,18 @@ internal static class DatasetShareEndpoints
             return Results.NotFound();
         }
 
-        bool allowed = access.IsOwnerOrAdmin
-            || userId == callerId
-            || (access.CanShare && grant.GrantedByUserId == callerId);
-        if (!allowed)
+        bool unconditional = access.IsOwnerOrAdmin || userId == callerId;
+        if (!unconditional && !(access.CanShare && grant.GrantedByUserId == callerId))
         {
             return Results.Forbid();
         }
 
-        await grants.DeleteAsync(datasetId, userId, cancellationToken);
+        // A delegated sharer's delete also checks, in the statement, that they still granted it:
+        // the owner may have replaced the share since it was read above.
+        if (!await grants.DeleteAsync(datasetId, userId, unconditional ? null : callerId, cancellationToken))
+        {
+            return unconditional ? Results.NotFound() : Results.Forbid();
+        }
         return Results.NoContent();
     }
 

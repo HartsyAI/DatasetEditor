@@ -190,8 +190,10 @@ Shares are rows in `permissions`, managed by `DatasetShareEndpoints`
 (`GET`/`PUT /api/datasets/{id}/shares`, `DELETE …/shares/{userId}`).
 `IDatasetPermissionService.GetAccessAsync` answers everything a caller may do in one lookup;
 `GET /api/datasets/{id}` returns `CanShare` from it so the viewer knows whether to offer Share.
-Someone sharing through their own share can't grant more than they hold (write, delete) and
-manages only the shares they granted; the owner and admins manage all. Anyone may end their own
+Someone sharing through their own share can't grant more than they hold (write, delete), can't
+give a share that outlasts their own, and manages only the shares they granted (enforced in the
+same SQL statement as the write, so a concurrent owner change can't be taken over); the owner and
+admins manage all. Anyone may end their own
 share. Expired shares neither open nor list the dataset.
 
 **Why.** 404-not-403 for private datasets mirrors GitHub's handling of private repos. The

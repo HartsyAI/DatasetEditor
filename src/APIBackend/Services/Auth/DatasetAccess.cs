@@ -9,7 +9,11 @@ namespace DatasetStudio.APIBackend.Services.Auth;
 /// The owner or a site admin. Only they may change or revoke shares someone else granted; a
 /// user sharing through their own share manages only the shares they granted.
 /// </param>
-public sealed record DatasetAccess(bool CanRead, bool CanWrite, bool CanDelete, bool CanShare, bool IsOwnerOrAdmin)
+/// <param name="ExpiresAt">
+/// When the caller's own share ends (UTC), for a caller whose access comes from a share. Shares
+/// they give can't outlast it.
+/// </param>
+public sealed record DatasetAccess(bool CanRead, bool CanWrite, bool CanDelete, bool CanShare, bool IsOwnerOrAdmin, DateTime? ExpiresAt = null)
 {
     /// <summary>No access.</summary>
     public static DatasetAccess None { get; } = new(false, false, false, false, false);
