@@ -312,6 +312,10 @@ place and served from there.
 **How.** `POST /{id}/import-folder` (`RequireRole("Admin")`) → `IngestFromFolderAsync`:
 `Directory.EnumerateFiles` lazily, items get `/api/datasets/{id}/files/{relative}` URLs,
 `StoragePath` is set so `ServeDatasetFile` serves from the folder with containment checks.
+`ServeDatasetFile` (and `GetS3File`) serve only image files (`.jpg`, `.jpeg`, `.png`, `.webp`,
+`.gif`, `.bmp`, see `ServableImageTypes`); any other file is answered 404. Refusals (wrong type,
+path or symlink outside the folder, S3 key outside the prefix) are logged as warnings with the
+dataset id and requested path.
 
 **Why.** Admin-only because it reads arbitrary server paths; copying was rejected because
 "point at a folder" is the whole point for huge local collections.
@@ -320,8 +324,8 @@ The dataset's `SourceType` becomes `LocalFolder`; each item's width and height a
 the image header; item metadata holds only the path relative to the folder. TIFF files are
 skipped: nothing else in the app serves or thumbnails them as images.
 
-**Gaps.** No path allow-list and `ServeDatasetFile` has no extension allow-list, so an admin
-can expose non-image files (F-1); directory symlinks escape containment (F-2).
+**Gaps.** No path allow-list, so an admin can point a dataset at any directory (F-1);
+directory symlinks escape containment (F-2).
 
 ### 4.8 Thumbnails — Working
 

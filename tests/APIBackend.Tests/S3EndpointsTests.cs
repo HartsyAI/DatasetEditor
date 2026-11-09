@@ -286,6 +286,25 @@ namespace DatasetStudio.Tests.APIBackend
             _logs.WarningsContaining(dataset.Id.ToString(), "outside-prefix/secret.png").Should().NotBeEmpty();
         }
 
+        /// <summary>
+        /// Audit F-1, applied to S3 as well: a non-image object inside the dataset's own prefix (a
+        /// manifest, a credentials file) is not served, even though the key check passes.
+        /// </summary>
+        [Fact]
+        public async Task GetS3File_NonImageKeyInsidePrefix_ReturnsNotFound()
+        {
+            string prefix = $"nonimage-{Guid.NewGuid():N}/";
+            await PutObjectAsync($"{prefix}.env", System.Text.Encoding.UTF8.GetBytes("SECRET=1"));
+
+            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+
+            HttpResponseMessage response = await _client.GetAsync(
+                $"/api/datasets/{dataset.Id}/s3-file?key={Uri.EscapeDataString($"{prefix}.env")}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            _logs.WarningsContaining(dataset.Id.ToString(), $"{prefix}.env").Should().NotBeEmpty();
+        }
+
         [Fact]
         public async Task GetS3File_PrivateDatasetNonOwner_ReturnsNotFoundNotForbidden()
         {

@@ -85,6 +85,34 @@ namespace DatasetStudio.Tests.APIBackend
             _logs.WarningsContaining(created.Id.ToString(), "sneaky.jpg").Should().NotBeEmpty();
         }
 
+        /// <summary>
+        /// Audit F-1: only image files are served. A folder-import dataset can point at any
+        /// directory, and anything else in it (a DataProtection key ring, a config file) used to be
+        /// served as application/octet-stream, world-readable when the dataset is public. The
+        /// <c>?w=</c> variant matters too: an undecodable source falls through to the original.
+        /// </summary>
+        [Theory]
+        [InlineData("key-ring.xml", "")]
+        [InlineData("notes.txt", "")]
+        [InlineData("no-extension", "")]
+        [InlineData("key-ring.xml", "?w=100")]
+        public async Task ServeDatasetFile_NonImageExtension_ReturnsNotFoundAndLogs(string fileName, string query)
+        {
+            HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
+                "/api/datasets", new CreateDatasetRequest("extension-test", null));
+            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+
+            string shortId = created.Id.ToString("N")[..8];
+            string datasetFolder = Path.Combine(_factory.DatasetRootPath, $"extension-test-{shortId}");
+            Directory.CreateDirectory(datasetFolder);
+            await File.WriteAllTextAsync(Path.Combine(datasetFolder, fileName), "TOP-SECRET-CONTENT");
+
+            HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{created.Id}/files/{fileName}{query}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            _logs.WarningsContaining(created.Id.ToString(), fileName).Should().NotBeEmpty();
+        }
+
         // Phase 4 folded the thumbnail resize branch into this same handler specifically so it
         // would inherit the containment/symlink checks above as-is, not a second copy of them.
         // This proves that actually holds: the resize branch runs strictly after those checks,

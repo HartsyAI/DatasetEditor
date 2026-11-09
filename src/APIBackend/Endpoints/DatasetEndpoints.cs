@@ -609,7 +609,7 @@ internal static class DatasetEndpoints
         DateTime now = DateTime.UtcNow;
         foreach (string key in page.Keys)
         {
-            if (!HasImageExtension(key))
+            if (!Services.Storage.ServableImageTypes.TryGetContentType(key, out _))
             {
                 continue;
             }
@@ -635,18 +635,6 @@ internal static class DatasetEndpoints
             NextCursor = page.NextContinuationToken,
             TotalCount = null
         });
-    }
-
-    /// <summary>File-extension check for a raw S3 key (IsLikelyImageUrl expects a URL-shaped string with "http" in it, which a bare key never has).</summary>
-    private static bool HasImageExtension(string key)
-    {
-        string lower = key.ToLowerInvariant();
-        return lower.EndsWith(".jpg", StringComparison.Ordinal) ||
-               lower.EndsWith(".jpeg", StringComparison.Ordinal) ||
-               lower.EndsWith(".png", StringComparison.Ordinal) ||
-               lower.EndsWith(".webp", StringComparison.Ordinal) ||
-               lower.EndsWith(".gif", StringComparison.Ordinal) ||
-               lower.EndsWith(".bmp", StringComparison.Ordinal);
     }
 
     /// <summary>Maps a streaming HuggingFace row to DatasetItemDto</summary>
@@ -1173,6 +1161,13 @@ internal static class DatasetEndpoints
             return RefuseFileRequest(logger, datasetId, filePath, "path escapes the dataset folder");
         }
 
+        // Images only (audit F-1). Checked before File.Exists so a refused name is answered the
+        // same way whether or not the file is there.
+        if (!Services.Storage.ServableImageTypes.TryGetContentType(normalizedFullPath, out string? contentType))
+        {
+            return RefuseFileRequest(logger, datasetId, filePath, "not an image file type");
+        }
+
         if (!File.Exists(normalizedFullPath))
         {
             return Results.NotFound();
@@ -1191,18 +1186,6 @@ internal static class DatasetEndpoints
                 return RefuseFileRequest(logger, datasetId, filePath, "symlink resolves outside the dataset folder");
             }
         }
-
-        // Determine content type based on file extension
-        string extension = Path.GetExtension(normalizedFullPath).ToLowerInvariant();
-        string contentType = extension switch
-        {
-            ".jpg" or ".jpeg" => "image/jpeg",
-            ".png" => "image/png",
-            ".webp" => "image/webp",
-            ".gif" => "image/gif",
-            ".bmp" => "image/bmp",
-            _ => "application/octet-stream"
-        };
 
         if (w.HasValue && w.Value > 0)
         {
@@ -1283,16 +1266,12 @@ internal static class DatasetEndpoints
             return RefuseFileRequest(logger, datasetId, key, "S3 key is outside the dataset prefix");
         }
 
-        string extension = Path.GetExtension(key).ToLowerInvariant();
-        string contentType = extension switch
+        // Same image allow-list as ServeDatasetFile (audit F-1): the item listing only ever links
+        // image keys, so anything else in the prefix is not the dataset's to serve.
+        if (!Services.Storage.ServableImageTypes.TryGetContentType(key, out string? contentType))
         {
-            ".jpg" or ".jpeg" => "image/jpeg",
-            ".png" => "image/png",
-            ".webp" => "image/webp",
-            ".gif" => "image/gif",
-            ".bmp" => "image/bmp",
-            _ => "application/octet-stream"
-        };
+            return RefuseFileRequest(logger, datasetId, key, "not an image file type");
+        }
 
         string profileName = dataset.S3StorageProfileName;
         string bucket = dataset.S3Bucket;
