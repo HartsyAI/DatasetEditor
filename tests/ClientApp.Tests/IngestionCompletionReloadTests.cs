@@ -48,6 +48,28 @@ public sealed class IngestionCompletionReloadTests
         Assert.Equal(IngestionStatusDto.Completed, cache.CurrentDatasetDetail!.Status);
     }
 
+    /// <summary>
+    /// PR 4.4 (audit U-6): a filter change reloads the first page with the filter on the request,
+    /// without switching the viewer to its loading state (which unmounted the filter panel the user
+    /// was typing in).
+    /// </summary>
+    [Fact]
+    public async Task ApplyFilter_ReloadsWithTheFilter_WithoutTheLoadingState()
+    {
+        FakeApi api = new() { Status = IngestionStatusDto.Completed, ItemCount = 2 };
+        DatasetState state = new();
+        DatasetCacheService cache = Create(api, state);
+        await cache.LoadFirstPageAsync(DatasetId);
+        System.Collections.Generic.List<bool> loadingSeen = new();
+        state.OnChange += () => loadingSeen.Add(state.IsLoading);
+
+        await cache.ApplyFilterAsync(new DatasetStudio.DTO.Common.FilterRequest { SearchQuery = "cat", Tags = new[] { "pet" } });
+
+        Assert.Contains(api.Requests, u => u.Contains("/items") && u.Contains("q=cat") && u.Contains("tag=pet"));
+        Assert.DoesNotContain(true, loadingSeen);
+        Assert.Equal("cat", cache.ActiveFilter!.SearchQuery);
+    }
+
     /// <summary>Only the Pending/Processing → Completed transition reloads; other refreshes don't.</summary>
     [Theory]
     [InlineData(IngestionStatusDto.Processing, IngestionStatusDto.Completed, true)]
@@ -76,8 +98,11 @@ public sealed class IngestionCompletionReloadTests
         public IngestionStatusDto Status { get; set; } = IngestionStatusDto.Processing;
         public int ItemCount { get; set; }
 
+        public System.Collections.Generic.List<string> Requests { get; } = new();
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            Requests.Add(request.RequestUri!.PathAndQuery);
             string path = request.RequestUri!.AbsolutePath;
             object body = path.EndsWith("/items", StringComparison.Ordinal)
                 ? new

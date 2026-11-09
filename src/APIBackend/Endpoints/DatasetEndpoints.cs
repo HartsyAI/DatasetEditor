@@ -400,6 +400,14 @@ internal static class DatasetEndpoints
 
         int size = PageLimits.ClampPageSize(pageSize.GetValueOrDefault(100));
 
+        // Filter parameters (audit G-2). Each source applies what it can and refuses the rest with
+        // 400, so a filter is never silently ignored.
+        (FilterRequest? filter, string? filterError) = ItemFilterQuery.Parse(httpContext.Request.Query);
+        if (filterError is not null)
+        {
+            return Results.BadRequest(new { error = filterError });
+        }
+
         // Handle S3-sourced datasets: lists bucket objects live, on every page request, the
         // same "no bulk ingestion" design as the HuggingFace-streaming branch below. Checked
         // by SourceType alone (not the shared IsStreaming flag, which ImportFromS3 also sets
@@ -407,6 +415,10 @@ internal static class DatasetEndpoints
         // have silently misrouted every S3 dataset into it.
         if (dataset.SourceType == DatasetSourceType.ExternalS3Streaming)
         {
+            if (filter is not null)
+            {
+                return Results.BadRequest(new { error = "Filters aren't available for S3 datasets." });
+            }
             return await GetS3DatasetItemsPage(datasetId, dataset, cursor, size, s3StorageService, cancellationToken);
         }
 
@@ -421,6 +433,13 @@ internal static class DatasetEndpoints
 
             string? config = dataset.HuggingFaceConfig;
             string? split = dataset.HuggingFaceSplit;
+
+            // datasets-server can only search text; it can't filter by tags, size or date.
+            if (filter is not null && FilterQueryString.HasNonSearchCriteria(filter))
+            {
+                return Results.BadRequest(new { error = "HuggingFace streaming datasets support text search only." });
+            }
+            string? searchQuery = string.IsNullOrWhiteSpace(filter?.SearchQuery) ? null : filter.SearchQuery;
 
             // Read the token before any upstream call: gated and private datasets answer 401/403 to
             // /size and /rows without it (audit H-1(2)).
@@ -490,14 +509,24 @@ internal static class DatasetEndpoints
             HuggingFaceRowsPage? page;
             try
             {
-                page = await huggingFaceDatasetServerClient.GetRowsAsync(
-                    repository,
-                    config,
-                    split!,
-                    offset,
-                    size,
-                    accessToken,
-                    cancellationToken);
+                page = searchQuery is null
+                    ? await huggingFaceDatasetServerClient.GetRowsAsync(
+                        repository,
+                        config,
+                        split!,
+                        offset,
+                        size,
+                        accessToken,
+                        cancellationToken)
+                    : await huggingFaceDatasetServerClient.SearchRowsAsync(
+                        repository,
+                        config ?? "default",
+                        split!,
+                        searchQuery,
+                        offset,
+                        size,
+                        accessToken,
+                        cancellationToken);
             }
             catch (HuggingFaceUpstreamException ex)
             {
@@ -513,7 +542,8 @@ internal static class DatasetEndpoints
             // The rows response carries the row total for this config/split, which is the only count
             // the library can rely on for streaming datasets. Back-fill it when the stored value differs
             // (audit H-1(3)); the stored value starts at 0 for datasets imported before the count resolved.
-            if (dataset.TotalItems != page.NumRowsTotal)
+            // A search's total is its match count, not the dataset's size.
+            if (searchQuery is null && dataset.TotalItems != page.NumRowsTotal)
             {
                 await datasetRepository.UpdateItemCountAsync(datasetId, page.NumRowsTotal, cancellationToken);
             }
@@ -551,7 +581,7 @@ internal static class DatasetEndpoints
 
         (IReadOnlyList<DatasetItemDto> items, string? repositoryNextCursor) = await itemRepository.GetPageAsync(
             datasetId,
-            null,
+            filter,
             cursor,
             size,
             cancellationToken);
@@ -561,7 +591,9 @@ internal static class DatasetEndpoints
             Items = items,
             NextCursor = repositoryNextCursor,
             // The dataset row carries the cached cumulative count written at ingestion (audit G-1).
-            TotalCount = dataset.TotalItems
+            // A filtered read doesn't know its match count without scanning everything, so it
+            // reports none rather than a wrong one.
+            TotalCount = filter is null ? dataset.TotalItems : null
         });
     }
 

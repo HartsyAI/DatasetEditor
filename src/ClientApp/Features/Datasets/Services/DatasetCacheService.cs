@@ -33,6 +33,12 @@ public sealed class DatasetCacheService : IDisposable
     private int _windowStartIndex = 0;
 
     public Guid? CurrentDatasetId { get; private set; }
+
+    /// <summary>
+    /// The filter every page request carries, or null. The server filters (audit U-6), so the
+    /// loaded items are the matches.
+    /// </summary>
+    public FilterRequest? ActiveFilter { get; private set; }
     public string? NextCursor { get; private set; }
     public DatasetDetailDto? CurrentDatasetDetail { get; private set; }
 
@@ -85,9 +91,23 @@ public sealed class DatasetCacheService : IDisposable
     /// Loads the dataset metadata and first page of items from the API. On failure the state's
     /// error is set (the viewer renders it inline) and the exception is rethrown to the caller.
     /// </summary>
-    public async Task LoadFirstPageAsync(Guid datasetId, CancellationToken cancellationToken = default)
+    public Task LoadFirstPageAsync(Guid datasetId, CancellationToken cancellationToken = default)
     {
-        _datasetState.SetLoading(true);
+        return LoadFirstPageAsync(datasetId, showLoading: true, cancellationToken);
+    }
+
+    /// <param name="datasetId">The dataset to load.</param>
+    /// <param name="showLoading">
+    /// False for a filter change: the viewer keeps showing the grid (and the filter panel the user
+    /// is typing in) while the matches load, instead of swapping to its loading state.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    private async Task LoadFirstPageAsync(Guid datasetId, bool showLoading, CancellationToken cancellationToken)
+    {
+        if (showLoading)
+        {
+            _datasetState.SetLoading(true);
+        }
 
         try
         {
@@ -189,6 +209,40 @@ public sealed class DatasetCacheService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Sets the filter and reloads the open dataset from its first page. A request the server
+    /// refuses (a filter the source can't apply) throws, and the previous filter stays active.
+    /// </summary>
+    public async Task ApplyFilterAsync(FilterRequest? filter, CancellationToken cancellationToken = default)
+    {
+        if (Equals(ActiveFilter, filter) || (ActiveFilter is not null && filter is not null && SameFilter(ActiveFilter, filter)))
+        {
+            return;
+        }
+
+        FilterRequest? previous = ActiveFilter;
+        ActiveFilter = filter;
+        if (CurrentDatasetId is not Guid datasetId)
+        {
+            return;
+        }
+
+        try
+        {
+            await LoadFirstPageAsync(datasetId, showLoading: false, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            ActiveFilter = previous;
+            throw;
+        }
+    }
+
+    private static bool SameFilter(FilterRequest a, FilterRequest b)
+    {
+        return FilterQueryString.Build(a) == FilterQueryString.Build(b);
+    }
+
     public async Task<DatasetDetailDto?> RefreshDatasetStatusAsync(CancellationToken cancellationToken = default)
     {
         if (CurrentDatasetId is null)
@@ -251,7 +305,9 @@ public sealed class DatasetCacheService : IDisposable
 
     private async Task<PageResponse<DatasetItemDto>?> FetchPageAsync(Guid datasetId, int pageSize, string? cursor, DatasetDetailDto? datasetDetail, CancellationToken cancellationToken)
     {
-        if (_isIndexedDbEnabled)
+        // The page cache is keyed by cursor only, so it holds unfiltered pages; skip it while filtering.
+        bool useIndexedDb = _isIndexedDbEnabled && ActiveFilter is null;
+        if (useIndexedDb)
         {
             IReadOnlyList<DatasetItemDto>? cachedItems = await _indexedDbCache.TryLoadPageAsync(datasetId, cursor, cancellationToken).ConfigureAwait(false);
             if (cachedItems != null)
@@ -282,8 +338,8 @@ public sealed class DatasetCacheService : IDisposable
             huggingFaceToken = _apiKeyState.GetToken(ApiKeyState.ProviderHuggingFace);
         }
 
-        PageResponse<DatasetItemDto>? page = await _apiClient.GetDatasetItemsAsync(datasetId, pageSize, cursor, huggingFaceToken, cancellationToken).ConfigureAwait(false);
-        if (_isIndexedDbEnabled && page?.Items.Count > 0)
+        PageResponse<DatasetItemDto>? page = await _apiClient.GetDatasetItemsAsync(datasetId, pageSize, cursor, huggingFaceToken, cancellationToken, ActiveFilter).ConfigureAwait(false);
+        if (useIndexedDb && page?.Items.Count > 0)
         {
             await _indexedDbCache.SavePageAsync(datasetId, cursor, page.Items, cancellationToken).ConfigureAwait(false);
         }

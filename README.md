@@ -136,7 +136,7 @@ refer to [docs/refactor-audit.md](docs/refactor-audit.md).
 | 4.8 | Thumbnails | Working |
 | 4.9 | Virtualised viewer (grid / list / detail / lightbox) | Working (caveats) |
 | 4.10 | Item editing (single, bulk) | Partial (local datasets; broken in the dev setup) |
-| 4.11 | Filtering and search | Placeholder (UI only) |
+| 4.11 | Filtering and search | Working (local); search only (HF streaming) |
 | 4.12 | Settings, theme, language | Partial (theme, viewer preferences, HuggingFace token; no i18n) |
 | 4.13 | AI tools | Placeholder |
 | 4.14 | Extensions | Partial (one example) |
@@ -355,8 +355,7 @@ Cards and rows are keyboard reachable (Enter or Space opens the item).
 **Why.** Row virtualisation keeps a responsive N-column grid inside a single `<Virtualize>`.
 Placeholder colour + lazy `<img>` give instant layout with zero shift.
 
-**Gaps.** Client-side filters are not applied (U-6, needs server-side filtering, PR 4.4).
-Gallery mode renders like the grid.
+**Gaps.** Gallery mode renders like the grid.
 
 ### 4.10 Item editing — Partial
 
@@ -376,18 +375,31 @@ without a delta store.
 **Gaps.** Only local datasets are editable — streaming items get a fresh `Id` per page so a
 PATCH always 404s (E-3). The dataset lock is held for the rewrite, so reads of that dataset wait.
 
-### 4.11 Filtering and search — Placeholder
+### 4.11 Filtering and search — Working (local datasets)
 
-**What.** The viewer's filter panel offers text search, tags, dimensions and date range; the
-library filters by status/source and search text.
+**What.** The viewer's filter panel offers text search, favourites only, tags, dimensions and a
+date range; the library filters by status/source and search text.
 
-**How.** `FilterState` collects criteria, but `DatasetViewer.ApplyFiltersQuiet` assigns the
-unfiltered window straight through, so the grid never changes — only the count label does
-(U-6). Tag checkboxes use v6 parameter names and never fire. The API's items endpoint accepts
-no filter parameters, although `ParquetItemReader.MatchesFilter` exists unreachably. The
-library's "Only ready datasets" switch doesn't re-filter.
+**How.** The server filters. `GET /api/datasets/{id}/items` takes `q`, repeated `tag`,
+`favorites`, `minWidth`, `maxWidth`, `minHeight`, `maxHeight`, `dateFrom`, `dateTo`
+(`DTO/Common/FilterQueryString` builds them; `Endpoints/ItemFilterQuery` parses them; a malformed
+value is a 400).
+- **Local datasets** apply every filter in the Parquet reader (`MatchesFilter`). The cursor
+  counts rows examined, so a filtered read resumes exactly where it stopped. A request examines
+  at most 200,000 rows, so a sparse filter returns a short page with a cursor instead of
+  scanning the whole dataset. A filtered page reports no `TotalCount`.
+- **HuggingFace streaming datasets** support text search only, through datasets-server
+  `/search`; the panel offers just the search box and says why.
+- **S3 datasets** have no filters; the panel says so, and the API returns 400 if asked.
 
-**Gaps.** Real filtering needs server-side support (G-2) and a client that applies it.
+In the client, a filter change makes `DatasetCacheService.ApplyFilterAsync` reload the first page
+with the filter (the grid stays mounted, so the panel keeps its text and focus). The count label
+reads "N matches" (or "so far" while more pages remain). The IndexedDB page cache is bypassed
+while a filter is active.
+
+**Gaps.** Text search on local datasets is a case-insensitive substring match over title,
+description and tags, not a full-text index. HuggingFace search works only on datasets that
+datasets-server has indexed.
 
 ### 4.12 Settings, theme, language — Partial
 

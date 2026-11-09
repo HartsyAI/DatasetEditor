@@ -146,11 +146,29 @@ public partial class DatasetViewer : IDisposable
         }
     }
 
-    /// <summary>Handles filter state changes and reapplies filters to dataset.</summary>
+    /// <summary>
+    /// Reloads the dataset with the new filter; the server returns only matching items. Filters
+    /// used to be applied nowhere, so changing one did nothing (audit U-6).
+    /// </summary>
     public void HandleFilterStateChanged()
     {
-        Logs.Info("[FILTER STATE CHANGE] User changed filters, reapplying");
-        ApplyFilters(); // This calls StateHasChanged internally
+        _ = InvokeAsync(async () =>
+        {
+            try
+            {
+                await _datasetCache.ApplyFilterAsync(FilterMapping.ToRequest(_filterState.Criteria));
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.BadRequest)
+            {
+                _notificationService.ShowWarning("This dataset can't be filtered that way.");
+            }
+            catch (Exception ex)
+            {
+                Logs.Warning($"Applying filters failed: {ex.Message}");
+                _notificationService.ShowError("Couldn't apply the filters. Try again.");
+            }
+            ApplyFilters();
+        });
     }
 
     /// <summary>Handles view state changes and updates view mode.</summary>
@@ -181,24 +199,9 @@ public partial class DatasetViewer : IDisposable
     {
         Logs.Info($"[APPLY FILTERS QUIET] Called with {_datasetState.Items.Count} items");
         
-        if (!_filterState.HasActiveFilters)
-        {
-            // No filters: _filteredItems references DatasetState.Items directly
-            // When new items are appended to DatasetState.Items, _filteredItems automatically sees them
-            if (_filteredItems != _datasetState.Items)
-            {
-                Logs.Info("[APPLY FILTERS QUIET] Updating _filteredItems reference to DatasetState.Items");
-                _filteredItems = _datasetState.Items;
-            }
-        }
-        else
-        {
-            // Filters active: need to re-filter the new items
-            Logs.Info("[APPLY FILTERS QUIET] Filters active, re-filtering items");
-            // TODO: Implement client-side filtering logic for DatasetItemDto
-            // FilterService.ApplyFilters requires IDatasetItem which DatasetItemDto doesn't implement
-            _filteredItems = _datasetState.Items; // Temporarily bypass filtering
-        }
+        // The server filters, so the loaded items are always what the grid shows. Appended pages
+        // land in DatasetState.Items, which _filteredItems references.
+        _filteredItems = _datasetState.Items;
 
         _filteredCount = _filteredItems.Count;
         _lastFilteredSourceCount = _datasetState.Items.Count;
@@ -301,9 +304,11 @@ public partial class DatasetViewer : IDisposable
     {
         long datasetTotal = _datasetState.CurrentDataset?.TotalItems ?? 0;
 
-        if (_filterState.HasActiveFilters)
+        if (_datasetCache.ActiveFilter is not null)
         {
-            return $"{_filteredCount:N0} filtered";
+            return _datasetCache.HasMorePages
+                ? $"{_filteredCount:N0} matches so far"
+                : $"{_filteredCount:N0} matches";
         }
 
         if (datasetTotal > 0)
