@@ -92,8 +92,8 @@ dataset never blocks another.
 ### Ingestion
 Uploads are saved to a staging file under `Storage:UploadPath` (not the OS temp dir) and **queued** (`IngestionQueue`); the endpoint returns `202`
 immediately. A hosted `IngestionBackgroundService` drains the queue off the request thread, parses
-the file (CSV/TSV/JSON/JSONL/ZIP/image folders — Parquet upload is **not** supported, see
-`docs/refactor-audit.md` I-6) and writes items in batches. On failure it
+the file (CSV/TSV/JSON/JSONL/Parquet, ZIPs of images and of those formats, image folders) and
+writes items in batches. On failure it
 records `Failed` + an error message on the dataset, which the client's status poller surfaces.
 
 ---

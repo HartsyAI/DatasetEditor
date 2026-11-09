@@ -72,7 +72,7 @@ internal sealed class HuggingFaceClient : IHuggingFaceClient
                 Sha = apiResponse.Sha ?? string.Empty,
                 LastModified = apiResponse.LastModified,
                 Private = apiResponse.Private,
-                Gated = apiResponse.Gated.GetValueOrDefault(),
+                Gated = apiResponse.Gated is { ValueKind: JsonValueKind.True or JsonValueKind.String },
                 Tags = apiResponse.Tags ?? new List<string>(),
                 Files = files
             };
@@ -92,40 +92,42 @@ internal sealed class HuggingFaceClient : IHuggingFaceClient
     {
         try
         {
-            // HuggingFace API endpoint for file tree
-            string url = $"{HuggingFaceApiBase}/api/datasets/{repository}/tree/{revision}";
+            // recursive=true: without it the Hub lists only the top level, so the usual layout
+            // (data/train-00000-of-00001.parquet) looked like a repository with no data files
+            // (audit I-7). Large repositories are paged; the next page is in the Link header.
+            string? url = $"{HuggingFaceApiBase}/api/datasets/{repository}/tree/{Uri.EscapeDataString(revision)}?recursive=true";
+            List<HuggingFaceDatasetFile> files = new();
 
-            using HttpRequestMessage request = new(HttpMethod.Get, url);
-            if (!string.IsNullOrWhiteSpace(accessToken))
+            for (int page = 0; url is not null && page < MaxTreePages; page++)
             {
-                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
-            }
-
-            using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("Failed to fetch file tree for {Repository}", repository);
-                return new List<HuggingFaceDatasetFile>();
-            }
-
-            string json = await response.Content.ReadAsStringAsync(cancellationToken);
-            List<HuggingFaceFileTreeItem>? items = JsonSerializer.Deserialize<List<HuggingFaceFileTreeItem>>(json, _jsonOptions);
-
-            if (items == null)
-            {
-                return new List<HuggingFaceDatasetFile>();
-            }
-
-            return items
-                .Where(f => f.Type == "file")
-                .Select(f => new HuggingFaceDatasetFile
+                using HttpRequestMessage request = new(HttpMethod.Get, url);
+                if (!string.IsNullOrWhiteSpace(accessToken))
                 {
-                    Path = f.Path ?? string.Empty,
-                    Size = f.Size,
-                    Type = GetFileType(f.Path)
-                })
-                .ToList();
+                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+                }
+
+                using HttpResponseMessage response = await _httpClient.SendAsync(request, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Failed to fetch file tree for {Repository}: {StatusCode}", repository, response.StatusCode);
+                    break;
+                }
+
+                string json = await response.Content.ReadAsStringAsync(cancellationToken);
+                List<HuggingFaceFileTreeItem>? items = JsonSerializer.Deserialize<List<HuggingFaceFileTreeItem>>(json, _jsonOptions);
+                files.AddRange((items ?? new List<HuggingFaceFileTreeItem>())
+                    .Where(f => f.Type == "file")
+                    .Select(f => new HuggingFaceDatasetFile
+                    {
+                        Path = f.Path ?? string.Empty,
+                        Size = f.Size,
+                        Type = GetFileType(f.Path)
+                    }));
+
+                url = GetNextPageUrl(response);
+            }
+
+            return files;
         }
         catch (Exception ex)
         {
@@ -140,12 +142,15 @@ internal sealed class HuggingFaceClient : IHuggingFaceClient
         string destinationPath,
         string? revision = null,
         string? accessToken = null,
+        long? maxBytes = null,
         CancellationToken cancellationToken = default)
     {
         revision ??= "main";
 
-        // HuggingFace file download URL format
-        string url = $"{HuggingFaceApiBase}/datasets/{repository}/resolve/{revision}/{fileName}";
+        // Escape each path segment but keep the slashes: files usually sit in folders
+        // (data/train-00000.parquet), and a raw name with spaces or '#' broke the URL.
+        string escapedPath = string.Join('/', fileName.Split('/').Select(Uri.EscapeDataString));
+        string url = $"{HuggingFaceApiBase}/datasets/{repository}/resolve/{Uri.EscapeDataString(revision)}/{escapedPath}";
 
         _logger.LogInformation("Downloading {FileName} from {Repository} to {Destination}",
             fileName, repository, destinationPath);
@@ -159,29 +164,109 @@ internal sealed class HuggingFaceClient : IHuggingFaceClient
         using HttpResponseMessage response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
 
+        long? totalBytes = response.Content.Headers.ContentLength;
+        if (maxBytes is long limit && totalBytes > limit)
+        {
+            throw new InvalidOperationException(DownloadTooLargeMessage(fileName, limit));
+        }
+
         string? directory = Path.GetDirectoryName(destinationPath);
         if (!string.IsNullOrEmpty(directory))
         {
             Directory.CreateDirectory(directory);
         }
 
-        long? totalBytes = response.Content.Headers.ContentLength;
+        bool completed = false;
+        try
+        {
+            await CopyWithProgressAsync(response, destinationPath, fileName, totalBytes, maxBytes, cancellationToken);
+            completed = true;
+        }
+        finally
+        {
+            if (!completed)
+            {
+                TryDeletePartialDownload(destinationPath);
+            }
+        }
+    }
 
+    /// <summary>Most tree pages followed for one repository (the Hub returns 1,000 entries per page).</summary>
+    private const int MaxTreePages = 50;
+
+    /// <summary>The message for a file over the download limit.</summary>
+    internal static string DownloadTooLargeMessage(string fileName, long maxBytes)
+    {
+        return $"{fileName} is larger than the {maxBytes / (1024.0 * 1024 * 1024):0.##} GB download limit (Ingestion:MaxDownloadBytes).";
+    }
+
+    /// <summary>The <c>rel="next"</c> URL from a Hub Link header, or null on the last page.</summary>
+    private static string? GetNextPageUrl(HttpResponseMessage response)
+    {
+        if (!response.Headers.TryGetValues("Link", out IEnumerable<string>? values))
+        {
+            return null;
+        }
+
+        foreach (string part in values.SelectMany(v => v.Split(',')))
+        {
+            string trimmed = part.Trim();
+            if (trimmed.Contains("rel=\"next\"", StringComparison.OrdinalIgnoreCase))
+            {
+                int start = trimmed.IndexOf('<');
+                int end = trimmed.IndexOf('>');
+                if (start >= 0 && end > start)
+                {
+                    return trimmed[(start + 1)..end];
+                }
+            }
+        }
+        return null;
+    }
+
+    private void TryDeletePartialDownload(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not delete partial download {Path}", path);
+        }
+    }
+
+    private async Task CopyWithProgressAsync(
+        HttpResponseMessage response,
+        string destinationPath,
+        string fileName,
+        long? totalBytes,
+        long? maxBytes,
+        CancellationToken cancellationToken)
+    {
         using FileStream fileStream = new(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 8192);
         using Stream contentStream = await response.Content.ReadAsStreamAsync(cancellationToken);
 
         // Download with progress reporting
-        byte[] buffer = new byte[8192];
+        byte[] buffer = new byte[81920];
         long totalBytesRead = 0;
         int bytesRead;
         long lastLoggedBytes = 0;
         long logInterval = totalBytes.HasValue ? Math.Max(1024 * 1024 * 100, totalBytes.Value / 20) : 1024 * 1024 * 100; // Log every 100MB or 5%
         DateTime lastLogTime = DateTime.UtcNow;
 
-        while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+        while ((bytesRead = await contentStream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken)) > 0)
         {
-            await fileStream.WriteAsync(buffer, 0, bytesRead, cancellationToken);
             totalBytesRead += bytesRead;
+            // A missing or wrong Content-Length must not let a download run past the limit.
+            if (maxBytes is long limit && totalBytesRead > limit)
+            {
+                throw new InvalidOperationException(DownloadTooLargeMessage(fileName, limit));
+            }
+            await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
 
             // Log progress periodically
             if (totalBytesRead - lastLoggedBytes >= logInterval || (DateTime.UtcNow - lastLogTime).TotalSeconds >= 5)
@@ -241,7 +326,12 @@ internal sealed class HuggingFaceClient : IHuggingFaceClient
         public DateTime LastModified { get; set; }
 
         public bool Private { get; set; }
-        public bool? Gated { get; set; }
+
+        /// <summary>
+        /// <c>false</c>, or <c>"auto"</c>/<c>"manual"</c> for a gated repository. Typed as bool?, the
+        /// string form failed deserialization and every gated dataset looked "not found".
+        /// </summary>
+        public JsonElement? Gated { get; set; }
         public List<string>? Tags { get; set; }
     }
 

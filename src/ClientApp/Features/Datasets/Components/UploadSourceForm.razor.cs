@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Components.Forms;
 namespace DatasetStudio.ClientApp.Features.Datasets.Components;
 
 /// <summary>
-/// Create a dataset from one uploaded file (CSV, TSV, JSON, JSONL, or a ZIP of them). The old
+/// Create a dataset from one uploaded file (CSV, TSV, JSON, JSONL, Parquet, or a ZIP of them). The old
 /// uploader accepted several files and read every non-ZIP file fully into a string in the browser
 /// to label it "primary" or "enrichment" (audit K-8), then uploaded only the primary: enrichment
 /// files were never sent. Drag and drop now works (the file input covers the drop zone; the old
@@ -32,7 +32,7 @@ public partial class UploadSourceForm
         string extension = Path.GetExtension(file.Name).ToLowerInvariant();
         if (!IngestionWorkflowService.AcceptedUploadExtensions.Split(',').Contains(extension))
         {
-            Error = $"{file.Name} isn't a supported type. Use CSV, TSV, JSON, JSONL or ZIP.";
+            Error = $"{file.Name} isn't a supported type. Use CSV, TSV, JSON, JSONL, Parquet or ZIP.";
             ClearFile();
             return;
         }
