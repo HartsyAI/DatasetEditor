@@ -1,0 +1,23 @@
+<div class="ds-page-header mb-4">
+    <div class="ds-page-header-text">
+        @if (!string.IsNullOrWhiteSpace(Eyebrow))
+        {
+            <MudText Typo="Typo.overline" Class="mud-text-secondary">@Eyebrow</MudText>
+        }
+        <MudText Typo="Typo.h4" HtmlTag="h1">@Title</MudText>
+        @if (SubtitleContent is not null)
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">@SubtitleContent</MudText>
+        }
+        else if (!string.IsNullOrWhiteSpace(Subtitle))
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">@Subtitle</MudText>
+        }
+    </div>
+    @if (Actions is not null)
+    {
+        <div class="ds-page-header-actions">
+            @Actions
+        </div>
+    }
+</div>

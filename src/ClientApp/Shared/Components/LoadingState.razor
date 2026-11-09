@@ -1,0 +1,39 @@
+@switch (Variant)
+{
+    case LoadingVariant.CardGrid:
+        <MudGrid Spacing="3" aria-busy="true" aria-label="@Message">
+            @for (int i = 0; i < Count; i++)
+            {
+                <MudItem xs="12" sm="6" md="4" @key="i">
+                    <MudPaper Elevation="1" Class="pa-4">
+                        <MudSkeleton SkeletonType="SkeletonType.Text" Width="60%" Height="28px" />
+                        <MudSkeleton SkeletonType="SkeletonType.Text" Width="40%" />
+                        <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="56px" Class="my-3" />
+                        <MudSkeleton SkeletonType="SkeletonType.Text" Width="30%" />
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+        break;
+
+    case LoadingVariant.Rows:
+        <MudStack Spacing="2" aria-busy="true" aria-label="@Message">
+            @for (int i = 0; i < Count; i++)
+            {
+                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="48px" @key="i" />
+            }
+        </MudStack>
+        break;
+
+    default:
+        <div class="ds-center pa-12" role="status" aria-live="polite">
+            <MudStack AlignItems="AlignItems.Center" Spacing="3">
+                <MudProgressCircular Size="Size.Large" Color="Color.Primary" Indeterminate="true" />
+                @if (!string.IsNullOrWhiteSpace(Message))
+                {
+                    <MudText Typo="Typo.body1" Class="mud-text-secondary">@Message</MudText>
+                }
+            </MudStack>
+        </div>
+        break;
+}

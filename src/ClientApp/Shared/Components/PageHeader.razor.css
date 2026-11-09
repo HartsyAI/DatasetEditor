@@ -1,0 +1,17 @@
+.ds-page-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px 16px;
+}
+
+.ds-page-header-text {
+    min-width: 0;
+}
+
+.ds-page-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}

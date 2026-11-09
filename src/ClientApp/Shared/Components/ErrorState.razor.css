@@ -1,0 +1,13 @@
+/* MudAlert sizes its message area to the content; stretch it so Retry sits on the right. */
+.ds-error-state-root ::deep .mud-alert-message {
+    flex: 1 1 auto;
+}
+
+.ds-error-state {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    width: 100%;
+}

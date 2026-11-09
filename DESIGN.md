@@ -64,7 +64,7 @@
 |---|---|---|
 | Theme | `src/ClientApp/Shared/Theme/AppTheme.cs` | Single `MudTheme` instance: both palettes, typography, layout, shape. Nothing else constructs a `MudTheme`. |
 | Custom properties | `src/ClientApp/wwwroot/css/app.css` | `--ds-*` tokens that MudBlazor doesn't own (radii, scrims, card shadows, z-index, transitions). |
-| Component styles | `*.razor.css` (CSS isolation) | Component-scoped rules that reference tokens. **No `<style>` blocks inside `.razor` files** — a `<style>` in a component is emitted once per instance, so a 300-card grid emits 300 copies. **(gap: 8 components do this)** |
+| Component styles | `*.razor.css` (CSS isolation) | Component-scoped rules that reference tokens. Bundled as `ClientApp.styles.css`, which `index.html` links (it did not until PR 2.2, so no scoped style loaded). **No `<style>` blocks inside `.razor` files** — a `<style>` in a component is emitted once per instance, so a 300-card grid emits 300 copies. **(gap: 8 components do this)** |
 
 The old `wwwroot/css/themes/*.css` files (never loaded, contradicting palette) are deleted. The
 saved `ThemeMode` (Light, Dark, System) is applied by `MainLayout` through `ThemeModeResolver`.
@@ -215,7 +215,7 @@ Rules:
   `ErrorBoundary` component for render crashes. Never both an alert and a snackbar for the
   same failure.
 - Nothing is placed with `Style="height: 80vh"` or similar; use layout classes (`ds-fill`,
-  `ds-center`). **(gap: viewer loading/empty states)**
+  `ds-center`). The viewer's loading, error and empty states now use the shared components.
 
 ### 3.1 The viewer (full bleed)
 
@@ -244,15 +244,15 @@ has logic, and a `.razor.css` when it has styles. Parameters are documented with
 
 | Component | Status | Notes |
 |---|---|---|
-| `PageHeader` | **missing** | Title (`h4`), optional subtitle (`body2` secondary), `Actions` fragment. Replaces hand-rolled `MudText Typo.h4 Class="mb-4"` on every page. |
-| `Toolbar` | **missing** | `MudPaper Elevation=1 Class="pa-3"` with a row stack; left/right fragments. Used by library search bar and viewer toolbar. |
-| `StatusChip` | **missing** | `IngestionStatusDto` → chip with fixed colour + icon (§5.3). Replaces `GetStatusColor` in `DatasetLibrary` and `GetStatusSeverity` in `DatasetViewer`. |
-| `SourceBadge` | **missing** | `DatasetSourceType` → label + icon (§5.4). Replaces `GetSourceLabel`. |
+| `PageHeader` | exists (`Shared/Components/PageHeader`) | Title (`h4` as `h1`), optional subtitle or `SubtitleContent`, optional eyebrow, `Actions` fragment. Used by the datasets page; other pages adopt it in PR 2.3. |
+| `Toolbar` | exists | `MudPaper Elevation=1 Class="pa-3"` with a wrapping row; `Start` and `End` fragments. Used by the datasets page; the viewer toolbar adopts it in PR 2.4. |
+| `StatusChip` | exists | `IngestionStatusDto` → chip with fixed colour + icon (§5.3), from `Shared/Presentation/StatusPresentation`, which also gives the matching alert severity. |
+| `SourceBadge` | exists | `DatasetSourceType` (+ `IsStreaming`) → label + icon (§5.4), from `Shared/Presentation/SourcePresentation`. |
 | `DatasetCard` | **missing (extract)** | The card in `DatasetLibrary.razor:75-133`, with `StatusChip`, `SourceBadge`, Open/Delete actions, "Updated … ago". |
-| `EmptyState` | exists (`Shared/Components/EmptyState.razor`) | Use it. `DatasetLibrary` and `DatasetViewer` hand-roll their own instead. **(gap)** |
-| `LoadingState` | exists as `LoadingIndicator` | Rename to `LoadingState`; add `Variant` = `Spinner | CardGrid | Rows`. |
-| `ErrorState` | **missing** | Inline alert + retry. `ErrorBoundary` stays for render crashes. |
-| `ConfirmDialog` | exists, **unused** | Use for every destructive action (dataset delete currently has no confirmation at all). Confirm button is `Filled Error` for deletes (today `Filled Primary`). |
+| `EmptyState` | exists | Headline (`h6`), description, icon, `ActionContent`. Used by the datasets page (no datasets / no matches) and the viewer (no dataset open). |
+| `LoadingState` | exists | `Variant` = `Spinner | CardGrid | Rows`. Was `LoadingIndicator`. |
+| `ErrorState` | exists | Inline outlined error alert with an optional retry. `ErrorBoundary` stays for render crashes. |
+| `ConfirmDialog` | exists | Open it with `IDialogService.ConfirmAsync(…)`; the answer comes back only as the dialog result. `destructive: true` makes the confirm button `Filled Error`. Dataset delete uses it. |
 | `IngestionProgressPanel` | **missing (extract)** | The upload/import progress block duplicated four times in `DatasetUploader.razor`. |
 | `SourceOptionCard` | **missing (extract)** | The four source cards on `CreateDataset.razor`. |
 | `TagChipList` | **missing (extract)** | Tags are rendered four different ways today (detail panel, lightbox, list row, add-tag dialog). |
@@ -316,8 +316,8 @@ Pass results via `DialogResult`, not callbacks and results both.
 
 ### 4.7 Notifications
 
-`NotificationService` wraps `ISnackbar` and is the **only** way to show a snackbar
-(`DatasetLibrary` and `ImageDetailPanel` inject `ISnackbar` directly today). Severity mirrors
+`NotificationService` wraps `ISnackbar` (privately) and is the **only** way to show a snackbar.
+Severity mirrors
 MudBlazor: success for completed actions the user initiated, error for failed ones, info for
 background progress ("Import started"). Snackbars are not used for validation. A failure is
 reported once: either an inline alert or a snackbar, never both (the viewer does both today).

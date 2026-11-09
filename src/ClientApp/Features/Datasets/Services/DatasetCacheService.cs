@@ -60,8 +60,30 @@ public sealed class DatasetCacheService : IDisposable
     }
 
     /// <summary>
-    /// Loads the dataset metadata and first page of items from the API.
-    /// TODO: Add prefetch + background page streaming for near-infinite scrolling (see checklist Phase C).
+    /// Turns a first-page load failure into the sentence the viewer's error state shows. It used to
+    /// say "Failed to load dataset from API" for everything, including a dataset id that doesn't exist.
+    /// </summary>
+    /// <param name="exception">The failure thrown while loading.</param>
+    public static string DescribeLoadFailure(Exception exception)
+    {
+        // GetFromJsonAsync throws HttpRequestException for a 404/403 response as well as for a
+        // network failure; StatusCode is what tells them apart.
+        return exception switch
+        {
+            InvalidOperationException => "This dataset doesn't exist, or you don't have access to it.",
+            HttpRequestException { StatusCode: System.Net.HttpStatusCode.NotFound or System.Net.HttpStatusCode.Forbidden }
+                => "This dataset doesn't exist, or you don't have access to it.",
+            HttpRequestException { StatusCode: not null } http
+                => $"The server couldn't load this dataset (HTTP {(int)http.StatusCode!.Value}). Retry, or check the API logs.",
+            HttpRequestException => "The server didn't respond. Check that the API is running, then retry.",
+            OperationCanceledException => "Loading was cancelled.",
+            _ => "The dataset couldn't be loaded."
+        };
+    }
+
+    /// <summary>
+    /// Loads the dataset metadata and first page of items from the API. On failure the state's
+    /// error is set (the viewer renders it inline) and the exception is rethrown to the caller.
     /// </summary>
     public async Task LoadFirstPageAsync(Guid datasetId, CancellationToken cancellationToken = default)
     {
@@ -97,7 +119,7 @@ public sealed class DatasetCacheService : IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to load dataset {DatasetId} from API", datasetId);
-            _datasetState.SetError("Failed to load dataset from API");
+            _datasetState.SetError(DescribeLoadFailure(ex));
             throw;
         }
         finally
