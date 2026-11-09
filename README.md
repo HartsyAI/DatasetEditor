@@ -207,8 +207,7 @@ existing dataset is supported and rolling back would destroy earlier data.
 **Gaps.** `.parquet` upload is *not* supported despite earlier docs (I-6). The queue is
 in-memory: a restart loses queued jobs and strands datasets in Pending/Processing (I-1).
 Strictly serial (I-3). On the
-client, the Create page uses `MudStepper`, which doesn't exist in MudBlazor 7.8, so both
-"steps" render stacked (U-3); the uploader buffers ZIPs in a `MemoryStream`, so >2 GB fails
+client, the uploader buffers ZIPs in a `MemoryStream`, so >2 GB fails
 despite the 5 GB limit (U-14); the client waits fixed `Task.Delay`s instead of polling status.
 
 ### 4.4 HuggingFace streaming — Working

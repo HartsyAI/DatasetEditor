@@ -40,7 +40,7 @@
 
 | Don't write | Write | Why |
 |---|---|---|
-| `MudStepper`, `MudStep` | `MudTabs` or a hand-rolled stepper | Don't exist in 7.8; render as raw unknown HTML today (`CreateDataset.razor`). |
+| `MudStepper`, `MudStep` | `MudTabs` or a hand-rolled stepper | Don't exist in 7.8 (they rendered as raw unknown HTML). `CreateDataset` now uses `MudTabs` as a two-step flow. |
 | `MudSegmentedControl` | `MudToggleGroup<T>` + `MudToggleItem` | Doesn't exist. |
 | `MudSwitch`/`MudCheckBox` `Checked`/`CheckedChanged` | `Value`/`ValueChanged` or `@bind-Value` | v7 rename; the old names never fire (IndexedDB toggle, tag filters, settings are dead today). |
 | `MudToggleIconButton` `CheckedIcon`/`UncheckedIcon`/`Checked` | `Icon`/`ToggledIcon`/`Toggled`/`ToggledChanged` | v7 rename (ThemeSelector renders empty). |
@@ -255,7 +255,7 @@ has logic, and a `.razor.css` when it has styles. Parameters are documented with
 | `ErrorState` | exists | Inline outlined error alert with an optional retry. `ErrorBoundary` stays for render crashes. |
 | `ConfirmDialog` | exists | Open it with `IDialogService.ConfirmAsync(…)`; the answer comes back only as the dialog result. `destructive: true` makes the confirm button `Filled Error`. Dataset delete uses it. |
 | `IngestionProgressPanel` | **missing (extract)** | The upload/import progress block duplicated four times in `DatasetUploader.razor`. |
-| `SourceOptionCard` | **missing (extract)** | The four source cards on `CreateDataset.razor`. |
+| `SourceOptionCard` | exists (`Features/Datasets/Components`) | One source choice on the Create page: a native button styled as a card, `aria-pressed` and the selection ring when chosen. The page's single primary action is Continue. |
 | `TagChipList` | **missing (extract)** | Tags are rendered four different ways today (detail panel, lightbox, list row, add-tag dialog). |
 | `InlineEditableText` | **missing (extract)** | Inline title edit is implemented twice (`ImageCard`, `ImageDetailPanel`). |
 | `StatCard` | exists | Caption label over an `h6` value; the dashboard's "Current session" numbers. |
