@@ -292,11 +292,14 @@ public class DatasetIngestionService : IDatasetIngestionService
     /// Drains an item stream in fixed-size batches, writing (and thus committing to Parquet)
     /// each batch as soon as it fills, rather than buffering the whole source first. Shared by
     /// every ingestion source (file parsers, folder scan) so they get identical chunking and
-    /// progress-logging behavior.
+    /// progress-logging behavior. After each chunk the dataset's item count is updated, so the
+    /// client's status poll shows progress during a long import instead of 0 until the end
+    /// (audit I-3).
     /// </summary>
     private async Task<long> WriteInChunksAsync(Guid datasetId, IAsyncEnumerable<DatasetItemDto> items, CancellationToken cancellationToken)
     {
         long totalWritten = 0;
+        long itemsBefore = await _itemRepository.GetCountAsync(datasetId, cancellationToken);
         var chunk = new List<DatasetItemDto>(ChunkSize);
 
         await foreach (DatasetItemDto item in items.WithCancellation(cancellationToken))
@@ -308,6 +311,7 @@ public class DatasetIngestionService : IDatasetIngestionService
                 totalWritten += chunk.Count;
                 _logger.LogInformation("[Ingestion] Wrote chunk of {ChunkCount} items for dataset {DatasetId} (total so far: {TotalWritten})", chunk.Count, datasetId, totalWritten);
                 chunk.Clear();
+                await _datasetRepository.UpdateItemCountAsync(datasetId, itemsBefore + totalWritten, cancellationToken);
             }
         }
 

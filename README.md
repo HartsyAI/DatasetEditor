@@ -51,7 +51,7 @@ Dataset Studio is built around three commitments:
                     ┌──────────────▼───────────────────────────────────┐
   API               │  ASP.NET Core minimal API                        │
                     │  /api/auth  /api/datasets  /api/items            │
-                    │  IngestionQueue → IngestionBackgroundService     │
+                    │  ingestion_jobs → IngestionBackgroundService     │
                     │  ThumbnailService (SkiaSharp, disk cache)        │
                     └───┬──────────────┬───────────────┬───────────────┘
                         │              │               │
@@ -77,9 +77,10 @@ one of three item backends chosen by `SourceType`:
 HuggingFace: an integer offset against `/rows`. S3: the continuation token. The client asks for
 the next page when the virtualised grid nears its buffer edge, and evicts old pages.
 
-**Ingestion is asynchronous.** Uploads return `202` as soon as the file is on disk; a
-background worker parses it as a stream and writes Parquet in batches; the dataset's `Status`
-moves Pending → Processing → Completed/Failed and the client polls it.
+**Ingestion is asynchronous.** Uploads return `202` as soon as the file is on disk and a job row
+is in `ingestion_jobs`; background workers claim jobs, parse each as a stream and write Parquet in
+batches; the dataset's `Status` moves Pending → Processing → Completed/Failed, its item count
+rises as batches land, and the client polls it. Queued jobs survive a restart.
 
 **Authorization is per dataset.** Anonymous visitors see public datasets. Owners and site
 admins can write and delete. Private datasets return 404 (not 403) to anyone else, so their
@@ -195,16 +196,33 @@ imagefolder's `metadata.csv`/`metadata.jsonl`) or image column names an extracte
 linked to it. Parquet flat columns become fields; an `image: {bytes, path}` struct
 (HuggingFace's `Image` feature) is written out as an image file and served.
 
-**How.** `DatasetEndpoints.UploadDatasetFile` → temp file → `IngestionQueue` (an unbounded
-`Channel`) → `IngestionBackgroundService` (single consumer, own DI scope per job) →
+**How.** `DatasetEndpoints.UploadDatasetFile` → staged file under `Storage:UploadPath` → a row in
+`ingestion_jobs` (`IIngestionJobQueue`) → `IngestionBackgroundService` →
 `DatasetIngestionService.IngestAsync`. Each parser is an `IAsyncEnumerable<DatasetItemDto>`;
 `WriteInChunksAsync` drains it in 2,000-row chunks into `ParquetItemRepository.AddRangeAsync`,
 which appends a row group to the current shard (`dataset_{id}_shard_{n}.parquet`, 10M rows per
-shard). Status and the cumulative item count are written at the end; on failure the dataset is
-marked Failed with a message and already-written rows are kept.
+shard), and updates the dataset's item count after each chunk so the viewer shows progress. On
+failure the dataset is marked Failed with a message and already-written rows are kept.
+
+The queue (`IngestionJobStore`) is a Postgres table. `Ingestion:MaxConcurrentJobs` workers (default
+2) claim the oldest queued job with one `UPDATE … FOR UPDATE SKIP LOCKED … RETURNING`; a partial
+unique index allows one running job per dataset, because ingestion appends to its shards. An
+enqueue wakes a worker at once; idle workers also poll every `Ingestion:PollInterval` as a safety net. At startup
+the worker host recovers jobs the previous process left running: a job that wrote nothing is
+requeued (up to `Ingestion:MaxAttempts`), one that wrote items is failed with the count it kept,
+and a dataset left Processing with no job is failed. When `Ingestion:MaxQueuedJobs` jobs are
+staging, queued or running (default 50), imports get `503` with `Retry-After`. Admission takes
+a Postgres advisory lock, so concurrent requests can't all take the last slot, and an upload
+reserves its slot (state Staging, never claimed) before writing a byte, then commits it once the
+file is staged or releases it and deletes the file if staging fails. A HuggingFace access token
+waits in the job encrypted with Data Protection and is removed when the job finishes. The staged
+file is deleted when the job completes or fails for good, when its dataset is deleted while the
+job is still queued, or at startup if the upload was cut off mid-write.
 
 **Why.** Streaming parsers so a multi-GB file never materialises. A queue instead of
-`Task.Run` so background work owns its own DI scope. Per-entry ZIP containment checks instead
+`Task.Run` so background work owns its own DI scope; a table instead of an in-memory channel so a
+restart doesn't lose queued work or strand datasets in Pending/Processing (I-1). Recovery
+assumes one API instance per database, which is how Dataset Studio is deployed. Per-entry ZIP containment checks instead
 of trusting `ExtractToDirectory`. Partial writes are kept because re-ingesting into an
 existing dataset is supported and rolling back would destroy earlier data.
 
@@ -431,6 +449,7 @@ then environment variables (`ConnectionStrings__DatasetStudio`, `Cors__AllowedOr
 - `Storage:DatasetRootPath|BlobPath|ThumbnailPath|UploadPath|DataProtectionKeysPath`.
 - `Storage:S3StorageProfiles[]` — `Name, ServiceUrl, AccessKey, SecretKey, Region, ForcePathStyle, AllowedBuckets[]`.
 - `Ingestion:MaxDownloadBytes` — largest file HuggingFace download mode fetches (default 5 GB).
+- `Ingestion:MaxConcurrentJobs|MaxQueuedJobs|MaxAttempts|PollInterval` — background import limits (defaults 2, 50, 3, `00:01:00`).
 - `Extensions:BuiltInPath|CommunityPath|DisabledExtensions`.
 
 Client: `src/ClientApp/wwwroot/appsettings.json` (`DatasetApi:BaseAddress`, blank = same

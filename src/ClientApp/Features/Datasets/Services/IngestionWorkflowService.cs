@@ -105,6 +105,9 @@ public sealed class IngestionWorkflowService
                 => "The file is larger than the server accepts.",
             HttpRequestException { StatusCode: HttpStatusCode.BadRequest }
                 => "The server rejected the request. Check the values and try again.",
+            // The import queue is at its limit (Ingestion:MaxQueuedJobs). Nothing was staged.
+            HttpRequestException { StatusCode: HttpStatusCode.ServiceUnavailable }
+                => "The server's import queue is full. Wait a minute, then try again.",
             HttpRequestException { StatusCode: not null } http
                 => $"The server returned an error (HTTP {(int)http.StatusCode!.Value}). Retry, or check the API logs.",
             HttpRequestException => "The server didn't respond. Check that the API is running, then retry.",
