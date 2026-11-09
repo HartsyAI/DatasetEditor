@@ -193,6 +193,28 @@ namespace DatasetStudio.Tests.APIBackend
             (await GetAsync(snapshot.Id))!.HuggingFaceSplit.Should().Be("train");
         }
 
+        /// <summary>
+        /// Codex review on #21: switching a dataset to another HuggingFace repository resets the
+        /// config/split with it, even when a concurrent read resolved them for the old repository
+        /// after the caller's snapshot.
+        /// </summary>
+        [Fact]
+        public async Task UpdateAsync_NewHuggingFaceRepository_DoesNotKeepTheOldReposResolvedSplit()
+        {
+            DatasetDto snapshot = await CreateAsync("Re-import");
+            await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { HuggingFaceRepository = "org/old" }));
+            snapshot = (await GetAsync(snapshot.Id))!;
+            // A concurrent items request resolves the old repository's config/split.
+            await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { HuggingFaceConfig = "old-config", HuggingFaceSplit = "old-split" }));
+
+            await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { HuggingFaceRepository = "org/new" }));
+
+            DatasetDto loaded = (await GetAsync(snapshot.Id))!;
+            loaded.HuggingFaceRepository.Should().Be("org/new");
+            loaded.HuggingFaceConfig.Should().BeNull("the old repository's config doesn't belong to the new one");
+            loaded.HuggingFaceSplit.Should().BeNull();
+        }
+
         /// <summary>Many concurrent patches of different fields all land.</summary>
         [Fact]
         public async Task UpdateAsync_ConcurrentPatchesOfDifferentFields_AllLand()
