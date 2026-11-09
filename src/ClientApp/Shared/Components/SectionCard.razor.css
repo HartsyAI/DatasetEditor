@@ -1,0 +1,12 @@
+.ds-section-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.ds-section-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}

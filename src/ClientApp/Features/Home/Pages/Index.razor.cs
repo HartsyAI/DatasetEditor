@@ -1,89 +1,53 @@
-using Microsoft.AspNetCore.Components;
-using DatasetStudio.ClientApp.Shared.Services;
 using DatasetStudio.ClientApp.Services.StateManagement;
-using DatasetStudio.Core.Utilities;
-using DatasetStudio.Core.Utilities.Logging;
+using DatasetStudio.ClientApp.Features.Home;
+using DatasetStudio.ClientApp.Shared.Services;
+using Microsoft.AspNetCore.Components;
 
 namespace DatasetStudio.ClientApp.Features.Home.Pages;
 
-/// <summary>Dashboard page displaying welcome message, quick actions, and statistics.</summary>
+/// <summary>
+/// Dashboard: the page's primary actions, the dataset open in this session, and short,
+/// accurate copy about what the app does. "Getting started" used to tell users to enrich
+/// items with AI tools that don't exist (audit U-25).
+/// </summary>
 public partial class Index : IDisposable
 {
-    [Inject] public NavigationService NavigationService { get; set; } = default!;
-    [Inject] public DatasetState DatasetState { get; set; } = default!;
-    [Inject] public AppState AppState { get; set; } = default!;
+    [Inject] private NavigationService NavigationService { get; set; } = default!;
+    [Inject] private DatasetState DatasetState { get; set; } = default!;
 
-    public string? _currentDatasetName;
-    public int _totalItems = 0;
-    public int _selectedItems = 0;
+    private string? _currentDatasetName;
+    private long _totalItems;
+    private int _selectedItems;
 
-    /// <summary>Initializes component and subscribes to state changes.</summary>
+    /// <summary>Reads the session's dataset and keeps the counts current.</summary>
     protected override void OnInitialized()
     {
-        DatasetState.OnChange += UpdateStatistics;
-        AppState.OnChange += StateHasChanged;
-        UpdateStatistics();
-        Logs.Info("Dashboard page initialized");
+        DatasetState.OnChange += HandleDatasetStateChanged;
+        ReadStatistics();
     }
 
-    /// <summary>Updates dashboard statistics from current dataset state.</summary>
-    public void UpdateStatistics()
+    private void HandleDatasetStateChanged()
     {
-        _currentDatasetName = DatasetState.CurrentDataset?.Name;
-        _totalItems = DatasetState.TotalCount;
-        _selectedItems = DatasetState.SelectedCount;
-        StateHasChanged();
+        ReadStatistics();
+        InvokeAsync(StateHasChanged);
     }
 
-    /// <summary>Navigates to the create-dataset page (the only upload entry point).</summary>
-    public void NavigateToUpload()
+    private void ReadStatistics()
     {
-        NavigationService.NavigateTo("/datasets/create");
-        Logs.Info("Navigating to create dataset");
+        DashboardSession session = DashboardSession.From(DatasetState);
+        _currentDatasetName = session.DatasetName;
+        _totalItems = session.TotalItems;
+        _selectedItems = session.SelectedItems;
     }
 
-    /// <summary>Navigates to dataset viewer page.</summary>
-    public void NavigateToDatasetViewer()
+    private void ResumeViewer()
     {
         NavigationService.NavigateToDataset();
-        Logs.Info("Navigating to dataset viewer");
     }
 
-    public void NavigateToCreateDataset()
-    {
-        NavigationService.NavigateTo("/datasets/create");
-        Logs.Info("Navigating to create dataset from dashboard");
-    }
-
-    public void NavigateToLibrary()
-    {
-        NavigationService.NavigateTo("/my-datasets");
-        Logs.Info("Navigating to library from dashboard");
-    }
-
-    public void NavigateToAiTools()
-    {
-        NavigationService.NavigateTo("/ai-tools");
-        Logs.Info("Navigating to AI tools from dashboard");
-    }
-
-    /// <summary>Navigates to settings page.</summary>
-    public void NavigateToSettings()
-    {
-        NavigationService.NavigateToSettings();
-        Logs.Info("Navigating to settings");
-    }
-
-
-    /// <summary>Unsubscribes from state changes on disposal.</summary>
+    /// <summary>Unsubscribes from dataset-state changes.</summary>
     public void Dispose()
     {
-        DatasetState.OnChange -= UpdateStatistics;
-        AppState.OnChange -= StateHasChanged;
+        DatasetState.OnChange -= HandleDatasetStateChanged;
     }
-
-    // TODO: Add recent datasets list section
-    // TODO: Add usage tips or onboarding guide
-    // TODO: Add keyboard shortcuts reference
-    // TODO: Add performance metrics if available
 }

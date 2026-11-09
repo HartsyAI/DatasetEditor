@@ -1,0 +1,27 @@
+<MudPaper Elevation="@Elevation" Class="@($"pa-4 mud-height-full d-flex flex-column {Class}")">
+    <div class="ds-section-card-header">
+        <div>
+            <MudText Typo="Typo.subtitle1" HtmlTag="h2">@Title</MudText>
+            @if (!string.IsNullOrWhiteSpace(Subtitle))
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">@Subtitle</MudText>
+            }
+        </div>
+        @if (!string.IsNullOrWhiteSpace(Icon))
+        {
+            <MudIcon Icon="@Icon" Class="mud-text-secondary" />
+        }
+    </div>
+    @if (ChildContent is not null)
+    {
+        <div class="mt-3">
+            @ChildContent
+        </div>
+    }
+    @if (Actions is not null)
+    {
+        <div class="ds-section-card-actions mt-auto pt-4">
+            @Actions
+        </div>
+    }
+</MudPaper>

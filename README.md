@@ -312,10 +312,9 @@ front; `IndexedDbCache` (Dexie) optionally persists pages.
 Placeholder colour + lazy `<img>` give instant layout with zero shift.
 
 **Gaps.** The cache prefetch cascade keeps loading pages in the background until the whole
-dataset (up to 100k items) is in memory, regardless of scrolling (U-5). The IndexedDB toggle
-uses a v6 parameter name and never fires (U-4). Component `<style>` blocks are emitted once
-per card instance (U-1). Grid column count is fixed at 4 (no settings UI changes it). The
-"Resume viewer" dashboard button opens the viewer with no dataset. Delete has no confirmation.
+dataset (up to 100k items) is in memory, regardless of scrolling (U-5). Component `<style>`
+blocks are emitted once per card instance (U-1). Items with neither an image nor a thumbnail
+URL are dropped from the grid, so the count label can disagree with the server (U-30).
 
 ### 4.10 Item editing — Partial
 

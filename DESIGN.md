@@ -257,8 +257,8 @@ has logic, and a `.razor.css` when it has styles. Parameters are documented with
 | `SourceOptionCard` | **missing (extract)** | The four source cards on `CreateDataset.razor`. |
 | `TagChipList` | **missing (extract)** | Tags are rendered four different ways today (detail panel, lightbox, list row, add-tag dialog). |
 | `InlineEditableText` | **missing (extract)** | Inline title edit is implemented twice (`ImageCard`, `ImageDetailPanel`). |
-| `StatCard` | **missing (extract)** | The "Current session" numbers on the dashboard. |
-| `SectionCard` | **missing (extract)** | `MudPaper Elevation=1 pa-4` with a `subtitle1` title; dashboard and settings panels. |
+| `StatCard` | exists | Caption label over an `h6` value; the dashboard's "Current session" numbers. |
+| `SectionCard` | exists | `MudPaper` (`Elevation` 1, or 2 for dashboard feature cards) with a `subtitle1` title, optional subtitle and icon, body, and bottom-pinned `Actions`. Used by the dashboard; settings adopts it in its PR. |
 | `ImageCard` | exists | Grid item. Move `<style>` to `ImageCard.razor.css`; icons to Filled; add keyboard support. |
 | `ImageListRow` | exists | List item. Same fixes; wire the Download/More buttons or remove them (today they do nothing). |
 | `ImageDetailPanel` | exists | Right-hand detail/edit panel. |
