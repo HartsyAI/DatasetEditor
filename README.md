@@ -111,7 +111,8 @@ database `dataset_studio_dev`). Outside Development the API refuses to start unt
 for you; `--no-launch-profile` does not, so set the variable yourself.
 
 To get an admin account, set `ADMIN_USERNAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` before starting
-the API. Anyone can register a normal account from the UI.
+the API. In Development anyone can also register a normal account from the UI; elsewhere
+registration is off unless `Auth__AllowRegistration=true` (see 4.1).
 
 Stop with `./stop.sh` (`--wipe` also deletes the database volume). Production deployment (one
 container + Caddy TLS): [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
@@ -144,24 +145,46 @@ refer to [docs/refactor-audit.md](docs/refactor-audit.md).
 
 ### 4.1 Accounts, sessions, roles — Working
 
-**What.** Register (username, email, password ≥ 8), log in with username or email, log out.
-Roles are `User` and `Admin`. A site admin is bootstrapped from environment variables.
+**What.** Register (when the server allows it), log in with username or email, log out. Roles
+are `User` and `Admin`. A site admin is bootstrapped from environment variables. Usernames are
+3–50 letters, digits, `.`, `_` or `-`; passwords 8 characters to 72 bytes; username and email
+are unique ignoring case.
 
 **How.** `src/APIBackend/Endpoints/AuthEndpoints.cs`, `Services/Auth/*`. ASP.NET Core cookie
 authentication (`DatasetStudio.Auth`, HttpOnly, SameSite=Lax, 7-day sliding). Passwords are
-BCrypt (work factor 11). `AdminBootstrapper` runs after migrations on every start and
-creates-or-resets the admin from `ADMIN_*`. The client's `CookieAuthenticationStateProvider`
-asks `/api/auth/me` and feeds `AuthorizeView`/`[Authorize]`; `CookieCredentialsHandler` makes
-the typed `HttpClient`s send the cookie cross-origin in dev (client :5002 → API :5000).
+BCrypt (work factor 11).
+
+- *Registration* is controlled by `Auth:AllowRegistration`: off by default, on in the
+  Development overlay. `GET /api/auth/settings` tells the client, which then hides "Register"
+  and shows "Registration is closed" on `/register`; the endpoint itself returns 403.
+- *Rate limits* (`Auth:LoginAttemptsPerMinute`, default 10; `Auth:RegistrationsPerHour`,
+  default 20) are per client IP, fixed-window, and answer 429 with `Retry-After`. Behind Caddy
+  the client IP comes from `X-Forwarded-For`, trusted only from loopback and private networks.
+- *Sessions are re-checked.* The cookie carries the account's security stamp. On each request
+  `CookiePrincipalValidator` compares it with the account (cached per user for
+  `Auth:RevalidateEvery`, default 30 s): a deleted or deactivated account, or a changed stamp,
+  ends the session; a changed role is applied to it.
+- *Uniqueness* is enforced by unique indexes on `lower(username)` and `lower(email)`, so two
+  simultaneous registrations of "Alice" and "alice" can't both succeed.
+- `AdminBootstrapper` runs after migrations on every start. It creates the admin from
+  `ADMIN_*` or brings its email, role and flags in line, and replaces the password hash (and
+  rotates the stamp, ending old sessions) only when `ADMIN_PASSWORD` no longer matches. When
+  `ADMIN_USERNAME` isn't `admin`, the seeded placeholder row is deactivated and renamed, freeing
+  `admin` and `admin@localhost`.
+
+The client's `CookieAuthenticationStateProvider` asks `/api/auth/me` and feeds
+`AuthorizeView`/`[Authorize]`; `CookieCredentialsHandler` makes the typed `HttpClient`s send
+the cookie cross-origin in dev (client :5002 → API :5000).
 
 **Why.** Cookies rather than JWT so the WASM client never holds a token it could leak and the
 API can return plain 401/403. `SecurePolicy=SameAsRequest` because dev is plain HTTP; Caddy
-terminates TLS in production. The admin is re-synced on every boot so a forgotten password is
-fixed by changing an env var and restarting. The seeded admin row ships with an unusable
-placeholder hash so an unconfigured install has no default credentials.
+terminates TLS in production. Registration is closed by default because every signed-in user can
+upload 5 GB files and start HuggingFace downloads. The admin is re-synced on every boot so a
+forgotten password is fixed by changing an env var and restarting. The seeded admin row ships
+with an unusable placeholder hash so an unconfigured install has no default credentials.
 
-**Gaps.** Open registration with no rate limit (A-1, A-2); role/active flags frozen in the
-cookie until expiry (A-3).
+**Gaps.** No email verification, password reset flow or user-management UI; admins manage
+accounts in the database.
 
 ### 4.2 Dataset library, ownership, visibility — Working
 

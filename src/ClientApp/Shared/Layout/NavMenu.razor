@@ -14,9 +14,12 @@
             <MudNavLink Href="/login" Icon="@Icons.Material.Filled.Login">
                 Log in
             </MudNavLink>
-            <MudNavLink Href="/register" Icon="@Icons.Material.Filled.PersonAdd">
-                Register
-            </MudNavLink>
+            @if (_registrationOpen)
+            {
+                <MudNavLink Href="/register" Icon="@Icons.Material.Filled.PersonAdd">
+                    Register
+                </MudNavLink>
+            }
         </NotAuthorized>
     </AuthorizeView>
     <MudDivider Class="my-2" />

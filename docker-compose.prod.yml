@@ -32,6 +32,8 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      # Closed unless .env says otherwise; see docs/DEPLOYMENT.md, "Accounts".
+      Auth__AllowRegistration: ${ALLOW_REGISTRATION:-false}
 
   caddy:
     image: caddy:2

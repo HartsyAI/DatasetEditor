@@ -23,10 +23,25 @@ overlay, Caddy is the sole entry point). MinIO is **not** part of this stack; S3
 2. EF Core migrations apply automatically (`db.Database.Migrate()` in `Program.cs`, before the
    app starts accepting requests) — including the seeded placeholder-admin row from
    `InitialCreate`.
-3. `AdminBootstrapper` re-syncs the `admin` user's password/email/role from
+3. `AdminBootstrapper` checks the admin account against
    `ADMIN_USERNAME`/`ADMIN_EMAIL`/`ADMIN_PASSWORD` **on every boot**, not just when the users
-   table is empty — this is also how you reset a forgotten admin password: change
+   table is empty. It replaces the password hash only when `ADMIN_PASSWORD` has changed, and then
+   ends the admin's existing sessions. This is how you reset a forgotten admin password: change
    `ADMIN_PASSWORD` in `.env` and `docker compose ... up -d` again.
+
+## Accounts
+
+Registration is **closed** by default outside Development: the admin account comes from `.env`,
+and nobody else can sign up. To let people register, set `ALLOW_REGISTRATION=true` in `.env`
+(passed to the API as `Auth__AllowRegistration`). Any signed-in user can upload large files and
+start HuggingFace downloads, so open registration only on a server you mean to share.
+
+Login is limited to 10 attempts per client IP per minute and registration to 20 per hour
+(`Auth__LoginAttemptsPerMinute`, `Auth__RegistrationsPerHour`). The client IP is read from
+Caddy's `X-Forwarded-For`, which the API trusts only from loopback and private networks.
+
+Deactivating an account (`users.is_active = false`) or changing its role takes effect on its
+open sessions within 30 seconds (`Auth__RevalidateEvery`).
 4. Caddy requests a certificate for `DOMAIN`. A real public domain gets automatic Let's Encrypt
    TLS with zero extra config. Left at the default `localhost` (or any non-public
    domain/IP), Caddy issues a locally-trusted self-signed certificate instead (`tls internal`

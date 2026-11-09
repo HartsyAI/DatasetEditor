@@ -18,4 +18,10 @@ public sealed record UserDto
     public DateTime CreatedAt { get; init; }
     public DateTime? LastLoginAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
+
+    /// <summary>
+    /// Changes whenever existing sessions must end (a password reset). Sessions carry it and are
+    /// rejected when it no longer matches (audit A-3).
+    /// </summary>
+    public string SecurityStamp { get; init; } = string.Empty;
 }

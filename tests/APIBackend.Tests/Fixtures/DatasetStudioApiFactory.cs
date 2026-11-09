@@ -73,6 +73,17 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             base.ConfigureWebHost(builder);
+
+            // Test classes register and log in many users from one (in-process) client address,
+            // which the production per-IP limits would reject. Registered before the test's own
+            // overrides so a rate-limit test can lower them again.
+            builder.ConfigureServices(services => services.Configure<global::DatasetStudio.APIBackend.Services.Auth.AuthOptions>(options =>
+            {
+                options.AllowRegistration = true;
+                options.LoginAttemptsPerMinute = 100_000;
+                options.RegistrationsPerHour = 100_000;
+            }));
+
             if (ConfigureTestServices is not null)
             {
                 builder.ConfigureServices(ConfigureTestServices);

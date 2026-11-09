@@ -5,50 +5,64 @@
 <MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="px-4 py-8">
     <MudPaper Class="pa-6" Elevation="2">
         <MudText Typo="Typo.h4" HtmlTag="h1">Create an account</MudText>
-        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">You'll be signed in as soon as the account is created.</MudText>
 
-        @if (!string.IsNullOrEmpty(_errorMessage))
+        @if (_registrationClosed)
         {
-            <MudAlert Severity="Severity.Error" Class="mb-4">@_errorMessage</MudAlert>
+            <MudAlert Severity="Severity.Info" Class="my-4">
+                Registration is closed on this server. Ask an administrator for an account.
+            </MudAlert>
+            <MudText Typo="Typo.body2">
+                Already have an account? <MudLink Href="/login">Log in</MudLink>
+            </MudText>
         }
+        else
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">You'll be signed in as soon as the account is created.</MudText>
 
-        @* A real form: Enter in any field submits, and the button is a submit button. *@
-        <form @onsubmit="SubmitAsync" novalidate>
-            <MudStack Spacing="4">
-                <MudTextField T="string"
-                              @bind-Value="_username"
-                              Label="Username"
-                              Variant="Variant.Outlined"
-                              Immediate="true"
-                              AutoFocus="true" />
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Class="mb-4">@_errorMessage</MudAlert>
+            }
 
-                <MudTextField T="string"
-                              @bind-Value="_email"
-                              Label="Email"
-                              InputType="InputType.Email"
-                              Variant="Variant.Outlined"
-                              Immediate="true" />
+            @* A real form: Enter in any field submits, and the button is a submit button. *@
+            <form @onsubmit="SubmitAsync" novalidate>
+                <MudStack Spacing="4">
+                    <MudTextField T="string"
+                                  @bind-Value="_username"
+                                  Label="Username"
+                                  HelperText="3 to 50 letters, digits, '.', '_' or '-'"
+                                  Variant="Variant.Outlined"
+                                  Immediate="true"
+                                  AutoFocus="true" />
 
-                <MudTextField T="string"
-                              @bind-Value="_password"
-                              Label="Password"
-                              InputType="InputType.Password"
-                              HelperText="At least 8 characters"
-                              Variant="Variant.Outlined"
-                              Immediate="true" />
+                    <MudTextField T="string"
+                                  @bind-Value="_email"
+                                  Label="Email"
+                                  InputType="InputType.Email"
+                                  Variant="Variant.Outlined"
+                                  Immediate="true" />
 
-                <MudButton ButtonType="ButtonType.Submit"
-                           Color="Color.Primary"
-                           Variant="Variant.Filled"
-                           FullWidth="true"
-                           Disabled="@(!CanSubmit)">
-                    @(_isSubmitting ? "Creating account…" : "Create account")
-                </MudButton>
-            </MudStack>
-        </form>
+                    <MudTextField T="string"
+                                  @bind-Value="_password"
+                                  Label="Password"
+                                  InputType="InputType.Password"
+                                  HelperText="8 to 72 characters"
+                                  Variant="Variant.Outlined"
+                                  Immediate="true" />
 
-        <MudText Typo="Typo.body2" Class="mt-4">
-            Already have an account? <MudLink Href="/login">Log in</MudLink>
-        </MudText>
+                    <MudButton ButtonType="ButtonType.Submit"
+                               Color="Color.Primary"
+                               Variant="Variant.Filled"
+                               FullWidth="true"
+                               Disabled="@(!CanSubmit)">
+                        @(_isSubmitting ? "Creating account…" : "Create account")
+                    </MudButton>
+                </MudStack>
+            </form>
+
+            <MudText Typo="Typo.body2" Class="mt-4">
+                Already have an account? <MudLink Href="/login">Log in</MudLink>
+            </MudText>
+        }
     </MudPaper>
 </MudContainer>
