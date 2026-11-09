@@ -46,7 +46,7 @@ namespace DatasetStudio.Tests.ClientApp
         [Theory]
         [InlineData("/datasets/create")]
         [InlineData("/dataset-viewer?id=abc")]
-        [InlineData("/my-datasets")]
+        [InlineData("/datasets")]
         public void ResolveReturnUrl_AcceptsSameSitePaths(string returnUrl)
         {
             Assert.Equal(returnUrl, Login.ResolveReturnUrl(returnUrl));
@@ -63,7 +63,7 @@ namespace DatasetStudio.Tests.ClientApp
         public void ResolveReturnUrl_RejectsOffSiteAndMalformedTargets(string? returnUrl)
         {
             // A-8: an absolute or protocol-relative returnUrl must never reach NavigateTo.
-            Assert.Equal("/my-datasets", Login.ResolveReturnUrl(returnUrl));
+            Assert.Equal("/datasets", Login.ResolveReturnUrl(returnUrl));
         }
 
         [Fact]

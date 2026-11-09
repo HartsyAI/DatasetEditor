@@ -1,0 +1,49 @@
+@* Plain wrapper: scoped CSS (::deep) needs an element of this component as the anchor. *@
+<div>
+<Toolbar>
+    <Start>
+        <MudTextField T="string"
+                      Value="@Filter.Search"
+                      ValueChanged="@OnSearchChanged"
+                      Label="Search datasets"
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense"
+                      Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search"
+                      Immediate="true"
+                      DebounceInterval="150"
+                      Class="ds-library-search" />
+
+        <MudSelect T="IngestionStatusDto?"
+                   Label="Status"
+                   Value="@Filter.Status"
+                   ValueChanged="@OnStatusChanged"
+                   Margin="Margin.Dense"
+                   Variant="Variant.Outlined"
+                   Class="ds-library-filter">
+            <MudSelectItem T="IngestionStatusDto?" Value="@(null)">All statuses</MudSelectItem>
+            @foreach (IngestionStatusDto status in _statuses)
+            {
+                <MudSelectItem T="IngestionStatusDto?" Value="@status" @key="status">@StatusPresentation.For(status).Label</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudSelect T="DatasetSourceType?"
+                   Label="Source"
+                   Value="@Filter.Source"
+                   ValueChanged="@OnSourceChanged"
+                   Margin="Margin.Dense"
+                   Variant="Variant.Outlined"
+                   Class="ds-library-filter">
+            <MudSelectItem T="DatasetSourceType?" Value="@(null)">All sources</MudSelectItem>
+            @foreach (DatasetSourceType source in _sources)
+            {
+                <MudSelectItem T="DatasetSourceType?" Value="@source" @key="source">@SourcePresentation.For(source, isStreaming: false).Label</MudSelectItem>
+            }
+        </MudSelect>
+    </Start>
+    <End>
+        <MudSwitch T="bool" Value="@Filter.OnlyReady" ValueChanged="@OnOnlyReadyChanged" Color="Color.Primary" Label="Only ready datasets" />
+    </End>
+</Toolbar>
+</div>

@@ -164,8 +164,10 @@ cookie until expiry (A-3).
 
 ### 4.2 Dataset library, ownership, visibility — Working
 
-**What.** `/my-datasets` lists what you may see: your own plus public datasets (anonymous
-visitors see public only). Cards show status, source, counts, open/delete. New datasets are
+**What.** `/datasets` (`/my-datasets` still works) lists what you may see: your own plus public
+datasets (anonymous visitors see public only). Cards (`DatasetCard`) show status, source,
+counts and when the dataset was last updated, with Open and a confirmed Delete; `LibraryFilterBar`
+searches and filters the loaded page by status, source and "only ready". New datasets are
 private by default; `IsPublic` makes them visible to everyone.
 
 **How.** `DatasetEndpoints.GetAllDatasets/GetDataset/CreateDataset/DeleteDataset`,

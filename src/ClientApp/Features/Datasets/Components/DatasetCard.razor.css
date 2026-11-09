@@ -1,0 +1,32 @@
+.ds-dataset-card-root {
+    height: 100%;
+}
+
+.ds-dataset-card-root ::deep .ds-dataset-card {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--ds-radius-md);
+    transition: transform var(--ds-transition), box-shadow var(--ds-transition);
+}
+
+.ds-dataset-card-root ::deep .ds-dataset-card:hover {
+    transform: var(--ds-hover-lift);
+}
+
+.ds-dataset-card-root ::deep .ds-dataset-card-body {
+    flex: 1 1 auto;
+}
+
+.ds-dataset-card-root ::deep .ds-dataset-card-title {
+    overflow-wrap: anywhere;
+}
+
+/* Three lines of description, then an ellipsis, instead of cutting at a character count. */
+.ds-dataset-card-root ::deep .ds-dataset-card-description {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}

@@ -50,6 +50,6 @@ public partial class Register : ComponentBase
         }
 
         AuthStateProvider.NotifyUserAuthenticated(outcome.User);
-        Navigation.NavigateTo("/my-datasets");
+        Navigation.NavigateTo("/datasets");
     }
 }

@@ -1,0 +1,50 @@
+@* Plain wrapper so this component's scoped CSS can style the MudCard it renders. *@
+<div class="ds-dataset-card-root">
+    <MudCard Elevation="1" Class="ds-dataset-card">
+        <MudCardHeader>
+            <CardHeaderContent>
+                <MudText Typo="Typo.subtitle1" HtmlTag="h2" Class="ds-dataset-card-title">@Dataset.Name</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    @Dataset.TotalItems.ToString("N0") items • @(string.IsNullOrWhiteSpace(Dataset.Modality) ? "Unknown modality" : Dataset.Modality)
+                </MudText>
+            </CardHeaderContent>
+            <CardHeaderActions>
+                <StatusChip Status="@Dataset.Status" />
+            </CardHeaderActions>
+        </MudCardHeader>
+
+        <MudCardContent Class="ds-dataset-card-body">
+            @if (!string.IsNullOrWhiteSpace(Dataset.Description))
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary mb-2 ds-dataset-card-description">
+                    @Dataset.Description
+                </MudText>
+            }
+            <SourceBadge SourceType="@Dataset.SourceType" IsStreaming="@Dataset.IsStreaming" />
+        </MudCardContent>
+
+        <MudCardActions>
+            <MudButton Variant="Variant.Text"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Visibility"
+                       OnClick="@OnOpen">
+                Open
+            </MudButton>
+            @if (CanDelete)
+            {
+                <MudButton Variant="Variant.Text"
+                           Color="Color.Error"
+                           StartIcon="@Icons.Material.Filled.Delete"
+                           OnClick="@OnDelete">
+                    Delete
+                </MudButton>
+            }
+            <MudSpacer />
+            <MudTooltip Text="@RelativeTime.Absolute(Dataset.UpdatedAt)">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    Updated @RelativeTime.Format(Dataset.UpdatedAt)
+                </MudText>
+            </MudTooltip>
+        </MudCardActions>
+    </MudCard>
+</div>
