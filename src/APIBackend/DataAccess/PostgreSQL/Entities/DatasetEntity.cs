@@ -134,6 +134,16 @@ public class DatasetEntity
     [Column("updated_at")]
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    /// <summary>
+    /// Concurrency token: PostgreSQL's <c>xmin</c> system column, which changes on every write
+    /// to the row (no real column is added). A tracked update fails if the row changed after it
+    /// was read, so <see cref="Repositories.DatasetRepository.UpdateAsync"/> can re-check its
+    /// fields instead of overwriting a concurrent write (audit D-4).
+    /// </summary>
+    [Timestamp]
+    [Column("xmin")]
+    public uint Version { get; set; }
+
     /// <summary>User ID of the creator (null for single-user mode, set in Phase 3)</summary>
     [Column("created_by_user_id")]
     public Guid? CreatedByUserId { get; set; }

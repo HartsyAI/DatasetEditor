@@ -2,187 +2,216 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using DatasetStudio.APIBackend.DataAccess.PostgreSQL;
-using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
+using DatasetStudio.Core.Abstractions.Repositories;
 using DatasetStudio.DTO.Datasets;
+using DatasetStudio.Tests.APIBackend.Fixtures;
 using FluentAssertions;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace DatasetStudio.Tests.APIBackend
 {
-    // NOTE: this file previously tested a DatasetEntity-in/DatasetEntity-out shape
-    // (CreateAsync(DatasetEntity), GetAsync, ListAsync) that never matched the real
-    // DatasetRepository (Core.Abstractions.Repositories.IDatasetRepository), which has
-    // always been DatasetDto-in/DatasetDto-out with CreateAsync returning a Guid,
-    // GetByIdAsync, and GetAllAsync. It could not have compiled — evidence this suite
-    // was never actually run. Rewritten against the real API.
-    public sealed class DatasetRepositoryTests
+    /// <summary>
+    /// DatasetRepository against real Postgres. It used to run on the EF InMemory provider, which
+    /// has no xmin concurrency token and no ExecuteUpdate, both of which the repository now relies
+    /// on for patch-style writes (audit D-4).
+    /// </summary>
+    [Collection(PostgresCollection.Name)]
+    public sealed class DatasetRepositoryTests : IAsyncLifetime
     {
-        private static DatasetStudioDbContext CreateInMemoryContext()
+        private readonly PostgresContainerFixture _postgres;
+        private DatasetStudioApiFactory _factory = default!;
+
+        public DatasetRepositoryTests(PostgresContainerFixture postgres)
         {
-            DbContextOptionsBuilder<DatasetStudioDbContext> builder = new DbContextOptionsBuilder<DatasetStudioDbContext>();
-            builder.UseInMemoryDatabase(Guid.NewGuid().ToString("N"));
-            // Mirrors the real DbContext config (ServiceCollectionExtensions.AddDatasetServices)
-            // exactly — this default is what made the UpdateAsync/UpdateStatusAsync/
-            // UpdateItemCountAsync fetch-mutate-SaveChanges pattern silently no-op in
-            // production. A prior version of this test helper didn't set it, so it couldn't
-            // have caught that bug even though the repository's tests otherwise looked fine.
-            builder.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
-            DatasetStudioDbContext context = new DatasetStudioDbContext(builder.Options);
-            context.Database.EnsureCreated();
-            return context;
+            _postgres = postgres;
         }
+
+        public async Task InitializeAsync()
+        {
+            _factory = new DatasetStudioApiFactory(_postgres.ConnectionString);
+            await _factory.InitializeDatabaseAsync();
+            _ = _factory.Services;
+        }
+
+        public async Task DisposeAsync()
+        {
+            await _factory.DropDatabaseAsync();
+            await _factory.DisposeAsync();
+        }
+
+        /// <summary>Runs <paramref name="action"/> with a repository on its own DbContext, like one request.</summary>
+        private async Task<T> WithRepositoryAsync<T>(Func<IDatasetRepository, Task<T>> action)
+        {
+            using IServiceScope scope = _factory.Services.CreateScope();
+            return await action(scope.ServiceProvider.GetRequiredService<IDatasetRepository>());
+        }
+
+        private Task WithRepositoryAsync(Func<IDatasetRepository, Task> action)
+        {
+            return WithRepositoryAsync(async repository =>
+            {
+                await action(repository);
+                return true;
+            });
+        }
+
+        private static DatasetDto NewDataset(string name) => new()
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            Description = "Description",
+            Format = "CSV",
+            Modality = "Image",
+            Status = IngestionStatusDto.Pending,
+            TotalItems = 0,
+            SourceType = DatasetSourceType.LocalUpload,
+        };
+
+        private async Task<DatasetDto> CreateAsync(string name)
+        {
+            Guid id = await WithRepositoryAsync(r => r.CreateAsync(NewDataset(name)));
+            return (await WithRepositoryAsync(r => r.GetByIdAsync(id)))!;
+        }
+
+        private Task<DatasetDto?> GetAsync(Guid id) => WithRepositoryAsync(r => r.GetByIdAsync(id));
 
         [Fact]
         public async Task CreateAndGetAsync_PersistsDataset()
         {
-            using DatasetStudioDbContext context = CreateInMemoryContext();
-            DatasetRepository repository = new DatasetRepository(context);
+            DatasetDto loaded = await CreateAsync("Test dataset");
 
-            DatasetDto dataset = new()
-            {
-                Id = Guid.NewGuid(),
-                Name = "Test dataset",
-                Description = "Description",
-                Format = "CSV",
-                Modality = "Image",
-                Status = IngestionStatusDto.Pending,
-                TotalItems = 0,
-                SourceType = DatasetSourceType.LocalUpload,
-            };
-
-            Guid createdId = await repository.CreateAsync(dataset, CancellationToken.None);
-            DatasetDto? loaded = await repository.GetByIdAsync(createdId, CancellationToken.None);
-
-            loaded.Should().NotBeNull();
-            if (loaded != null)
-            {
-                loaded.Name.Should().Be("Test dataset");
-                loaded.Description.Should().Be("Description");
-            }
+            loaded.Name.Should().Be("Test dataset");
+            loaded.Description.Should().Be("Description");
         }
 
         [Fact]
         public async Task GetAllAsync_ReturnsDatasetsOrderedByCreatedAtDescending()
         {
-            using DatasetStudioDbContext context = CreateInMemoryContext();
-            DatasetRepository repository = new DatasetRepository(context);
-
-            DatasetDto older = new()
-            {
-                Id = Guid.NewGuid(),
-                Name = "Older",
-                Format = "CSV",
-                Modality = "Image",
-                Status = IngestionStatusDto.Pending,
-                TotalItems = 0,
-                SourceType = DatasetSourceType.LocalUpload,
-            };
-
-            DatasetDto newer = new()
-            {
-                Id = Guid.NewGuid(),
-                Name = "Newer",
-                Format = "CSV",
-                Modality = "Image",
-                Status = IngestionStatusDto.Pending,
-                TotalItems = 0,
-                SourceType = DatasetSourceType.LocalUpload,
-            };
-
-            // CreateAsync stamps CreatedAt = UtcNow server-side, so order the writes
-            // themselves rather than pre-setting timestamps the repository ignores.
-            await repository.CreateAsync(older, CancellationToken.None);
+            // CreateAsync stamps CreatedAt = UtcNow server-side, so order the writes themselves.
+            await CreateAsync("Older");
             await Task.Delay(TimeSpan.FromMilliseconds(5));
-            await repository.CreateAsync(newer, CancellationToken.None);
+            await CreateAsync("Newer");
 
-            List<DatasetDto> list = await repository.GetAllAsync(page: 0, pageSize: 50, cancellationToken: CancellationToken.None);
+            List<DatasetDto> list = await WithRepositoryAsync(r => r.GetAllAsync(page: 0, pageSize: 50));
 
-            list.Count.Should().Be(2);
+            list.Should().HaveCount(2);
             list[0].Name.Should().Be("Newer");
             list[1].Name.Should().Be("Older");
         }
 
-        // Regression test: under the ambient NoTracking QueryTrackingBehavior (see
-        // CreateInMemoryContext), UpdateAsync/UpdateStatusAsync/UpdateItemCountAsync used to
-        // fetch an entity, mutate its properties, and call SaveChangesAsync — but the fetched
-        // entity was untracked, so the mutations were invisible to EF's change tracker and
-        // SaveChangesAsync had nothing to persist. Silently broke the entire ingestion-status
-        // feature (datasets stayed "Pending" forever) with no exception anywhere.
+        /// <summary>
+        /// Regression: under the DbContext's NoTracking default, status writes used to fetch an
+        /// untracked entity and save nothing, so datasets stayed Pending forever.
+        /// </summary>
         [Fact]
-        public async Task UpdateStatusAsync_ActuallyPersistsTheNewStatus()
+        public async Task UpdateStatusAsync_PersistsTheNewStatus()
         {
-            using DatasetStudioDbContext context = CreateInMemoryContext();
-            DatasetRepository repository = new DatasetRepository(context);
+            DatasetDto dataset = await CreateAsync("Status test");
 
-            DatasetDto dataset = new()
-            {
-                Id = Guid.NewGuid(),
-                Name = "Status test",
-                Format = "CSV",
-                Modality = "Image",
-                Status = IngestionStatusDto.Pending,
-                TotalItems = 0,
-                SourceType = DatasetSourceType.LocalUpload,
-            };
-            Guid createdId = await repository.CreateAsync(dataset, CancellationToken.None);
+            await WithRepositoryAsync(r => r.UpdateStatusAsync(dataset.Id, IngestionStatusDto.Failed, "boom"));
 
-            await repository.UpdateStatusAsync(createdId, IngestionStatusDto.Completed, errorMessage: null, CancellationToken.None);
-
-            DatasetDto? loaded = await repository.GetByIdAsync(createdId, CancellationToken.None);
-            loaded.Should().NotBeNull();
-            loaded!.Status.Should().Be(IngestionStatusDto.Completed);
+            DatasetDto loaded = (await GetAsync(dataset.Id))!;
+            loaded.Status.Should().Be(IngestionStatusDto.Failed);
+            loaded.ErrorMessage.Should().Be("boom");
         }
 
         [Fact]
-        public async Task UpdateItemCountAsync_ActuallyPersistsTheNewCount()
+        public async Task UpdateItemCountAsync_PersistsTheNewCount()
         {
-            using DatasetStudioDbContext context = CreateInMemoryContext();
-            DatasetRepository repository = new DatasetRepository(context);
+            DatasetDto dataset = await CreateAsync("Count test");
 
-            DatasetDto dataset = new()
-            {
-                Id = Guid.NewGuid(),
-                Name = "Count test",
-                Format = "CSV",
-                Modality = "Image",
-                Status = IngestionStatusDto.Pending,
-                TotalItems = 0,
-                SourceType = DatasetSourceType.LocalUpload,
-            };
-            Guid createdId = await repository.CreateAsync(dataset, CancellationToken.None);
+            await WithRepositoryAsync(r => r.UpdateItemCountAsync(dataset.Id, 12345));
 
-            await repository.UpdateItemCountAsync(createdId, 12345, CancellationToken.None);
+            (await GetAsync(dataset.Id))!.TotalItems.Should().Be(12345);
+        }
 
-            DatasetDto? loaded = await repository.GetByIdAsync(createdId, CancellationToken.None);
-            loaded.Should().NotBeNull();
-            loaded!.TotalItems.Should().Be(12345);
+        [Fact]
+        public async Task UpdateStatusAsync_MissingDataset_Throws()
+        {
+            Func<Task> act = () => WithRepositoryAsync(r => r.UpdateStatusAsync(Guid.NewGuid(), IngestionStatusDto.Completed));
+
+            await act.Should().ThrowAsync<InvalidOperationException>();
         }
 
         [Fact]
         public async Task DeleteAsync_RemovesDataset()
         {
-            using DatasetStudioDbContext context = CreateInMemoryContext();
-            DatasetRepository repository = new DatasetRepository(context);
+            DatasetDto dataset = await CreateAsync("ToDelete");
 
-            DatasetDto dataset = new()
-            {
-                Id = Guid.NewGuid(),
-                Name = "ToDelete",
-                Format = "CSV",
-                Modality = "Image",
-                Status = IngestionStatusDto.Pending,
-                TotalItems = 0,
-                SourceType = DatasetSourceType.LocalUpload,
-            };
+            await WithRepositoryAsync(r => r.DeleteAsync(dataset.Id));
 
-            Guid createdId = await repository.CreateAsync(dataset, CancellationToken.None);
+            (await GetAsync(dataset.Id)).Should().BeNull();
+        }
 
-            await repository.DeleteAsync(createdId, CancellationToken.None);
-            DatasetDto? loaded = await repository.GetByIdAsync(createdId, CancellationToken.None);
+        /// <summary>
+        /// Audit D-4: an update built from a snapshot read before background ingestion wrote its
+        /// status and count must not revert them. The old full-row overwrite put the dataset back
+        /// to Pending with 0 items.
+        /// </summary>
+        [Fact]
+        public async Task UpdateAsync_KeepsStatusAndCountWrittenAfterTheSnapshot()
+        {
+            DatasetDto snapshot = await CreateAsync("Snapshot");
+            await WithRepositoryAsync(r => r.UpdateStatusAsync(snapshot.Id, IngestionStatusDto.Processing));
+            await WithRepositoryAsync(r => r.UpdateItemCountAsync(snapshot.Id, 5_000));
 
-            loaded.Should().BeNull();
+            await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { SourceFileName = "rows.csv" }));
+
+            DatasetDto loaded = (await GetAsync(snapshot.Id))!;
+            loaded.SourceFileName.Should().Be("rows.csv");
+            loaded.Status.Should().Be(IngestionStatusDto.Processing, "the background status write must survive");
+            loaded.TotalItems.Should().Be(5_000, "the background count write must survive");
+        }
+
+        /// <summary>A field another request changed to a different value is a conflict, and nothing is written.</summary>
+        [Fact]
+        public async Task UpdateAsync_FieldChangedByAnotherRequest_ThrowsConflictAndWritesNothing()
+        {
+            DatasetDto snapshot = await CreateAsync("Original");
+            await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { Name = "Renamed elsewhere" }));
+
+            Func<Task> act = () => WithRepositoryAsync(r =>
+                r.UpdateAsync(snapshot, snapshot with { Name = "Renamed here", Description = "new description" }));
+
+            (await act.Should().ThrowAsync<DatasetUpdateConflictException>()).Which.Fields.Should().Equal("Name");
+            DatasetDto loaded = (await GetAsync(snapshot.Id))!;
+            loaded.Name.Should().Be("Renamed elsewhere");
+            loaded.Description.Should().Be("Description", "a conflicting update is all-or-nothing");
+        }
+
+        /// <summary>Two requests writing the same value is not a conflict.</summary>
+        [Fact]
+        public async Task UpdateAsync_SameValueWrittenConcurrently_IsNotAConflict()
+        {
+            DatasetDto snapshot = await CreateAsync("Streaming");
+            DatasetDto resolved = snapshot with { HuggingFaceConfig = "default", HuggingFaceSplit = "train" };
+            await WithRepositoryAsync(r => r.UpdateAsync(snapshot, resolved));
+
+            await WithRepositoryAsync(r => r.UpdateAsync(snapshot, resolved));
+
+            (await GetAsync(snapshot.Id))!.HuggingFaceSplit.Should().Be("train");
+        }
+
+        /// <summary>Many concurrent patches of different fields all land.</summary>
+        [Fact]
+        public async Task UpdateAsync_ConcurrentPatchesOfDifferentFields_AllLand()
+        {
+            DatasetDto snapshot = await CreateAsync("Concurrent");
+
+            await Task.WhenAll(
+                Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { SourceFileName = "a.csv" }))),
+                Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { Description = "described" }))),
+                Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { IsPublic = true }))),
+                Task.Run(() => WithRepositoryAsync(r => r.UpdateItemCountAsync(snapshot.Id, 42))),
+                Task.Run(() => WithRepositoryAsync(r => r.UpdateStatusAsync(snapshot.Id, IngestionStatusDto.Processing))));
+
+            DatasetDto loaded = (await GetAsync(snapshot.Id))!;
+            loaded.SourceFileName.Should().Be("a.csv");
+            loaded.Description.Should().Be("described");
+            loaded.IsPublic.Should().BeTrue();
+            loaded.TotalItems.Should().Be(42);
+            loaded.Status.Should().Be(IngestionStatusDto.Processing);
         }
     }
 }

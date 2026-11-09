@@ -135,6 +135,7 @@ public class DatasetIngestionService : IDatasetIngestionService
                         if (current != null)
                         {
                             await _datasetRepository.UpdateAsync(
+                                current,
                                 current with { HuggingFaceConfig = match.Config, HuggingFaceSplit = match.Split },
                                 cancellationToken);
                         }
@@ -338,7 +339,7 @@ public class DatasetIngestionService : IDatasetIngestionService
             {
                 throw new InvalidOperationException($"Folder not found: {normalizedFolderPath}");
             }
-            await _datasetRepository.UpdateAsync(dataset with { StoragePath = normalizedFolderPath }, cancellationToken);
+            await _datasetRepository.UpdateAsync(dataset, dataset with { StoragePath = normalizedFolderPath }, cancellationToken);
 
             totalWritten = await WriteInChunksAsync(
                 datasetId, EnumerateFolderImagesAsync(datasetId, normalizedFolderPath, cancellationToken), cancellationToken);
