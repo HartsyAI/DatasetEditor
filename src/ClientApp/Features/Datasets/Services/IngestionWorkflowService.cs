@@ -108,6 +108,9 @@ public sealed class IngestionWorkflowService
             // Another request changed the same dataset field first (audit D-4).
             HttpRequestException { StatusCode: HttpStatusCode.Conflict }
                 => "The dataset was changed by someone else. Reload it and try again.",
+            // The import queue is at its limit (Ingestion:MaxQueuedJobs). Nothing was staged.
+            HttpRequestException { StatusCode: HttpStatusCode.ServiceUnavailable }
+                => "The server's import queue is full. Wait a minute, then try again.",
             HttpRequestException { StatusCode: not null } http
                 => $"The server returned an error (HTTP {(int)http.StatusCode!.Value}). Retry, or check the API logs.",
             HttpRequestException => "The server didn't respond. Check that the API is running, then retry.",

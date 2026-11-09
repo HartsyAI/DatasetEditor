@@ -28,12 +28,15 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
         private const string UploadPathEnvVar = "Storage__UploadPath";
 
         private readonly string _baseConnectionString;
-        private readonly string _databaseName = $"dataset_studio_test_{Guid.NewGuid():N}";
+        private readonly string _databaseName;
         private readonly string? _previousConnectionStringEnvVar;
         private readonly string? _previousDatasetRootPathEnvVar;
         private readonly string? _previousThumbnailPathEnvVar;
         private readonly string? _previousParquetPathEnvVar;
         private readonly string? _previousUploadPathEnvVar;
+        /// <summary>The database this host uses (pass it to another factory to simulate a restart).</summary>
+        public string DatabaseName => _databaseName;
+
         private string DatabaseConnectionString =>
             new NpgsqlConnectionStringBuilder(_baseConnectionString) { Database = _databaseName }.ConnectionString;
 
@@ -76,8 +79,11 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
             }
         }
 
-        public DatasetStudioApiFactory(string baseConnectionString)
+        public DatasetStudioApiFactory(string baseConnectionString, string? databaseName = null)
         {
+            // A caller passes an existing database name to start a second host on the same data,
+            // which is how the restart tests simulate a process restart.
+            _databaseName = databaseName ?? $"dataset_studio_test_{Guid.NewGuid():N}";
             _baseConnectionString = baseConnectionString;
 
             // Program.cs reads ConnectionStrings:DatasetStudio synchronously, into a closure,

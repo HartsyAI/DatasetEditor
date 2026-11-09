@@ -341,6 +341,80 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
                     b.ToTable("dataset_items");
                 });
 
+            modelBuilder.Entity("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.IngestionJobEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<string>("ClaimedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("claimed_by");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("DatasetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("dataset_id");
+
+                    b.Property<string>("Error")
+                        .HasColumnType("text")
+                        .HasColumnName("error");
+
+                    b.Property<string>("FilePath")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("file_path");
+
+                    b.Property<DateTime?>("FinishedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("finished_at");
+
+                    b.Property<string>("FolderPath")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("folder_path");
+
+                    b.Property<long?>("ItemsBefore")
+                        .HasColumnType("bigint")
+                        .HasColumnName("items_before");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("integer")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("PayloadJson")
+                        .HasColumnType("text")
+                        .HasColumnName("payload_json");
+
+                    b.Property<DateTime?>("StartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("started_at");
+
+                    b.Property<int>("State")
+                        .HasColumnType("integer")
+                        .HasColumnName("state");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DatasetId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_ingestion_jobs_one_running_per_dataset")
+                        .HasFilter("state = 1");
+
+                    b.HasIndex("State", "CreatedAt");
+
+                    b.ToTable("ingestion_jobs");
+                });
+
             modelBuilder.Entity("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.PermissionEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -529,6 +603,17 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
                 });
 
             modelBuilder.Entity("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.DatasetItemEntity", b =>
+                {
+                    b.HasOne("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.DatasetEntity", "Dataset")
+                        .WithMany()
+                        .HasForeignKey("DatasetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Dataset");
+                });
+
+            modelBuilder.Entity("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.IngestionJobEntity", b =>
                 {
                     b.HasOne("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.DatasetEntity", "Dataset")
                         .WithMany()

@@ -178,6 +178,7 @@ Fifteen things that matter most, in the order they should be fixed:
 | P-8 | low | `ParquetItemWriter.cs:15,275-282,326-368` (`_activeWriters`, `ShardWriter`, `FlushAsync`); `ParquetItemRepository.GetStatisticsAsync`; `ParquetItemReader.ReadAllAsync`, `MatchesFilter` | Dead or unreachable (see G-2). |
 | P-9 | low | `ParquetItemWriter.cs:239`, `ParquetItemReader.cs:390` | Nullable `Description` round-trips as `""`. |
 | P-10 | low | `ParquetItemReader.cs:85-97` | Exact-fill last page emits a cursor past the end → one extra empty page. |
+| P-11 | high | `ParquetItemWriter.cs:115-135` | An append rewrites the shard footer in place (`FileMode.Open`, `append: true`), so a process killed mid-append leaves a shard with no valid footer ("not a parquet file") and every row in it, not just the last batch, becomes unreadable. Found in PR 3.1 by killing the API during a 900k-row import: 114,000 written rows were lost. Ingestion recovery now fails such a job instead of leaving it running, but the data is gone. Append to a new file per batch or write to temp + rename, and keep a sealed shard read-only. |
 | G-1 | medium | `DatasetEndpoints.cs:411-416` | Local datasets return `TotalCount: null` although the repository has a cached count. |
 | G-2 | medium | `DatasetEndpoints.cs:404-409`, `ParquetItemReader.cs:406-483`, `DTO/Common/FilterRequest.cs` | Items endpoint accepts no filter parameters; `FilterRequest` and `MatchesFilter` are unreachable. Server-side filtering is the prerequisite for U-6. |
 | G-3 | low | `ParquetItemReader.cs:50-60` | Malformed cursor silently restarts at `0:0`; cursors aren't bound to a dataset. Return 400. |
@@ -330,7 +331,7 @@ on top of code a previous phase deletes.
 | PR | Scope | IDs |
 |---|---|---|
 | 4.1 Reader | Skip whole row groups by `RowCount`; project columns; cache footers; emit no cursor on exact fill; bigger row groups + compaction; turn Snappy on. | P-1 P-5 P-6 P-10 I-9 |
-| 4.2 Item index | Route all item ops by `datasetId`; sidecar index id→(shard, group, row); atomic temp+rename shard rewrites; rewrite only the touched group or add an edit-overlay store. | P-2 P-3 P-4 P-7 |
+| 4.2 Item index | Route all item ops by `datasetId`; sidecar index id→(shard, group, row); atomic temp+rename shard rewrites and crash-safe appends; rewrite only the touched group or add an edit-overlay store. | P-2 P-3 P-4 P-7 P-11 |
 | 4.3 Caches | Bounded LRU for HF row pages; thumbnail cache cap/sweep; mtime in local keys; streaming decode with byte/pixel limits. | H-7 T-1 T-2 T-3 S-2 |
 | 4.4 Server filtering | Filter parameters on `/items` backed by `MatchesFilter` (and for HF/S3 the subset that's possible); client applies results. | G-2 U-6 |
 

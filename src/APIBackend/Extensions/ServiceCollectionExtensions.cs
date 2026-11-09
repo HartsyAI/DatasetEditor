@@ -66,9 +66,14 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IDatasetIngestionService, DatasetIngestionService>();
 
-        // Background ingestion: uploads enqueue a job and return immediately instead of
-        // blocking the request thread while a multi-GB file is parsed.
-        services.AddSingleton<IngestionQueue>();
+        // Background ingestion: imports store a job in ingestion_jobs and return immediately
+        // instead of blocking the request thread while a multi-GB file is parsed. The queue is
+        // persistent so a restart doesn't lose work (audit I-1).
+        services.Configure<IngestionOptions>(configuration.GetSection(IngestionOptions.SectionName));
+        services.AddSingleton<IngestionSignal>();
+        services.AddScoped<IngestionJobStore>();
+        services.AddScoped<IIngestionJobQueue>(sp => sp.GetRequiredService<IngestionJobStore>());
+        services.AddScoped<IIngestionJobStore>(sp => sp.GetRequiredService<IngestionJobStore>());
         services.AddHostedService<IngestionBackgroundService>();
 
         // ========================================
