@@ -21,7 +21,8 @@
    use its parameter names (§1.1); a misspelled parameter is silently ignored, not an error.
 2. **Tokens, not literals.** Colours, radii, spacing and shadows come from the theme (`MudTheme`
    → `--mud-palette-*`) or from the `--ds-*` custom properties in `app.css`. No hex codes, no
-   `px` colours, no `rgba()` in `.razor` files. **(gap)**
+   `px` colours, no `rgba()` in `.razor` files. Hex values exist only in `AppTheme.cs` and the
+   `:root` token block of `app.css`.
 3. **One component per concept.** A dataset card, a status chip, an empty state, a page header
    each exist exactly once under `Shared/Components` or `Features/*/Components` and are reused.
    Two pages rendering the same concept with different markup is a bug. **(gap)**
@@ -61,12 +62,12 @@
 
 | Layer | File | Role |
 |---|---|---|
-| Theme | `src/ClientApp/Shared/Theme/AppTheme.cs` **(gap: today inline in `MainLayout.razor.cs`)** | Single `MudTheme` instance: both palettes, typography, layout, shape. Nothing else constructs a `MudTheme`. |
+| Theme | `src/ClientApp/Shared/Theme/AppTheme.cs` | Single `MudTheme` instance: both palettes, typography, layout, shape. Nothing else constructs a `MudTheme`. |
 | Custom properties | `src/ClientApp/wwwroot/css/app.css` | `--ds-*` tokens that MudBlazor doesn't own (radii, scrims, card shadows, z-index, transitions). |
 | Component styles | `*.razor.css` (CSS isolation) | Component-scoped rules that reference tokens. **No `<style>` blocks inside `.razor` files** — a `<style>` in a component is emitted once per instance, so a 300-card grid emits 300 copies. **(gap: 8 components do this)** |
 
-`wwwroot/css/themes/light.css` and `dark.css` are not loaded by `index.html` and define a
-palette that disagrees with the theme; delete them. **(gap)**
+The old `wwwroot/css/themes/*.css` files (never loaded, contradicting palette) are deleted. The
+saved `ThemeMode` (Light, Dark, System) is applied by `MainLayout` through `ThemeModeResolver`.
 
 ### 2.2 Colour
 
@@ -83,8 +84,8 @@ kept, with the light-mode background corrected so surfaces separate from the pag
 | `Info` | `#06B6D4` | `#06B6D4` | `Processing` status, informational chips (item counts). |
 | `Background` | `#F8FAFC` | `#0F172A` | Page background (slate-50 / slate-900). |
 | `Surface` | `#FFFFFF` | `#1E293B` | Cards, papers, dialogs, toolbars (white / slate-800). |
-| `BackgroundGray` | `#F1F5F9` | `#334155` | Image placeholders, skeleton bases (slate-100 / slate-700). Today left at Mud's neutral default, which clashes with the slate surfaces. |
-| `DrawerBackground` | `#F9FAFB` | `#0F172A` | Navigation drawer (today dark uses Tailwind *gray* `#111827`, mixing two neutral families). |
+| `BackgroundGray` | `#F1F5F9` | `#334155` | Image placeholders, skeleton bases (slate-100 / slate-700). |
+| `DrawerBackground` | `#F9FAFB` | `#0F172A` | Navigation drawer (slate in dark, like every other neutral). |
 | `AppbarBackground` | `#FFFFFF` | `#1E293B` | Reserved; there is no app bar today. |
 | `TextPrimary` / `TextSecondary` | Mud defaults | Mud defaults | Use `Class="mud-text-secondary"` for secondary text, never `Color="Color.Secondary"` on text and never a custom grey. |
 
@@ -95,8 +96,8 @@ Rules:
   if a white icon is needed over an image scrim use the `.ds-on-scrim` class (§4.5).
 - **Status colours are a function, not a choice.** `StatusChip` maps
   `IngestionStatusDto` → colour once (§5.3). Pages never pick a status colour themselves.
-- **`body` has no hard-coded background.** `MudThemeProvider` sets it. **(gap: `app.css:15`
-  forces `#020617`, which is neither palette's background.)**
+- **`body` has no hard-coded background.** `MudThemeProvider` sets it. The boot screen in `index.html` uses
+  `--ds-boot-*` tokens only while its loader is in the DOM.
 
 ### 2.3 Typography
 
@@ -152,9 +153,8 @@ Every animation is disabled under `prefers-reduced-motion: reduce` (already in `
 
 Material Icons via `MudBlazor.Icons.Material` (inline SVG). **Filled** is the default set.
 **Outlined** is used only for the "off" half of a toggle (`StarBorder` vs `Star`). Don't mix
-within one control group. **(gap: `ImageCard` hover actions use Outlined, the rest of the app
-Filled.)** The Material Icons *webfont* link in `index.html` is unused and should be removed;
-string icon names like `"mdi-view-grid"` (`LayoutSwitcher`) are not valid here.
+within one control group. No icon webfont is loaded; string icon
+names like `"mdi-view-grid"` (`LayoutSwitcher`) are not valid here.
 
 Fixed icon vocabulary (so the same concept always has the same glyph):
 
@@ -268,7 +268,7 @@ has logic, and a `.razor.css` when it has styles. Parameters are documented with
 | `SearchBar`, `FilterChips`, `DatasetInfo`, `DatasetStats`, `LanguageSelector` | exist, **unused** | `SearchBar` duplicates the field inside `FilterPanel`; `DatasetInfo`/`DatasetStats` are skeletons with TODO text. Delete or adopt. |
 | `DatasetUploader` + `HuggingFaceDatasetOptions` | exist | 1,500 lines across four tabs; split into one component per source (§6). |
 | `DatasetSwitcher`, `LayoutSwitcher` | exist, **unused** | Delete or mount them. `LayoutSwitcher` depends on `Core.LayoutRegistry`, which nothing else uses. |
-| `ThemeSelector`, `ViewPreferences`, `LanguageSelector`, `ApiKeySettingsPanel` | exist | Settings panels. Only `ApiKeySettingsPanel` is wired; the others are no-ops. **(gap)** |
+| `ThemeSelector`, `ViewPreferences`, `LanguageSelector`, `ApiKeySettingsPanel` | exist | Settings panels. `ThemeSelector`, `ViewPreferences` and `ApiKeySettingsPanel` read and persist real state; `LanguageSelector` is unused. |
 
 ### 4.2 Buttons
 
@@ -404,7 +404,7 @@ Routes: `/`, `/datasets` (**gap:** today `/my-datasets`; three links point at a 
 `/settings`, `/login`, `/register`, `/ai-tools`.
 
 Copy rules: sentence case; buttons are verbs ("Open", "Delete", "New dataset"); no "TODO"
-text in shipped UI (**gap:** `Settings.razor` shows two TODO sentences to users); "Coming
+text in shipped UI; "Coming
 soon" features are labelled in nav and on the page, never presented as working.
 
 ---
