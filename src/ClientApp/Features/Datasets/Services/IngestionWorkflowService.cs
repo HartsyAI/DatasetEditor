@@ -105,6 +105,9 @@ public sealed class IngestionWorkflowService
                 => "The file is larger than the server accepts.",
             HttpRequestException { StatusCode: HttpStatusCode.BadRequest }
                 => "The server rejected the request. Check the values and try again.",
+            // Another request changed the same dataset field first (audit D-4).
+            HttpRequestException { StatusCode: HttpStatusCode.Conflict }
+                => "The dataset was changed by someone else. Reload it and try again.",
             HttpRequestException { StatusCode: not null } http
                 => $"The server returned an error (HTTP {(int)http.StatusCode!.Value}). Retry, or check the API logs.",
             HttpRequestException => "The server didn't respond. Check that the API is running, then retry.",
