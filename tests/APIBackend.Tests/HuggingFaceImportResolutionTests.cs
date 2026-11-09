@@ -71,6 +71,7 @@ namespace DatasetStudio.Tests.APIBackend
 
             datasetRepoMock.Verify(r => r.UpdateItemCountAsync(datasetId, 1_034, It.IsAny<CancellationToken>()), Times.Once);
             datasetRepoMock.Verify(r => r.UpdateAsync(
+                It.IsAny<DatasetDto>(),
                 It.Is<DatasetDto>(d => d.Id == datasetId && d.HuggingFaceConfig == "default" && d.HuggingFaceSplit == "train"),
                 It.IsAny<CancellationToken>()), Times.Once);
         }
@@ -96,7 +97,7 @@ namespace DatasetStudio.Tests.APIBackend
                 CancellationToken.None);
 
             datasetRepoMock.Verify(r => r.UpdateItemCountAsync(It.IsAny<Guid>(), It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
-            datasetRepoMock.Verify(r => r.UpdateAsync(It.IsAny<DatasetDto>(), It.IsAny<CancellationToken>()), Times.Never);
+            datasetRepoMock.Verify(r => r.UpdateAsync(It.IsAny<DatasetDto>(), It.IsAny<DatasetDto>(), It.IsAny<CancellationToken>()), Times.Never);
         }
     }
 }

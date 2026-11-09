@@ -58,6 +58,7 @@ public sealed class IngestionWorkflowTests
     [InlineData(null, "The server didn't respond. Check that the API is running, then retry.")]
     [InlineData(HttpStatusCode.Forbidden, "You don't have permission to do that. Log in again and retry.")]
     [InlineData(HttpStatusCode.RequestEntityTooLarge, "The file is larger than the server accepts.")]
+    [InlineData(HttpStatusCode.Conflict, "The dataset was changed by someone else. Reload it and try again.")]
     [InlineData(HttpStatusCode.ServiceUnavailable, "The server's import queue is full. Wait a minute, then try again.")]
     [InlineData(HttpStatusCode.InternalServerError, "The server returned an error (HTTP 500). Retry, or check the API logs.")]
     public void DescribeFailure_NamesTheCause(HttpStatusCode? status, string expected)

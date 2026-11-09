@@ -10,6 +10,7 @@ using DatasetStudio.APIBackend.Services.Integration;
 using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
 using DatasetVisibilityFilter = DatasetStudio.Core.Abstractions.Repositories.DatasetVisibilityFilter;
+using DatasetUpdateConflictException = DatasetStudio.Core.Abstractions.Repositories.DatasetUpdateConflictException;
 
 // IDatasetRepository is referenced fully-qualified (Core.Abstractions.Repositories.IDatasetRepository)
 // rather than via `using`, because this file also uses the unrelated, same-named
@@ -298,11 +299,18 @@ internal static class DatasetEndpoints
             }
 
             DatasetDto updated = dataset with { SourceFileName = file.FileName };
-            await repository.UpdateAsync(updated, cancellationToken);
+            await repository.UpdateAsync(dataset, updated, cancellationToken);
 
             // Queue ingestion to run in the background; return immediately so a large upload
             // doesn't hold the request thread. The client polls dataset status for progress.
             await ingestionQueue.CommitAsync(reservation.Value, cancellationToken);
+        }
+        catch (DatasetUpdateConflictException ex)
+        {
+            // Another request changed the dataset's source file first (audit D-4).
+            await ingestionQueue.ReleaseAsync(reservation.Value, CancellationToken.None);
+            TryDeleteStagedUpload(tempFilePath);
+            return DatasetChanged(ex);
         }
         catch
         {
@@ -341,6 +349,15 @@ internal static class DatasetEndpoints
         return Results.Json(
             new { error = "The import queue is full. Try again in a minute." },
             statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+
+    /// <summary>
+    /// 409 when a dataset update lost a race with another request that changed the same field
+    /// (audit D-4). The client reloads the dataset and retries.
+    /// </summary>
+    private static IResult DatasetChanged(DatasetUpdateConflictException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
     }
 
     /// <summary>
@@ -442,14 +459,23 @@ internal static class DatasetEndpoints
                 {
                     config = sizeInfo.Config;
                     split = string.IsNullOrWhiteSpace(sizeInfo.Split) ? "train" : sizeInfo.Split;
-                    dataset = dataset with
+                    DatasetDto resolved = dataset with
                     {
                         HuggingFaceConfig = config,
                         HuggingFaceSplit = split,
                         TotalItems = sizeInfo.NumRows ?? dataset.TotalItems,
                     };
 
-                    await datasetRepository.UpdateAsync(dataset, cancellationToken);
+                    try
+                    {
+                        await datasetRepository.UpdateAsync(dataset, resolved, cancellationToken);
+                    }
+                    catch (DatasetUpdateConflictException)
+                    {
+                        // Another request resolved or changed these fields first. This read
+                        // still serves the page from what it resolved; nothing to fail.
+                    }
+                    dataset = resolved;
                 }
                 else
                 {
@@ -905,6 +931,7 @@ internal static class DatasetEndpoints
         // repository metadata". This was invisible until DatasetRepository.UpdateAsync was
         // fixed to actually persist (see the AsTracking fix) — before that, no UpdateAsync call
         // anywhere persisted anything, so this specific gap couldn't manifest on its own.
+        DatasetDto original = dataset;
         dataset = dataset with
         {
             Name = string.IsNullOrWhiteSpace(request.Name) ? dataset.Name : request.Name,
@@ -918,13 +945,18 @@ internal static class DatasetEndpoints
 
         try
         {
-            await repository.UpdateAsync(dataset, cancellationToken);
+            await repository.UpdateAsync(original, dataset, cancellationToken);
 
             // Queued through the same background-worker path as file uploads, each job getting
             // its own DI scope — not a fire-and-forget Task.Run against a scoped
             // IDatasetIngestionService, which used to race the request's DI scope (and its
             // scoped DbContext) being disposed right after this handler returns.
             await ingestionQueue.CommitAsync(reservation.Value, cancellationToken);
+        }
+        catch (DatasetUpdateConflictException ex)
+        {
+            await ingestionQueue.ReleaseAsync(reservation.Value, CancellationToken.None);
+            return DatasetChanged(ex);
         }
         catch
         {
@@ -1054,6 +1086,7 @@ internal static class DatasetEndpoints
             return Results.BadRequest(new { error = $"Could not reach bucket '{request.Bucket}': {ex.Message}" });
         }
 
+        DatasetDto beforeS3 = dataset;
         dataset = dataset with
         {
             SourceType = DatasetSourceType.ExternalS3Streaming,
@@ -1063,7 +1096,14 @@ internal static class DatasetEndpoints
             S3Prefix = request.Prefix,
             Status = IngestionStatusDto.Completed,
         };
-        await repository.UpdateAsync(dataset, cancellationToken);
+        try
+        {
+            await repository.UpdateAsync(beforeS3, dataset, cancellationToken);
+        }
+        catch (DatasetUpdateConflictException ex)
+        {
+            return DatasetChanged(ex);
+        }
 
         return Results.Accepted($"/api/datasets/{datasetId}", new
         {

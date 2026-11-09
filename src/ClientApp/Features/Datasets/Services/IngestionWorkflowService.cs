@@ -105,6 +105,9 @@ public sealed class IngestionWorkflowService
                 => "The file is larger than the server accepts.",
             HttpRequestException { StatusCode: HttpStatusCode.BadRequest }
                 => "The server rejected the request. Check the values and try again.",
+            // Another request changed the same dataset field first (audit D-4).
+            HttpRequestException { StatusCode: HttpStatusCode.Conflict }
+                => "The dataset was changed by someone else. Reload it and try again.",
             // The import queue is at its limit (Ingestion:MaxQueuedJobs). Nothing was staged.
             HttpRequestException { StatusCode: HttpStatusCode.ServiceUnavailable }
                 => "The server's import queue is full. Wait a minute, then try again.",

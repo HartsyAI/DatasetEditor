@@ -98,56 +98,151 @@ public sealed class DatasetRepository : IDatasetRepository
         return query.Where(d => d.IsPublic || (userId != null && d.CreatedByUserId == userId));
     }
 
-    public async Task UpdateAsync(DatasetDto dataset, CancellationToken cancellationToken = default)
+    public async Task UpdateAsync(DatasetDto original, DatasetDto updated, CancellationToken cancellationToken = default)
     {
-        if (dataset == null)
+        ArgumentNullException.ThrowIfNull(original);
+        ArgumentNullException.ThrowIfNull(updated);
+        if (original.Id != updated.Id)
         {
-            throw new ArgumentNullException(nameof(dataset));
+            throw new ArgumentException("original and updated must be the same dataset.", nameof(updated));
         }
 
-        // AsTracking(): the DbContext is configured with a NoTracking default (see
-        // ServiceCollectionExtensions — a deliberate read-performance win for the
-        // GetAllAsync/GetByIdAsync/SearchAsync paths), which silently no-ops this
-        // fetch-mutate-SaveChanges pattern without it — the entity comes back untracked, the
-        // property assignments below are invisible to the change tracker, and SaveChangesAsync
-        // has nothing to persist. Confirmed this was happening in practice: ingestion status
-        // updates were never reaching the database at all.
-        var entity = await _dbContext.Datasets
-            .AsTracking()
-            .FirstOrDefaultAsync(d => d.Id == dataset.Id, cancellationToken);
-
-        if (entity == null)
+        // The row's xmin token makes SaveChanges fail if anything (typically a background status
+        // or count write, or another patch) touched the row between this read and the write. Each
+        // retry re-reads and re-checks, so those writes are kept, never reverted. Three attempts
+        // weren't enough with five concurrent writers: a patch that conflicted with nothing failed
+        // with a false 409. Retries back off with jitter so contending writers spread out.
+        const int MaxAttempts = 10;
+        for (int attempt = 1; ; attempt++)
         {
-            throw new InvalidOperationException($"Dataset with ID {dataset.Id} not found");
+            // AsTracking(): the DbContext defaults to NoTracking, which would make this
+            // fetch-mutate-SaveChanges pattern silently write nothing.
+            DatasetEntity entity = await _dbContext.Datasets
+                .AsTracking()
+                .FirstOrDefaultAsync(d => d.Id == updated.Id, cancellationToken)
+                ?? throw new InvalidOperationException($"Dataset with ID {updated.Id} not found");
+
+            FieldPatch patch = new();
+
+            // Where the items come from (type, HuggingFace repo/config/split, S3 profile/bucket/
+            // prefix, folder) is one selection. If the caller changes any part of it while another
+            // request changed any part since the caller's read, the update is refused as a whole:
+            // merging field by field could store a combination no request chose or validated, such
+            // as an S3 bucket on a dataset another request switched to HuggingFace, or a new
+            // repository with the old one's resolved split (Codex review on #21).
+            (string Name, object? Original, object? Updated, object? Current)[] source =
+            {
+                (nameof(DatasetDto.SourceType), original.SourceType, updated.SourceType, entity.SourceType),
+                (nameof(DatasetDto.SourceUri), original.SourceUri, updated.SourceUri, entity.SourceUri),
+                (nameof(DatasetDto.IsStreaming), original.IsStreaming, updated.IsStreaming, entity.IsStreaming),
+                (nameof(DatasetDto.HuggingFaceRepository), original.HuggingFaceRepository, updated.HuggingFaceRepository, entity.HuggingFaceRepository),
+                (nameof(DatasetDto.HuggingFaceConfig), original.HuggingFaceConfig, updated.HuggingFaceConfig, entity.HuggingFaceConfig),
+                (nameof(DatasetDto.HuggingFaceSplit), original.HuggingFaceSplit, updated.HuggingFaceSplit, entity.HuggingFaceSplit),
+                (nameof(DatasetDto.S3StorageProfileName), original.S3StorageProfileName, updated.S3StorageProfileName, entity.S3StorageProfileName),
+                (nameof(DatasetDto.S3Bucket), original.S3Bucket, updated.S3Bucket, entity.S3Bucket),
+                (nameof(DatasetDto.S3Prefix), original.S3Prefix, updated.S3Prefix, entity.S3Prefix),
+                (nameof(DatasetDto.StoragePath), original.StoragePath, updated.StoragePath, entity.StoragePath),
+            };
+            if (source.Any(f => !Equals(f.Original, f.Updated)))
+            {
+                // Another request setting a field to exactly the caller's value (two reads resolving the
+                // same split) agrees with the caller, so it isn't a conflict.
+                List<string> changedElsewhere = source
+                    .Where(f => !Equals(f.Current, f.Original) && !Equals(f.Current, f.Updated))
+                    .Select(f => f.Name)
+                    .ToList();
+                if (changedElsewhere.Count > 0)
+                {
+                    _dbContext.Entry(entity).State = EntityState.Detached;
+                    throw new DatasetUpdateConflictException(updated.Id, changedElsewhere);
+                }
+            }
+
+            patch.Apply(nameof(DatasetDto.Name), original.Name, updated.Name, entity.Name, v => entity.Name = v);
+            patch.Apply(nameof(DatasetDto.Description), original.Description, updated.Description, entity.Description, v => entity.Description = v);
+            patch.Apply(nameof(DatasetDto.Status), original.Status, updated.Status, entity.Status, v => entity.Status = v);
+            patch.Apply(nameof(DatasetDto.SourceFileName), original.SourceFileName, updated.SourceFileName, entity.SourceFileName, v => entity.SourceFileName = v);
+            patch.Apply(nameof(DatasetDto.SourceType), original.SourceType, updated.SourceType, entity.SourceType, v => entity.SourceType = v);
+            patch.Apply(nameof(DatasetDto.SourceUri), original.SourceUri, updated.SourceUri, entity.SourceUri, v => entity.SourceUri = v);
+            patch.Apply(nameof(DatasetDto.IsStreaming), original.IsStreaming, updated.IsStreaming, entity.IsStreaming, v => entity.IsStreaming = v);
+            patch.Apply(nameof(DatasetDto.HuggingFaceRepository), original.HuggingFaceRepository, updated.HuggingFaceRepository, entity.HuggingFaceRepository, v => entity.HuggingFaceRepository = v);
+            patch.Apply(nameof(DatasetDto.HuggingFaceConfig), original.HuggingFaceConfig, updated.HuggingFaceConfig, entity.HuggingFaceConfig, v => entity.HuggingFaceConfig = v);
+            patch.Apply(nameof(DatasetDto.HuggingFaceSplit), original.HuggingFaceSplit, updated.HuggingFaceSplit, entity.HuggingFaceSplit, v => entity.HuggingFaceSplit = v);
+            patch.Apply(nameof(DatasetDto.S3StorageProfileName), original.S3StorageProfileName, updated.S3StorageProfileName, entity.S3StorageProfileName, v => entity.S3StorageProfileName = v);
+            patch.Apply(nameof(DatasetDto.S3Bucket), original.S3Bucket, updated.S3Bucket, entity.S3Bucket, v => entity.S3Bucket = v);
+            patch.Apply(nameof(DatasetDto.S3Prefix), original.S3Prefix, updated.S3Prefix, entity.S3Prefix, v => entity.S3Prefix = v);
+            patch.Apply(nameof(DatasetDto.TotalItems), original.TotalItems, updated.TotalItems, entity.TotalItems, v => entity.TotalItems = v);
+            patch.Apply(nameof(DatasetDto.ErrorMessage), original.ErrorMessage, updated.ErrorMessage, entity.ErrorMessage, v => entity.ErrorMessage = v);
+            patch.Apply(nameof(DatasetDto.Format), original.Format, updated.Format, entity.Format, v => entity.Format = v);
+            patch.Apply(nameof(DatasetDto.Modality), original.Modality, updated.Modality, entity.Modality, v => entity.Modality = v);
+            patch.Apply(nameof(DatasetDto.TotalSizeBytes), original.TotalSizeBytes, updated.TotalSizeBytes, entity.TotalSizeBytes, v => entity.TotalSizeBytes = v);
+            patch.Apply(nameof(DatasetDto.StoragePath), original.StoragePath, updated.StoragePath, entity.StoragePath, v => entity.StoragePath = v);
+            patch.Apply(nameof(DatasetDto.ParquetPath), original.ParquetPath, updated.ParquetPath, entity.ParquetPath, v => entity.ParquetPath = v);
+            patch.Apply(nameof(DatasetDto.IsPublic), original.IsPublic, updated.IsPublic, entity.IsPublic, v => entity.IsPublic = v);
+            patch.Apply(nameof(DatasetDto.Metadata), original.Metadata, updated.Metadata, entity.Metadata, v => entity.Metadata = v);
+            patch.Apply(nameof(DatasetDto.CreatedByUserId), original.CreatedByUserId, updated.CreatedByUserId, entity.CreatedByUserId, v => entity.CreatedByUserId = v);
+
+            if (patch.Conflicts.Count > 0 || !patch.Changed)
+            {
+                _dbContext.Entry(entity).State = EntityState.Detached;
+                if (patch.Conflicts.Count > 0)
+                {
+                    throw new DatasetUpdateConflictException(updated.Id, patch.Conflicts);
+                }
+                return;
+            }
+
+            entity.UpdatedAt = DateTime.UtcNow;
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                return;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                _dbContext.Entry(entity).State = EntityState.Detached;
+                if (attempt >= MaxAttempts)
+                {
+                    throw new DatasetUpdateConflictException(updated.Id, patch.ChangedFields);
+                }
+                await Task.Delay(Random.Shared.Next(5, 20) * attempt, cancellationToken);
+            }
         }
+    }
 
-        // Update fields
-        entity.Name = dataset.Name;
-        entity.Description = dataset.Description;
-        entity.Status = dataset.Status;
-        entity.SourceFileName = dataset.SourceFileName;
-        entity.SourceType = dataset.SourceType;
-        entity.SourceUri = dataset.SourceUri;
-        entity.IsStreaming = dataset.IsStreaming;
-        entity.HuggingFaceRepository = dataset.HuggingFaceRepository;
-        entity.HuggingFaceConfig = dataset.HuggingFaceConfig;
-        entity.HuggingFaceSplit = dataset.HuggingFaceSplit;
-        entity.S3StorageProfileName = dataset.S3StorageProfileName;
-        entity.S3Bucket = dataset.S3Bucket;
-        entity.S3Prefix = dataset.S3Prefix;
-        entity.TotalItems = dataset.TotalItems;
-        entity.ErrorMessage = dataset.ErrorMessage;
-        entity.Format = dataset.Format;
-        entity.Modality = dataset.Modality;
-        entity.TotalSizeBytes = dataset.TotalSizeBytes;
-        entity.StoragePath = dataset.StoragePath;
-        entity.ParquetPath = dataset.ParquetPath;
-        entity.IsPublic = dataset.IsPublic;
-        entity.Metadata = dataset.Metadata;
-        entity.CreatedByUserId = dataset.CreatedByUserId;
-        entity.UpdatedAt = DateTime.UtcNow;
+    /// <summary>
+    /// Applies one field of a patch: unchanged by the caller → skipped; changed by the caller and
+    /// still as the caller read it (or already at the new value) → written; changed by someone
+    /// else to a third value → a conflict.
+    /// </summary>
+    private sealed class FieldPatch
+    {
+        public List<string> Conflicts { get; } = new();
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        public List<string> ChangedFields { get; } = new();
+
+        public bool Changed => ChangedFields.Count > 0;
+
+        /// <param name="field">Field name, for conflict reports.</param>
+        /// <param name="original">The value the caller read.</param>
+        /// <param name="updated">The value the caller wants.</param>
+        /// <param name="current">The value in the database now.</param>
+        /// <param name="set">Writes the value to the tracked entity.</param>
+        public void Apply<T>(string field, T original, T updated, T current, Action<T> set)
+        {
+            EqualityComparer<T> comparer = EqualityComparer<T>.Default;
+            if (comparer.Equals(original, updated) || comparer.Equals(current, updated))
+            {
+                return;
+            }
+            if (!comparer.Equals(current, original))
+            {
+                Conflicts.Add(field);
+                return;
+            }
+            set(updated);
+            ChangedFields.Add(field);
+        }
     }
 
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
@@ -157,17 +252,31 @@ public sealed class DatasetRepository : IDatasetRepository
         // an instance of throws "cannot be tracked because another instance ... is already
         // being tracked." A tracking query instead resolves to the existing tracked instance
         // by identity when there is one, so Remove() has nothing to conflict with.
-        var entity = await _dbContext.Datasets
-            .AsTracking()
-            .FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
-
-        if (entity == null)
+        // Retried because the row's xmin token makes the delete fail if a background status or
+        // count write landed between the read and the delete; the delete should still happen.
+        for (int attempt = 1; ; attempt++)
         {
-            return; // Idempotent delete
-        }
+            var entity = await _dbContext.Datasets
+                .AsTracking()
+                .FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
 
-        _dbContext.Datasets.Remove(entity);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+            if (entity == null)
+            {
+                return; // Idempotent delete
+            }
+
+            _dbContext.Datasets.Remove(entity);
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                return;
+            }
+            catch (DbUpdateConcurrencyException) when (attempt < 10)
+            {
+                _dbContext.Entry(entity).State = EntityState.Detached;
+                await Task.Delay(Random.Shared.Next(5, 20) * attempt, cancellationToken);
+            }
+        }
     }
 
     public async Task<long> GetCountAsync(DatasetVisibilityFilter? visibility = null, CancellationToken cancellationToken = default)
@@ -193,41 +302,40 @@ public sealed class DatasetRepository : IDatasetRepository
         return entities.Select(MapToDto).ToList();
     }
 
+    /// <summary>
+    /// One UPDATE of just these columns, with no read first, so it can't revert another
+    /// writer's fields and never trips the row's concurrency token (audit D-4).
+    /// </summary>
     public async Task UpdateStatusAsync(Guid id, IngestionStatusDto status, string? errorMessage = null, CancellationToken cancellationToken = default)
     {
-        // See the AsTracking() comment in UpdateAsync — same fetch-mutate-SaveChanges pattern,
-        // same requirement to opt out of the DbContext's NoTracking default.
-        var entity = await _dbContext.Datasets
-            .AsTracking()
-            .FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
-
-        if (entity == null)
+        DateTime now = DateTime.UtcNow;
+        int updated = await _dbContext.Datasets
+            .Where(d => d.Id == id)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(d => d.Status, status)
+                .SetProperty(d => d.ErrorMessage, errorMessage)
+                .SetProperty(d => d.UpdatedAt, now),
+                cancellationToken);
+        if (updated == 0)
         {
             throw new InvalidOperationException($"Dataset with ID {id} not found");
         }
-
-        entity.Status = status;
-        entity.ErrorMessage = errorMessage;
-        entity.UpdatedAt = DateTime.UtcNow;
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>Same single-statement patch as <see cref="UpdateStatusAsync"/>, for the item count.</summary>
     public async Task UpdateItemCountAsync(Guid id, long count, CancellationToken cancellationToken = default)
     {
-        var entity = await _dbContext.Datasets
-            .AsTracking()
-            .FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
-
-        if (entity == null)
+        DateTime now = DateTime.UtcNow;
+        int updated = await _dbContext.Datasets
+            .Where(d => d.Id == id)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(d => d.TotalItems, count)
+                .SetProperty(d => d.UpdatedAt, now),
+                cancellationToken);
+        if (updated == 0)
         {
             throw new InvalidOperationException($"Dataset with ID {id} not found");
         }
-
-        entity.TotalItems = count;
-        entity.UpdatedAt = DateTime.UtcNow;
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
     /// <summary>

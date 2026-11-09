@@ -175,14 +175,19 @@ private by default; `IsPublic` makes them visible to everyone.
 `DataAccess/PostgreSQL/Repositories/DatasetRepository.cs`, `Services/Auth/DatasetPermissionService.cs`.
 A `DatasetVisibilityFilter` is built from the principal and applied as SQL `WHERE`, so pages
 are never under-filled by post-filtering. `CanRead/CanWrite/CanDelete` consult owner, admin
-role, and the `permissions` table.
+role, and the `permissions` table. Updates are patches: `UpdateAsync(original, updated)` writes only the fields the caller
+changed, status and item-count writes are single `UPDATE` statements, and a field someone else
+changed to a different value in the meantime is refused with `409` (the row's `xmin` is the
+concurrency token). The source selection (type, HuggingFace repo/config/split, S3
+profile/bucket/prefix, folder) is one unit: changing any of it while another request changed
+any of it is refused as a whole, so no request can store a mix nobody chose. A full-row overwrite from a stale snapshot used to revert background
+ingestion's status and count (D-4).
 
 **Why.** 404-not-403 for private datasets mirrors GitHub's handling of private repos. The
 filter lives in SQL so counts and pages agree.
 
 **Gaps.** The `permissions` grant table has no write path — sharing a private dataset with a
-specific user is impossible from the API (D-2). `POST /api/datasets` returns default
-timestamps (D-1). Full-row `UpdateAsync` can clobber concurrent status writes (D-4).
+specific user is impossible from the API (D-2).
 
 ### 4.3 Upload ingestion — Working
 

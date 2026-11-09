@@ -57,7 +57,8 @@ timestamps). Rich image attributes (photographer, average color, engagement coun
 
 - **Metadata (Postgres):** `DatasetEntity` (name, status, counts, source type/URI, HuggingFace
   repo/config/split, error message) and related tables (users, captions, permissions) via
-  `DatasetStudioDbContext`. Migrations live in `APIBackend/DataAccess/PostgreSQL/Migrations` and
+  `DatasetStudioDbContext`. Dataset updates are field-level patches with `xmin` as the concurrency
+  token, so request-time edits and background ingestion writes never overwrite each other. Migrations live in `APIBackend/DataAccess/PostgreSQL/Migrations` and
   are applied automatically on API startup.
 - **Items (Parquet):** per dataset, a manifest (`dataset_{id}.manifest.json`) over immutable
   segment files (`dataset_{id}_seg_{n}.parquet`), each with a sorted id index. Every write builds
