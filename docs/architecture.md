@@ -72,14 +72,12 @@ timestamps). Rich image attributes (photographer, average color, engagement coun
 `pageSize` is clamped to 1–100 on the list and item endpoints; a malformed cursor returns `400`
 rather than restarting the read from the beginning.
 
-- **Local datasets:** cursor is the opaque Parquet `"shard:row"` token. `ReadPageAsync` reads row
-  groups sequentially starting from the cursor's position until the page fills — cost is bounded
-  by a row group's size (the ingestion writer's batch size, `ParquetSchemaDefinition.
-  DefaultBatchSize` = 10,000 rows, see §3/§4 Ingestion), not O(1) and not the full shard or
-  dataset. The Phase 1 append fix (`FileMode.Open, FileAccess.ReadWrite` instead of `Append`,
-  needed for the footer rewrite on append) doesn't change row-group sizing itself, but does mean
-  a re-ingested/appended shard can end up with more, smaller row groups than a single bulk write
-  would — still bounded, just a different constant. No full scans either way.
+- **Local datasets:** cursor is the opaque Parquet `"shard:row"` token. `ReadPageAsync` skips
+  every row group that ends before the cursor using the footer's row counts (nothing is decoded),
+  then decodes groups from the cursor until the page fills. Cost is a footer read plus the groups
+  the page returns rows from, each `ParquetSchemaDefinition.DefaultBatchSize` = 10,000 rows when
+  written by ingestion. A page that ends exactly at the last row returns no cursor. Re-importing
+  in many small uploads still produces smaller groups (no compaction yet). No full scans.
 - **Streaming datasets:** the request maps to a HuggingFace `/rows?offset=…` call; rows are mapped
   to DTOs on the fly. Config/split are auto-discovered once and cached on the dataset.
 

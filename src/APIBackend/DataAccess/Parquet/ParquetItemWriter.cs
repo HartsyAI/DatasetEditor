@@ -104,6 +104,7 @@ public class ParquetItemWriter : IDisposable
             stream,
             ParquetSchemaDefinition.WriterOptions,
             cancellationToken: cancellationToken);
+        writer.CompressionMethod = ParquetSchemaDefinition.Compression;
 
         using var groupWriter = writer.CreateRowGroup();
         await WriteColumnsAsync(groupWriter, columns, cancellationToken);
@@ -129,6 +130,7 @@ public class ParquetItemWriter : IDisposable
             ParquetSchemaDefinition.WriterOptions,
             append: true,
             cancellationToken: cancellationToken);
+        writer.CompressionMethod = ParquetSchemaDefinition.Compression;
 
         using var groupWriter = writer.CreateRowGroup();
         await WriteColumnsAsync(groupWriter, columns, cancellationToken);
