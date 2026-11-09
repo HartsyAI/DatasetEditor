@@ -6,14 +6,14 @@ using Parquet.Data;
 namespace DatasetStudio.APIBackend.DataAccess.Parquet;
 
 /// <summary>
-/// Writes dataset items to Parquet files with automatic sharding and batch optimization.
-/// Handles writing billions of items by splitting them across multiple shard files.
+/// Writes immutable segment files. A segment is written whole to a temp file beside its final
+/// name and renamed into place, so a file under a segment name is always complete. Appending to
+/// a shard in place used to rewrite its footer, and a process killed mid-append left the whole
+/// shard unreadable (audit P-11).
 /// </summary>
 public class ParquetItemWriter : IDisposable
 {
     private readonly string _dataDirectory;
-    private readonly Dictionary<int, ShardWriter> _activeWriters = new();
-    private bool _disposed;
 
     /// <summary>
     /// Initializes a new instance of the ParquetItemWriter.
@@ -26,114 +26,74 @@ public class ParquetItemWriter : IDisposable
     }
 
     /// <summary>
-    /// Writes a batch of items to Parquet files, automatically sharding as needed.
+    /// Writes <paramref name="items"/> as a new segment, in row groups of
+    /// <see cref="ParquetSchemaDefinition.DefaultBatchSize"/>. Returns the ids in row order.
     /// </summary>
-    /// <param name="datasetId">The dataset ID.</param>
-    /// <param name="items">Items to write.</param>
-    /// <param name="startIndex">Starting index for determining shard placement.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    public async Task WriteBatchAsync(
-        Guid datasetId,
-        IEnumerable<DatasetItemDto> items,
-        long startIndex = 0,
-        CancellationToken cancellationToken = default)
+    public Task<List<Guid>> WriteSegmentAsync(string path, IReadOnlyList<DatasetItemDto> items, CancellationToken cancellationToken)
     {
-        var itemList = items.ToList();
-        if (itemList.Count == 0)
-            return;
-
-        // Group items by shard
-        var itemsByShard = new Dictionary<int, List<DatasetItemDto>>();
-        long currentIndex = startIndex;
-
-        foreach (var item in itemList)
-        {
-            int shardIndex = ParquetSchemaDefinition.GetShardIndex(currentIndex);
-
-            if (!itemsByShard.ContainsKey(shardIndex))
-                itemsByShard[shardIndex] = new List<DatasetItemDto>();
-
-            itemsByShard[shardIndex].Add(item);
-            currentIndex++;
-        }
-
-        // Write to each shard
-        foreach (var (shardIndex, shardItems) in itemsByShard)
-        {
-            await WriteToShardAsync(datasetId, shardIndex, shardItems, cancellationToken);
-        }
+        return WriteSegmentAsync(path, Batches(items), cancellationToken);
     }
 
     /// <summary>
-    /// Writes items to a specific shard file.
+    /// Writes a segment from row groups produced one at a time (a rewrite or a merge streams
+    /// them, holding one group in memory). Nothing appears under <paramref name="path"/> until the
+    /// whole file is written; on failure or cancellation the temp file is removed and any existing
+    /// file at <paramref name="path"/> is untouched. Returns the ids in row order.
     /// </summary>
-    private async Task WriteToShardAsync(
-        Guid datasetId,
-        int shardIndex,
-        List<DatasetItemDto> items,
-        CancellationToken cancellationToken)
+    public async Task<List<Guid>> WriteSegmentAsync(string path, IAsyncEnumerable<List<DatasetItemDto>> groups, CancellationToken cancellationToken)
     {
-        var fileName = ParquetSchemaDefinition.GetShardFileName(datasetId, shardIndex);
-        var filePath = Path.Combine(_dataDirectory, fileName);
-
-        // Convert items to columnar format
-        var columns = ConvertToColumns(items);
-
-        // Append to existing file or create new one
-        if (File.Exists(filePath))
+        string tempPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        List<Guid> ids = new();
+        try
         {
-            await AppendToFileAsync(filePath, columns, cancellationToken);
+            await using (FileStream stream = File.Create(tempPath))
+            {
+                using (ParquetWriter writer = await ParquetWriter.CreateAsync(
+                    ParquetSchemaDefinition.Schema, stream, ParquetSchemaDefinition.WriterOptions, cancellationToken: cancellationToken))
+                {
+                    writer.CompressionMethod = ParquetSchemaDefinition.Compression;
+                    await foreach (List<DatasetItemDto> group in groups.WithCancellation(cancellationToken))
+                    {
+                        if (group.Count == 0)
+                        {
+                            continue;
+                        }
+                        using ParquetRowGroupWriter groupWriter = writer.CreateRowGroup();
+                        await WriteColumnsAsync(groupWriter, ConvertToColumns(group), cancellationToken);
+                        ids.AddRange(group.Select(i => i.Id));
+                    }
+                }
+                await stream.FlushAsync(cancellationToken);
+                stream.Flush(flushToDisk: true);
+            }
+
+            // The rename is the commit point; it is not cancellable.
+            File.Move(tempPath, path, overwrite: true);
+            return ids;
         }
-        else
+        finally
         {
-            await CreateFileAsync(filePath, columns, cancellationToken);
+            try
+            {
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+            }
+            catch (IOException)
+            {
+                // Swept with the dataset's other orphans on its next write.
+            }
         }
     }
 
-    /// <summary>
-    /// Creates a new Parquet file with the given data.
-    /// </summary>
-    private static async Task CreateFileAsync(
-        string filePath,
-        Dictionary<string, Array> columns,
-        CancellationToken cancellationToken)
+    private static async IAsyncEnumerable<List<DatasetItemDto>> Batches(IReadOnlyList<DatasetItemDto> items)
     {
-        using var stream = File.Create(filePath);
-        using var writer = await ParquetWriter.CreateAsync(
-            ParquetSchemaDefinition.Schema,
-            stream,
-            ParquetSchemaDefinition.WriterOptions,
-            cancellationToken: cancellationToken);
-        writer.CompressionMethod = ParquetSchemaDefinition.Compression;
-
-        using var groupWriter = writer.CreateRowGroup();
-        await WriteColumnsAsync(groupWriter, columns, cancellationToken);
-    }
-
-    /// <summary>
-    /// Appends data to an existing Parquet file.
-    /// </summary>
-    private static async Task AppendToFileAsync(
-        string filePath,
-        Dictionary<string, Array> columns,
-        CancellationToken cancellationToken)
-    {
-        // append: true needs to seek backward and rewrite the Parquet footer (row groups
-        // are added, but the file-level metadata at the end has to move); FileMode.Append
-        // opens a write-only, append-only stream that rejects any seek before the current
-        // end, so ParquetWriter's footer rewrite fails. FileMode.Open + ReadWrite lets it
-        // seek freely, same as opening any existing file for random-access modification.
-        using var stream = File.Open(filePath, FileMode.Open, FileAccess.ReadWrite);
-        using var writer = await ParquetWriter.CreateAsync(
-            ParquetSchemaDefinition.Schema,
-            stream,
-            ParquetSchemaDefinition.WriterOptions,
-            append: true,
-            cancellationToken: cancellationToken);
-        writer.CompressionMethod = ParquetSchemaDefinition.Compression;
-
-        using var groupWriter = writer.CreateRowGroup();
-        await WriteColumnsAsync(groupWriter, columns, cancellationToken);
+        for (int i = 0; i < items.Count; i += ParquetSchemaDefinition.DefaultBatchSize)
+        {
+            yield return items.Skip(i).Take(ParquetSchemaDefinition.DefaultBatchSize).ToList();
+        }
+        await Task.CompletedTask;
     }
 
     /// <summary>
@@ -271,127 +231,9 @@ public class ParquetItemWriter : IDisposable
         };
     }
 
-    /// <summary>
-    /// Flushes and closes all active writers.
-    /// </summary>
-    public async Task FlushAsync()
-    {
-        foreach (var writer in _activeWriters.Values)
-        {
-            await writer.DisposeAsync();
-        }
-        _activeWriters.Clear();
-    }
 
-    /// <summary>
-    /// Deletes all shard files for a specific dataset.
-    /// </summary>
-    /// <param name="datasetId">The dataset ID.</param>
-    public void DeleteDatasetShards(Guid datasetId)
-    {
-        var pattern = $"dataset_{datasetId:N}_shard_*.parquet";
-        var files = Directory.GetFiles(_dataDirectory, pattern);
-
-        foreach (var file in files)
-        {
-            try
-            {
-                File.Delete(file);
-            }
-            catch (IOException)
-            {
-                // File might be in use, ignore
-            }
-        }
-    }
-
-    /// <summary>
-    /// Replaces a shard's contents for a shard-scoped rewrite. The replacement is written to a
-    /// temp file beside the shard and only then renamed over it, so the original shard stays
-    /// intact until the new one is complete. The earlier delete-then-write sequence lost the whole
-    /// shard if the request was cancelled between the two steps (the cancellation reached the
-    /// write, not the delete). Cancelling here discards the temp file and leaves the original as it was.
-    /// The temp name ends in <c>.tmp</c>, so shard discovery (<c>dataset_*.parquet</c>) never reads it.
-    /// </summary>
-    /// <param name="datasetId">The dataset ID.</param>
-    /// <param name="shardIndex">The shard being rewritten.</param>
-    /// <param name="items">The complete, updated contents of the shard.</param>
-    /// <param name="cancellationToken">Cancellation token; honoured only before the rename.</param>
-    public async Task ReplaceShardAsync(
-        Guid datasetId,
-        int shardIndex,
-        List<DatasetItemDto> items,
-        CancellationToken cancellationToken)
-    {
-        var fileName = ParquetSchemaDefinition.GetShardFileName(datasetId, shardIndex);
-        var filePath = Path.Combine(_dataDirectory, fileName);
-        var tempPath = filePath + "." + Guid.NewGuid().ToString("N") + ".rewrite.tmp";
-
-        var columns = ConvertToColumns(items);
-        try
-        {
-            await CreateFileAsync(tempPath, columns, cancellationToken);
-
-            // The rename is the commit point. It is synchronous and not cancellable, so once it
-            // starts the shard is either fully the old version or fully the new one.
-            File.Move(tempPath, filePath, overwrite: true);
-        }
-        finally
-        {
-            try
-            {
-                if (File.Exists(tempPath))
-                {
-                    File.Delete(tempPath);
-                }
-            }
-            catch (IOException)
-            {
-                // Leftover temp file is harmless (never read as a shard); nothing to recover.
-            }
-        }
-    }
-
+    /// <summary>Nothing to release: every write opens and closes its own file.</summary>
     public void Dispose()
     {
-        if (_disposed)
-            return;
-
-        foreach (var writer in _activeWriters.Values)
-        {
-            writer.Dispose();
-        }
-        _activeWriters.Clear();
-
-        _disposed = true;
-    }
-
-    /// <summary>
-    /// Helper class to manage individual shard writers.
-    /// </summary>
-    private class ShardWriter : IDisposable, IAsyncDisposable
-    {
-        private readonly FileStream _stream;
-        private readonly ParquetWriter _writer;
-
-        public ShardWriter(FileStream stream, ParquetWriter writer)
-        {
-            _stream = stream;
-            _writer = writer;
-        }
-
-        public void Dispose()
-        {
-            _writer?.Dispose();
-            _stream?.Dispose();
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            if (_writer != null)
-                await _writer.DisposeAsync();
-            if (_stream != null)
-                await _stream.DisposeAsync();
-        }
     }
 }

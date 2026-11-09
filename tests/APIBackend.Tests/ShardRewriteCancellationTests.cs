@@ -23,7 +23,7 @@ namespace DatasetStudio.Tests.APIBackend
         private const int ItemCount = 500;
 
         [Fact]
-        public async Task ReplaceShard_CancelledBeforeCommit_LeavesOriginalShardIntact()
+        public async Task UpdateItems_CancelledBeforeCommit_LeavesOriginalSegmentIntact()
         {
             string dataDirectory = Path.Combine(
                 Path.GetTempPath(), "DatasetStudioTests", "ShardRewriteCancellation", Guid.NewGuid().ToString("N"));
@@ -39,7 +39,6 @@ namespace DatasetStudio.Tests.APIBackend
                 await repository.AddRangeAsync(datasetId, original);
 
                 List<DatasetItemDto> replacement = original.Select(i => i with { Title = "after" }).ToList();
-                ParquetItemWriter writer = new ParquetItemWriter(dataDirectory);
 
                 using CancellationTokenSource cts = new CancellationTokenSource();
                 cts.Cancel();
@@ -49,7 +48,7 @@ namespace DatasetStudio.Tests.APIBackend
                 // shard must hold every item, each fully old or fully new.
                 try
                 {
-                    await writer.ReplaceShardAsync(datasetId, 0, replacement, cts.Token);
+                    await repository.UpdateItemsAsync(replacement, cts.Token);
                 }
                 catch (OperationCanceledException)
                 {
@@ -64,7 +63,7 @@ namespace DatasetStudio.Tests.APIBackend
                     t => t == "before" || t == "after",
                     "every item must be either fully old or fully new");
 
-                Directory.GetFiles(dataDirectory, "*.rewrite.tmp").Should().BeEmpty(
+                Directory.GetFiles(dataDirectory, "*.tmp").Should().BeEmpty(
                     "a cancelled replacement must not leave its temp file behind");
             }
             finally

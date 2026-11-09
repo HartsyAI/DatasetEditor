@@ -5,7 +5,7 @@ the kind that don't fit in memory, often don't fit on one disk, and frequently l
 else (HuggingFace, an S3 bucket) that you'd rather not copy.
 
 ASP.NET Core API + Blazor WebAssembly client. PostgreSQL for users/datasets/permissions,
-sharded Apache Parquet on disk for dataset items, and on-demand proxying for remote sources.
+Apache Parquet segments on disk for dataset items, and on-demand proxying for remote sources.
 
 > **Project documents**
 > - [DESIGN.md](DESIGN.md) — the UI design system every client change must follow.
@@ -56,9 +56,9 @@ Dataset Studio is built around three commitments:
                     └───┬──────────────┬───────────────┬───────────────┘
                         │              │               │
              ┌──────────▼───┐  ┌───────▼────────┐  ┌───▼─────────────────────┐
-  Storage    │ PostgreSQL   │  │ Parquet shards │  │ Remote, proxied on demand│
+  Storage    │ PostgreSQL   │  │ Parquet segs.  │  │ Remote, proxied on demand│
              │ users        │  │ dataset items  │  │ HuggingFace datasets-   │
-             │ datasets     │  │ 10M rows/shard │  │   server (/rows, /size)  │
+             │ datasets     │  │ + manifest     │  │   server (/rows, /size)  │
              │ permissions  │  │ + served files │  │ S3-compatible buckets    │
              └──────────────┘  └────────────────┘  └──────────────────────────┘
 ```
@@ -68,12 +68,12 @@ one of three item backends chosen by `SourceType`:
 
 | Source type | Where items live | Where images live |
 |---|---|---|
-| `LocalUpload` (CSV/TSV/JSON/JSONL/Parquet/ZIP) | Parquet shards under `Storage:DatasetRootPath` | URLs in the file, or extracted ZIP images served by the API |
-| `LocalFolder` (admin only) | Parquet shards | The original folder, served by the API |
+| `LocalUpload` (CSV/TSV/JSON/JSONL/Parquet/ZIP) | Parquet segments under `Storage:DatasetRootPath` | URLs in the file, or extracted ZIP images served by the API |
+| `LocalFolder` (admin only) | Parquet segments | The original folder, served by the API |
 | `HuggingFaceStreaming` | Not stored; each page is a `/rows` call | HuggingFace CDN, thumbnails proxied + cached by the API |
 | `ExternalS3Streaming` | Not stored; each page is a `ListObjectsV2` call | The bucket, proxied + thumbnailed by the API |
 
-**Every page request is bounded.** Local: a `"shard:row"` cursor and one row group at a time.
+**Every page request is bounded.** Local: an `r{offset}` cursor and one row group at a time.
 HuggingFace: an integer offset against `/rows`. S3: the continuation token. The client asks for
 the next page when the virtualised grid nears its buffer edge, and evicts old pages.
 
@@ -200,8 +200,8 @@ linked to it. Parquet flat columns become fields; an `image: {bytes, path}` stru
 `ingestion_jobs` (`IIngestionJobQueue`) → `IngestionBackgroundService` →
 `DatasetIngestionService.IngestAsync`. Each parser is an `IAsyncEnumerable<DatasetItemDto>`;
 `WriteInChunksAsync` drains it in 10,000-row chunks into `ParquetItemRepository.AddRangeAsync`,
-which appends a row group to the current shard (`dataset_{id}_shard_{n}.parquet`, 10M rows per
-shard), and updates the dataset's item count after each chunk so the viewer shows progress. On
+which writes each chunk as a new immutable segment committed by the dataset's manifest (see
+`DataAccess/Parquet/README.md`), and updates the dataset's item count after each chunk so the viewer shows progress. On
 failure the dataset is marked Failed with a message and already-written rows are kept.
 
 The queue (`IngestionJobStore`) is a Postgres table. `Ingestion:MaxConcurrentJobs` workers (default
@@ -358,20 +358,18 @@ Gallery mode renders like the grid.
 **What.** Edit title, description, tags, favourite and metadata on one item; add/remove tags,
 set favourite, add metadata on many.
 
-**How.** `PATCH /api/items/{id}` and `/api/items/bulk` → `ParquetItemRepository.UpdateItemsAsync`:
-group by dataset, under that dataset's lock read each shard, patch rows, delete and rewrite
-the shard. Writes for one dataset are serialised; other datasets are unaffected.
+**How.** `PATCH /api/items/{id}` and `/api/items/bulk` (the client sends the dataset id) →
+`ParquetItemRepository`: the item is found through its dataset's segment id indexes, then
+`UpdateItemsAsync` rewrites only the segments holding an edited item, one row group at a time,
+into a temp file renamed over the segment. Writes for one dataset are serialised; other datasets
+are unaffected.
 
-**Why.** Parquet is immutable, so updates are rewrites; limiting the rewrite to touched shards
-is the cheapest correct option without a delta store.
+**Why.** Parquet is immutable, so updates are rewrites; limiting the rewrite to touched segments
+(10,000 rows each from ingestion, up to about 2M after merging) is the cheapest correct option
+without a delta store.
 
-**Gaps.** In the two-process dev setup every edit fails: `ItemEditService` uses the raw
-`HttpClient` bound to the client origin (:5002) instead of the typed API client, so `PATCH`
-goes to the wrong host (U-2); it works only in the single-origin production container. Only
-local datasets are editable — streaming items get a fresh `Id` per page so a PATCH always 404s
-(E-3). Item lookup by id scans every dataset on the server (P-2); a rewrite loads a whole shard
-(up to 10M rows) into memory and holds the lock, blocking reads (P-3); delete-then-write is
-not atomic (P-4).
+**Gaps.** Only local datasets are editable — streaming items get a fresh `Id` per page so a
+PATCH always 404s (E-3). The dataset lock is held for the rewrite, so reads of that dataset wait.
 
 ### 4.11 Filtering and search — Placeholder
 

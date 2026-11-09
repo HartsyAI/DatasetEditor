@@ -518,9 +518,9 @@ internal static class DatasetEndpoints
 
         // Handle local datasets (uploaded files). Reject a malformed cursor before it reaches the
         // reader, which would otherwise restart from the first shard (audit G-3).
-        if (!string.IsNullOrEmpty(cursor) && !DataAccess.Parquet.ParquetItemReader.TryParseCursor(cursor, out _, out _))
+        if (!string.IsNullOrEmpty(cursor) && !DataAccess.Parquet.ParquetItemReader.IsWellFormedCursor(cursor))
         {
-            return Results.BadRequest(new { error = $"Malformed cursor '{cursor}'; expected 'shardIndex:rowIndex'." });
+            return Results.BadRequest(new { error = $"Malformed cursor '{cursor}'." });
         }
 
         (IReadOnlyList<DatasetItemDto> items, string? repositoryNextCursor) = await itemRepository.GetPageAsync(

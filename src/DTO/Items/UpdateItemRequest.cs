@@ -4,6 +4,13 @@ namespace DatasetStudio.DTO.Items;
 public class UpdateItemRequest
 {
     public Guid ItemId { get; set; }
+
+    /// <summary>
+    /// The item's dataset. Optional, but when sent the server looks the item up in that dataset
+    /// only, instead of searching every dataset's id indexes (audit P-2).
+    /// </summary>
+    public Guid? DatasetId { get; set; }
+
     public string? Title { get; set; }
     public string? Description { get; set; }
     public List<string>? Tags { get; set; }
@@ -15,6 +22,9 @@ public class UpdateItemRequest
 public class BulkUpdateItemsRequest
 {
     public List<Guid> ItemIds { get; set; } = new();
+
+    /// <summary>The items' dataset, when they all share one (see <see cref="UpdateItemRequest.DatasetId"/>).</summary>
+    public Guid? DatasetId { get; set; }
 
     /// <summary>Tags to add to all items</summary>
     public List<string>? TagsToAdd { get; set; }

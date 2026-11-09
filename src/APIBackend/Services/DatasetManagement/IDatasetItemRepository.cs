@@ -14,6 +14,9 @@ public interface IDatasetItemRepository
         int pageSize,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Gets an item within a known dataset (an id-index lookup in that dataset only).</summary>
+    Task<DatasetItemDto?> GetItemAsync(Guid datasetId, Guid itemId, CancellationToken cancellationToken = default);
+
     Task<DatasetItemDto?> GetItemAsync(Guid itemId, CancellationToken cancellationToken = default);
 
     Task UpdateItemAsync(DatasetItemDto item, CancellationToken cancellationToken = default);

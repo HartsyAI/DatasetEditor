@@ -124,15 +124,16 @@ namespace DatasetStudio.Tests.APIBackend
         }
 
         /// <summary>
-        /// Audit P-1: a cursor past the first groups doesn't decode them. The first group is
-        /// truncated mid-data; a read that decoded it would throw.
+        /// Audit P-1: a cursor past the first groups doesn't decode them. One file holds three
+        /// 50-row groups (a shard from before manifests, adopted on first read); its first group is
+        /// zeroed, so a read that decoded it would throw.
         /// </summary>
         [Fact]
         public async Task PageAfterTheCursor_DoesNotDecodeEarlierRowGroups()
         {
-            await WriteGroupsAsync(groups: 3, groupSize: 50);
+            string shard = Path.Combine(_dataDirectory, ParquetSchemaDefinition.GetShardFileName(_datasetId, 0));
+            await new ParquetItemWriter(_dataDirectory).WriteSegmentAsync(shard, ThreeGroups(), CancellationToken.None);
             (_, string? cursor) = await _repository.GetPageAsync(_datasetId, null, null, 100, CancellationToken.None);
-            string shard = Directory.GetFiles(_dataDirectory, "*.parquet").Single();
 
             await using (FileStream file = File.Open(shard, FileMode.Open, FileAccess.ReadWrite))
             using (ParquetReader reader = await ParquetReader.CreateAsync(file, leaveStreamOpen: true))
@@ -144,36 +145,44 @@ namespace DatasetStudio.Tests.APIBackend
                 await file.WriteAsync(new byte[secondGroupStart - firstGroupStart]);
             }
 
-            (IReadOnlyList<DatasetItemDto> items, _) = await new ParquetItemReader(_dataDirectory).ReadPageAsync(_datasetId, null, cursor, 50);
+            (IReadOnlyList<DatasetItemDto> items, _) = await _repository.GetPageAsync(_datasetId, null, cursor, 50, CancellationToken.None);
 
             items.Select(i => i.ExternalId).Should().Equal(Enumerable.Range(100, 50).Select(i => $"row-{i:D5}"));
         }
 
-        /// <summary>Audit P-6: shards are written Snappy-compressed.</summary>
+        private async IAsyncEnumerable<List<DatasetItemDto>> ThreeGroups()
+        {
+            for (int g = 0; g < 3; g++)
+            {
+                yield return Items(_datasetId, g * 50, 50);
+            }
+            await Task.CompletedTask;
+        }
+
+        /// <summary>Audit P-6: segments are written Snappy-compressed.</summary>
         [Fact]
         public async Task Shards_AreSnappyCompressed()
         {
             await WriteGroupsAsync(groups: 2, groupSize: 10);
-            string shard = Directory.GetFiles(_dataDirectory, "*.parquet").Single();
+            string segment = Directory.GetFiles(_dataDirectory, "*.parquet").First();
 
-            await using FileStream file = File.OpenRead(shard);
+            await using FileStream file = File.OpenRead(segment);
             using ParquetReader reader = await ParquetReader.CreateAsync(file);
 
             reader.Metadata!.RowGroups.SelectMany(g => g.Columns)
                 .Should().OnlyContain(c => c.MetaData!.Codec == Parquet.Meta.CompressionCodec.SNAPPY);
         }
 
-        /// <summary>The cached row count follows appends to the shard.</summary>
+        /// <summary>The count follows appends (it is the manifest's row total).</summary>
         [Fact]
         public async Task CountAsync_FollowsAppends()
         {
-            ParquetItemReader reader = new(_dataDirectory);
             await WriteGroupsAsync(groups: 1, groupSize: 10);
-            (await reader.CountAsync(_datasetId)).Should().Be(10);
+            (await _repository.GetCountAsync(_datasetId)).Should().Be(10);
 
             await _repository.AddRangeAsync(_datasetId, Items(_datasetId, 10, 5), CancellationToken.None);
 
-            (await reader.CountAsync(_datasetId)).Should().Be(15);
+            (await _repository.GetCountAsync(_datasetId)).Should().Be(15);
         }
     }
 }

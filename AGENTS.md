@@ -13,7 +13,7 @@ before changing anything. The three other documents you need:
 A self-hosted web app for browsing, curating and editing large AI image datasets.
 ASP.NET Core API (`src/APIBackend`) + Blazor WebAssembly client (`src/ClientApp`), both on
 net10.0 with EF Core 10 and MudBlazor 7.8. PostgreSQL holds users/datasets/permissions; dataset items live in
-sharded Apache Parquet files on disk; HuggingFace and S3 datasets are streamed, not copied.
+Apache Parquet segment files (one manifest per dataset) on disk; HuggingFace and S3 datasets are streamed, not copied.
 Details: README §"How it works".
 
 ## 2. Repository map
@@ -117,8 +117,11 @@ Gotchas:
 ### Data and storage
 
 - Items are written to Parquet in batches (`ParquetSchemaDefinition.DefaultBatchSize`); never
-  read a whole shard into memory to serve a page.
-- Edits are shard-scoped and serialised per dataset (keyed semaphore in the item repository).
+  read a whole segment into memory to serve a page or apply an edit.
+- Parquet files are immutable once published: write new files, then commit by replacing the
+  dataset's manifest (`ParquetManifestStore.SaveAsync`) or renaming a complete file over a
+  segment. Never modify a live file in place.
+- Edits are segment-scoped and serialised per dataset (keyed semaphore in the item repository).
   Keep it that way.
 - Schema changes are EF migrations (`dotnet ef migrations add … --project src/APIBackend`),
   checked in with the designer file and snapshot.

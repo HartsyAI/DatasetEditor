@@ -39,7 +39,10 @@ public static class ItemEditEndpoints
         ILogger<Program> logger,
         CancellationToken cancellationToken)
     {
-        DatasetItemDto? item = await itemRepository.GetItemAsync(itemId, cancellationToken);
+        // With the dataset id, the lookup searches that dataset's id indexes only (audit P-2).
+        DatasetItemDto? item = request.DatasetId is Guid datasetId
+            ? await itemRepository.GetItemAsync(datasetId, itemId, cancellationToken)
+            : await itemRepository.GetItemAsync(itemId, cancellationToken);
 
         if (item == null)
         {
@@ -132,7 +135,9 @@ public static class ItemEditEndpoints
 
         foreach (Guid itemId in request.ItemIds)
         {
-            DatasetItemDto? item = await itemRepository.GetItemAsync(itemId, cancellationToken);
+            DatasetItemDto? item = request.DatasetId is Guid datasetId
+                ? await itemRepository.GetItemAsync(datasetId, itemId, cancellationToken)
+                : await itemRepository.GetItemAsync(itemId, cancellationToken);
             if (item == null)
                 continue;
 
