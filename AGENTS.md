@@ -161,7 +161,7 @@ Say so rather than building on them:
 - Extensions: five manifests, one working example (`CoreViewer`) with placeholder endpoints
   and no auth; no client-side extension loading exists.
 - AI Tools: nav entry and page are "Coming soon" placeholders.
-- i18n: `wwwroot/translations/*.json` exist but nothing loads them.
-- `Core.BusinessLogic` layout/modality registries, `FilterService`, `SearchService` are
-  registered in the client but drive no UI.
-- Settings page: only the API-key panel persists anything.
+- i18n: there is none (the unused `wwwroot/translations` files were deleted in PR 2.6).
+- `Core.BusinessLogic` (parsers, layout/modality registries, `FilterService`, `SearchService`)
+  is no longer registered in the client; the types remain in Core until PR 6.2 deletes them.
+- Viewer filters: the filter panel collects criteria but nothing applies them (U-6, PR 4.4).

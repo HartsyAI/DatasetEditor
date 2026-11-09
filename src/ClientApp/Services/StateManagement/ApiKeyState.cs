@@ -58,17 +58,6 @@ public sealed class ApiKeyState
         NotifyStateChanged();
     }
 
-    public void ClearAllTokens()
-    {
-        if (Settings.Tokens.Count == 0)
-        {
-            return;
-        }
-
-        Settings.Tokens = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
-        NotifyStateChanged();
-    }
-
     public async Task LoadFromStorageAsync(ILocalStorageService storage)
     {
         try

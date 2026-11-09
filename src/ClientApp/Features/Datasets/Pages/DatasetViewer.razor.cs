@@ -12,7 +12,6 @@ using DatasetStudio.ClientApp.Shared.Services;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.Core.Abstractions;
 using DatasetStudio.Core.DomainModels;
-using DatasetStudio.Core.BusinessLogic;
 using DatasetStudio.Core.Enumerations;
 using DatasetStudio.Core.Utilities;
 using DatasetStudio.Core.Utilities.Logging;
@@ -32,21 +31,20 @@ public partial class DatasetViewer : IDisposable
     [Parameter] public Guid? DatasetId { get; set; }
 
     [Inject] private ILocalStorageService _localStorage { get; set; } = default!;
-    [Inject] public DatasetState _datasetState { get; set; } = default!;
-    [Inject] public FilterState _filterState { get; set; } = default!;
-    [Inject] public ViewState _viewState { get; set; } = default!;
-    [Inject] public FilterService _filterService { get; set; } = default!;
-    [Inject] public DatasetCacheService _datasetCache { get; set; } = default!;
-    [Inject] public NotificationService _notificationService { get; set; } = default!;
-    [Inject] public NavigationService _navigationService { get; set; } = default!;
-    [Inject] public IDialogService _dialogService { get; set; } = default!;
+    [Inject] private DatasetState _datasetState { get; set; } = default!;
+    [Inject] private FilterState _filterState { get; set; } = default!;
+    [Inject] private ViewState _viewState { get; set; } = default!;
+    [Inject] private DatasetCacheService _datasetCache { get; set; } = default!;
+    [Inject] private NotificationService _notificationService { get; set; } = default!;
+    [Inject] private NavigationService _navigationService { get; set; } = default!;
+    [Inject] private IDialogService _dialogService { get; set; } = default!;
 
-    public bool _isLoading = false;
-    public string? _errorMessage = null;
-    public List<DatasetItemDto> _filteredItems = new();
-    public int _filteredCount = 0;
+    private bool _isLoading = false;
+    private string? _errorMessage = null;
+    private List<DatasetItemDto> _filteredItems = new();
+    private int _filteredCount = 0;
     private int _lastFilteredSourceCount = 0;
-    public ViewMode _viewMode = ViewMode.Grid;
+    private ViewMode _viewMode = ViewMode.Grid;
     private DatasetDetailDto? _datasetDetail;
     private CancellationTokenSource? _statusPollingCts;
     private bool _isIndexedDbEnabled;

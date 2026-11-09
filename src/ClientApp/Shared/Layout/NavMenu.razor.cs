@@ -1,21 +1,46 @@
-using Microsoft.AspNetCore.Components;
-using DatasetStudio.ClientApp.Shared.Services;
-using MudBlazor;
+using Blazored.LocalStorage;
 using DatasetStudio.ClientApp.Features.Auth.Services;
 using DatasetStudio.ClientApp.Services.StateManagement;
-using DatasetStudio.Core.Utilities;
+using DatasetStudio.ClientApp.Shared.Services;
+using DatasetStudio.Core.Constants;
 using DatasetStudio.Core.Utilities.Logging;
+using Microsoft.AspNetCore.Components;
 
 namespace DatasetStudio.ClientApp.Shared.Layout;
 
-/// <summary>Navigation menu component for main application navigation and recent datasets.</summary>
+/// <summary>
+/// Navigation menu: sign-in state, the main pages, and "Recent datasets". The recent list is kept
+/// in LocalStorage and updated whenever a different dataset opens. It used to be built once at
+/// mount from the dataset open at that moment (usually none) and never stored (audit U-24).
+/// </summary>
 public partial class NavMenu : IDisposable
 {
-    [Inject] public DatasetState DatasetState { get; set; } = default!;
+    [Inject] private DatasetState DatasetState { get; set; } = default!;
     [Inject] private AuthApiClient AuthApiClient { get; set; } = default!;
     [Inject] private CookieAuthenticationStateProvider AuthStateProvider { get; set; } = default!;
     [Inject] private NavigationManager Navigation { get; set; } = default!;
     [Inject] private NotificationService Notifications { get; set; } = default!;
+    [Inject] private ILocalStorageService LocalStorage { get; set; } = default!;
+
+    private IReadOnlyList<RecentDataset> _recentDatasets = Array.Empty<RecentDataset>();
+    private string? _lastRecordedId;
+
+    /// <summary>Loads the stored recent list and starts following dataset changes.</summary>
+    protected override async Task OnInitializedAsync()
+    {
+        DatasetState.OnChange += HandleDatasetStateChanged;
+        try
+        {
+            _recentDatasets = await LocalStorage.GetItemAsync<List<RecentDataset>>(StorageKeys.RecentDatasets) ?? new List<RecentDataset>();
+        }
+        catch (Exception ex)
+        {
+            // Unreadable or old-format storage: start an empty list rather than failing the menu.
+            Logs.Warning($"Could not read recent datasets: {ex.Message}");
+            _recentDatasets = Array.Empty<RecentDataset>();
+        }
+        await RecordCurrentDatasetAsync();
+    }
 
     private async Task LogoutAsync()
     {
@@ -36,60 +61,37 @@ public partial class NavMenu : IDisposable
         Navigation.NavigateTo("/", forceLoad: false);
     }
 
-    public List<(string Id, string Name)> _recentDatasets = new();
-
-    /// <summary>Initializes component and loads recent datasets.</summary>
-    protected override void OnInitialized()
+    private void HandleDatasetStateChanged()
     {
-        DatasetState.OnChange += StateHasChanged;
-        LoadRecentDatasets();
-        Logs.Info("NavMenu initialized");
+        InvokeAsync(RecordCurrentDatasetAsync);
     }
 
-    /// <summary>Loads the list of recently accessed datasets from storage.</summary>
-    public void LoadRecentDatasets()
+    /// <summary>Puts the open dataset at the top of the list and saves it, once per dataset.</summary>
+    private async Task RecordCurrentDatasetAsync()
     {
-        // TODO: Load from LocalStorage
-        // For now, use placeholder data
-        _recentDatasets = new List<(string Id, string Name)>
+        if (DatasetState.CurrentDataset is not { } dataset || dataset.Id == _lastRecordedId)
         {
-            // Will be populated from LocalStorage in future
-        };
-        
-        // If a dataset is currently loaded, add it to recent
-        if (DatasetState.CurrentDataset != null)
+            return;
+        }
+
+        _lastRecordedId = dataset.Id;
+        _recentDatasets = RecentDataset.WithOpened(_recentDatasets, new RecentDataset(dataset.Id, dataset.Name));
+        StateHasChanged();
+        try
         {
-            // Keep the id with the name: the viewer loads by id, so a name-only link cannot open it.
-            (string Id, string Name) current = (DatasetState.CurrentDataset.Id, DatasetState.CurrentDataset.Name);
-            if (!_recentDatasets.Contains(current))
-            {
-                _recentDatasets.Insert(0, current);
-                
-                // Keep only last 5 recent datasets
-                if (_recentDatasets.Count > 5)
-                {
-                    _recentDatasets = _recentDatasets.Take(5).ToList();
-                }
-            }
+            await LocalStorage.SetItemAsync(StorageKeys.RecentDatasets, _recentDatasets);
+        }
+        catch (Exception ex)
+        {
+            Logs.Warning($"Could not save recent datasets: {ex.Message}");
         }
     }
 
-    /// <summary>Generates the URL for navigating to a specific dataset.</summary>
-    /// <param name="datasetId">Id of the dataset. The viewer reads only the <c>id</c> query parameter.</param>
-    /// <returns>URL with the dataset id as query parameter.</returns>
-    public string GetDatasetUrl(string datasetId)
-    {
-        return $"/datasets/{Uri.EscapeDataString(datasetId)}";
-    }
+    private static string GetDatasetUrl(string datasetId) => $"/datasets/{Uri.EscapeDataString(datasetId)}";
 
-    /// <summary>Unsubscribes from state changes on disposal.</summary>
+    /// <summary>Unsubscribes from dataset changes.</summary>
     public void Dispose()
     {
-        DatasetState.OnChange -= StateHasChanged;
+        DatasetState.OnChange -= HandleDatasetStateChanged;
     }
-    
-    // TODO: Implement recent datasets persistence in LocalStorage
-    // TODO: Add "Clear Recent" option
-    // TODO: Add dataset icons based on format/modality
-    // TODO: Add context menu for recent items (remove, open in new tab)
 }

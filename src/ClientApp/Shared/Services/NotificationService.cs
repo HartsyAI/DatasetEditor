@@ -57,24 +57,6 @@ public class NotificationService
         Logs.Info($"Info notification: {message}");
     }
 
-    /// <summary>Shows a message with one action button.</summary>
-    /// <param name="message">Message to display.</param>
-    /// <param name="actionText">Action button label.</param>
-    /// <param name="action">Runs when the button is clicked.</param>
-    public void ShowWithAction(string message, string actionText, Action action)
-    {
-        _snackbar.Add(message, Severity.Normal, config =>
-        {
-            config.Action = actionText;
-            config.ActionColor = Color.Primary;
-            config.Onclick = _ =>
-            {
-                action();
-                return Task.CompletedTask;
-            };
-        });
-    }
-
     /// <summary>Removes every visible snackbar.</summary>
     public void ClearAll()
     {

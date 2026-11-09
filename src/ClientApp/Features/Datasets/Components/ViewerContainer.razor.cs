@@ -21,8 +21,8 @@ public partial class ViewerContainer : IDisposable
     /// <summary>Event callback when more items need to be loaded (for infinite scroll).</summary>
     [Parameter] public EventCallback OnLoadMore { get; set; }
 
-    public Modality _modality = Modality.Image;
-    public ViewMode _viewMode = ViewMode.Grid;
+    private Modality _modality = Modality.Image;
+    private ViewMode _viewMode = ViewMode.Grid;
     private int _lastItemCount = -1;
 
     /// <summary>Fixed row height (px) used for the virtualized list view.</summary>

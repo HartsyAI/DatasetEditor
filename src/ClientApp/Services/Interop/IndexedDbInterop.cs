@@ -25,37 +25,6 @@ public class IndexedDbInterop(IJSRuntime jsRuntime)
         }
     }
     
-    /// <summary>Saves multiple items to cache</summary>
-    public async Task<bool> SaveItemsAsync(List<DatasetItemDto> items)
-    {
-        try
-        {
-            return await _jsRuntime.InvokeAsync<bool>("indexedDbCache.saveItems", items);
-        }
-        catch (Exception ex)
-        {
-            Logs.Error("Failed to save items to IndexedDB", ex);
-            return false;
-        }
-    }
-    
-    /// <summary>Gets items for a specific dataset with pagination</summary>
-    public async Task<List<DatasetItemDto>> GetItemsAsync(string datasetId, int page, int pageSize)
-    {
-        try
-        {
-            List<DatasetItemDto>? items = await _jsRuntime.InvokeAsync<List<DatasetItemDto>>(
-                "indexedDbCache.getItems", datasetId, page, pageSize);
-            
-            return items ?? new List<DatasetItemDto>();
-        }
-        catch (Exception ex)
-        {
-            Logs.Error("Failed to get items from IndexedDB", ex);
-            return new List<DatasetItemDto>();
-        }
-    }
-    
     /// <summary>Saves a page of items</summary>
     public async Task<bool> SavePageAsync(string datasetId, int page, List<DatasetItemDto> items)
     {
@@ -101,21 +70,6 @@ public class IndexedDbInterop(IJSRuntime jsRuntime)
         }
     }
     
-    /// <summary>Saves dataset metadata</summary>
-    public async Task<bool> SaveDatasetAsync(DatasetSummaryDto dataset)
-    {
-        try
-        {
-            return await _jsRuntime.InvokeAsync<bool>(
-                "indexedDbCache.saveDataset", dataset);
-        }
-        catch (Exception ex)
-        {
-            Logs.Error("Failed to save dataset to IndexedDB", ex);
-            return false;
-        }
-    }
-    
     /// <summary>Gets dataset metadata</summary>
     public async Task<DatasetSummaryDto?> GetDatasetAsync(string datasetId)
     {
@@ -131,21 +85,6 @@ public class IndexedDbInterop(IJSRuntime jsRuntime)
         }
     }
     
-    /// <summary>Sets a cache value</summary>
-    public async Task<bool> SetCacheValueAsync(string key, object value, int expiresInMinutes = 60)
-    {
-        try
-        {
-            return await _jsRuntime.InvokeAsync<bool>(
-                "indexedDbCache.setCacheValue", key, value, expiresInMinutes);
-        }
-        catch (Exception ex)
-        {
-            Logs.Error($"Failed to set cache value for key: {key}", ex);
-            return false;
-        }
-    }
-    
     /// <summary>Gets a cache value</summary>
     public async Task<T?> GetCacheValueAsync<T>(string key)
     {
@@ -157,20 +96,6 @@ public class IndexedDbInterop(IJSRuntime jsRuntime)
         {
             Logs.Error($"Failed to get cache value for key: {key}", ex);
             return default;
-        }
-    }
-    
-    /// <summary>Gets cache statistics</summary>
-    public async Task<CacheStats?> GetCacheStatsAsync()
-    {
-        try
-        {
-            return await _jsRuntime.InvokeAsync<CacheStats?>("indexedDbCache.getCacheStats");
-        }
-        catch (Exception ex)
-        {
-            Logs.Error("Failed to get cache stats", ex);
-            return null;
         }
     }
     

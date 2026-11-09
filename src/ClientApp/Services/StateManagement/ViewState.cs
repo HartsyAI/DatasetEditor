@@ -34,15 +34,6 @@ public class ViewState
     /// <summary>Event fired when view settings change.</summary>
     public event Action? OnChange;
     
-    /// <summary>Updates all view settings at once, replacing existing settings.</summary>
-    /// <param name="settings">New view settings to apply.</param>
-    public void UpdateSettings(ViewSettings settings)
-    {
-        Settings = settings;
-        NotifyStateChanged();
-        Logs.Info("View settings updated");
-    }
-    
     /// <summary>Changes the current view mode (Grid, List, Gallery).</summary>
     /// <param name="mode">View mode to switch to.</param>
     public void SetViewMode(ViewMode mode)
@@ -76,30 +67,6 @@ public class ViewState
         Logs.Info($"Grid columns set to: {columns}");
     }
     
-    /// <summary>Sets the number of items to display per page.</summary>
-    /// <param name="itemsPerPage">Items per page (10-200).</param>
-    public void SetItemsPerPage(int itemsPerPage)
-    {
-        if (itemsPerPage < 10 || itemsPerPage > 200)
-        {
-            Logs.Error($"Invalid items per page: {itemsPerPage}. Must be between 10 and 200.");
-            return;
-        }
-        
-        Settings.ItemsPerPage = itemsPerPage;
-        NotifyStateChanged();
-        Logs.Info($"Items per page set to: {itemsPerPage}");
-    }
-    
-    /// <summary>Changes the application language.</summary>
-    /// <param name="language">Language code (e.g., "en", "es").</param>
-    public void SetLanguage(string language)
-    {
-        Settings.Language = language;
-        NotifyStateChanged();
-        Logs.Info($"Language changed to: {language}");
-    }
-    
     /// <summary>Changes the current layout.</summary>
     /// <param name="layoutId">Layout identifier (e.g., "grid", "list", "masonry").</param>
     public void SetLayout(string layoutId)
@@ -130,14 +97,6 @@ public class ViewState
     public void SetShowMetadataOverlay(bool show)
     {
         Settings.ShowMetadataOverlay = show;
-        NotifyStateChanged();
-    }
-    
-    /// <summary>Sets whether to enable lazy loading for images.</summary>
-    /// <param name="enable">True to enable lazy loading, false to disable.</param>
-    public void SetLazyLoading(bool enable)
-    {
-        Settings.EnableLazyLoading = enable;
         NotifyStateChanged();
     }
     
@@ -178,16 +137,6 @@ public class ViewState
         {
             Logs.Error("Failed to save view settings to LocalStorage", ex);
         }
-    }
-    
-    /// <summary>Resets all view settings to their default values.</summary>
-    public void ResetToDefaults()
-    {
-        Settings = new ViewSettings();
-        ShowFilterPanel = false;
-        ShowDetailPanel = true;
-        NotifyStateChanged();
-        Logs.Info("View settings reset to defaults");
     }
     
     /// <summary>Notifies all subscribers that the view state has changed.</summary>

@@ -154,7 +154,7 @@ Every animation is disabled under `prefers-reduced-motion: reduce` (already in `
 Material Icons via `MudBlazor.Icons.Material` (inline SVG). **Filled** is the default set.
 **Outlined** is used only for the "off" half of a toggle (`StarBorder` vs `Star`). Don't mix
 within one control group. No icon webfont is loaded; string icon
-names like `"mdi-view-grid"` (`LayoutSwitcher`) are not valid here.
+names (such as `"mdi-view-grid"`) are not valid here.
 
 Fixed icon vocabulary (so the same concept always has the same glyph):
 
@@ -267,10 +267,8 @@ has logic, and a `.razor.css` when it has styles. Parameters are documented with
 | `ImageLightbox` | exists | Full-screen view. |
 | `VirtualizedItemView` / `ViewerContainer` | exist | Row-virtualised grid/list. |
 | `FilterPanel`, `DateRangeFilter` | exist | Filter inputs. Tag checkboxes use v6 names and never fire (§1.1). |
-| `SearchBar`, `FilterChips`, `DatasetInfo`, `DatasetStats`, `LanguageSelector` | exist, **unused** | `SearchBar` duplicates the field inside `FilterPanel`; `DatasetInfo`/`DatasetStats` are skeletons with TODO text. Delete or adopt. |
 | `UploadSourceForm`, `HuggingFaceSourceForm` (+ `HuggingFaceDatasetOptions`), `FolderSourceForm`, `S3SourceForm` | exist | One form per source on the Create page, sharing `CreateSourceFormBase` (public switch, busy state, one inline error, open the dataset when accepted) and `IngestionWorkflowService`. Replaced the 1,500-line `DatasetUploader`. |
-| `DatasetSwitcher`, `LayoutSwitcher` | exist, **unused** | Delete or mount them. `LayoutSwitcher` depends on `Core.LayoutRegistry`, which nothing else uses. |
-| `ThemeSelector`, `ViewPreferences`, `LanguageSelector`, `ApiKeySettingsPanel` | exist | Settings panels. `ThemeSelector`, `ViewPreferences` and `ApiKeySettingsPanel` read and persist real state; `LanguageSelector` is unused. |
+| `ThemeSelector`, `ViewPreferences`, `ApiKeySettingsPanel` | exist | Settings panels; each reads and persists real state. |
 
 ### 4.2 Buttons
 
@@ -385,7 +383,6 @@ Alerts for the same statuses use `Severity.Normal / Info / Success / Error`.
 - A component that subscribes to a state `OnChange` event implements `IDisposable` and
   unsubscribes.
 - No raw `HttpClient` in components; go through `DatasetApiClient` / `AuthApiClient`.
-  **(gap: `DatasetSwitcher` uses raw `HttpClient`.)**
 - `@key` on every item in a rendered collection.
 
 ---

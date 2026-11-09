@@ -375,8 +375,7 @@ screen matches the theme before Blazor loads.
 **Why.** Dark is the default (`ViewSettings.Theme`); light must be complete. Persisting in the
 browser keeps preferences per device without an account round-trip.
 
-**Gaps.** Translations (`wwwroot/translations/*.json`) are not loaded by anything (U-18).
-The high-contrast `ThemeMode` member is unimplemented and falls back to dark.
+**Gaps.** No localisation (the unused translation files were removed, U-18). The high-contrast `ThemeMode` member is unimplemented and falls back to dark.
 
 ### 4.13 AI tools — Placeholder
 
