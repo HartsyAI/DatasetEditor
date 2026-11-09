@@ -173,6 +173,69 @@ public sealed class IngestionCompletionReloadTests
         Assert.NotEqual(opened, state.ResultSetVersion);
     }
 
+    /// <summary>
+    /// PR 4.4 review: a filter the server can't apply used to set the dataset-wide error, which
+    /// replaced the whole viewer (filter panel included). Now the results and the previous filter
+    /// stay, and asking for the same filter again retries it.
+    /// </summary>
+    [Fact]
+    public async Task FilterFailure_KeepsTheResults_AndDoesNotSetTheDatasetError()
+    {
+        FakeApi api = new() { Status = IngestionStatusDto.Completed, ItemCount = 2 };
+        DatasetState state = new();
+        DatasetCacheService cache = Create(api, state);
+        await cache.LoadFirstPageAsync(DatasetId);
+        api.Intercept = path => Task.FromResult<HttpStatusCode?>(path.Contains("q=bad") ? HttpStatusCode.BadGateway : null);
+        DatasetStudio.DTO.Common.FilterRequest bad = new() { SearchQuery = "bad" };
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => cache.ApplyFilterAsync(bad));
+
+        Assert.Null(state.ErrorMessage);
+        Assert.Equal(2, state.Items.Count);
+        Assert.Null(cache.ActiveFilter);
+        await Assert.ThrowsAsync<HttpRequestException>(() => cache.ApplyFilterAsync(bad));
+        Assert.Equal(2, api.Requests.Count(u => u.Contains("q=bad")));
+    }
+
+    /// <summary>
+    /// PR 4.4 review: a filter request that fails after a newer one was made used to restore the
+    /// filter from before it, and the newer load (waiting for the page lock) then sent that, so an
+    /// unfiltered page showed under the newer search. Now each load carries its own filter.
+    /// </summary>
+    [Fact]
+    public async Task OlderFilterFailure_DoesNotChangeWhatANewerFilterLoads()
+    {
+        FakeApi api = new() { Status = IngestionStatusDto.Completed, ItemCount = 2 };
+        DatasetState state = new();
+        DatasetCacheService cache = Create(api, state);
+        await cache.LoadFirstPageAsync(DatasetId);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource firstArrived = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        api.Intercept = async path =>
+        {
+            if (!path.Contains("q=first"))
+            {
+                return null;
+            }
+            firstArrived.TrySetResult();
+            await release.Task;
+            return HttpStatusCode.InternalServerError;
+        };
+
+        Task first = cache.ApplyFilterAsync(new DatasetStudio.DTO.Common.FilterRequest { SearchQuery = "first" });
+        await firstArrived.Task;
+        Task second = cache.ApplyFilterAsync(new DatasetStudio.DTO.Common.FilterRequest { SearchQuery = "second" });
+        release.SetResult();
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => first);
+        await second;
+
+        Assert.Equal("second", cache.ActiveFilter!.SearchQuery);
+        string lastItems = api.Requests.Last(u => u.Contains("/items"));
+        Assert.Contains("q=second", lastItems);
+        Assert.Null(state.ErrorMessage);
+    }
+
     /// <summary>Only the Pending/Processing → Completed transition reloads; other refreshes don't.</summary>
     [Theory]
     [InlineData(IngestionStatusDto.Processing, IngestionStatusDto.Completed, true)]
@@ -206,7 +269,20 @@ public sealed class IngestionCompletionReloadTests
         /// <summary>When not empty, each items request takes the next (count, next cursor) from here.</summary>
         public System.Collections.Generic.Queue<(int Count, string? Next)> Pages { get; } = new();
 
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        /// <summary>When set, runs first for every request; a status it returns is sent as the response.</summary>
+        public Func<string, Task<HttpStatusCode?>>? Intercept { get; set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (Intercept is not null && await Intercept(request.RequestUri!.PathAndQuery) is HttpStatusCode status)
+            {
+                Requests.Add(request.RequestUri!.PathAndQuery);
+                return new HttpResponseMessage(status);
+            }
+            return await Respond(request);
+        }
+
+        private Task<HttpResponseMessage> Respond(HttpRequestMessage request)
         {
             Requests.Add(request.RequestUri!.PathAndQuery);
             string path = request.RequestUri!.AbsolutePath;
