@@ -1331,6 +1331,9 @@ internal static class DatasetEndpoints
         return Results.Stream(stream, contentType);
     }
 
+    /// <summary>How long a HuggingFace thumbnail's upstream fetch may take, headers and body together.</summary>
+    internal static TimeSpan HuggingFaceThumbnailFetchTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
     /// <summary>
     /// Serves a cached, width-bounded JPEG thumbnail for a HuggingFace-streaming item.
     /// Streaming items have no stable id across requests (a fresh Guid is minted on every
@@ -1413,20 +1416,32 @@ internal static class DatasetEndpoints
             async ct =>
             {
                 using HttpClient client = httpClientFactory.CreateClient(nameof(GetHuggingFaceThumbnail));
-                client.Timeout = TimeSpan.FromSeconds(10);
-                using HttpRequestMessage request = new(HttpMethod.Get, sourceUri);
-                using HttpResponseMessage response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-                if (!response.IsSuccessStatusCode)
+                // One timeout over the headers AND the body. With ResponseHeadersRead,
+                // HttpClient.Timeout stops at the headers, so an upstream that stalled mid-body
+                // would hang this request and hold the thumbnail's per-key gate (Codex review on #25).
+                using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(HuggingFaceThumbnailFetchTimeout);
+                try
                 {
+                    using HttpRequestMessage request = new(HttpMethod.Get, sourceUri);
+                    using HttpResponseMessage response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        return null;
+                    }
+                    // Bounded: an upstream asset of any size used to be buffered whole (audit T-3).
+                    if (response.Content.Headers.ContentLength > thumbnailService.MaxSourceBytes)
+                    {
+                        throw new Services.Storage.ThumbnailSourceTooLargeException(thumbnailService.MaxSourceBytes);
+                    }
+                    await using Stream body = await response.Content.ReadAsStreamAsync(timeout.Token);
+                    return await Services.Storage.ThumbnailSource.ReadLimitedAsync(body, thumbnailService.MaxSourceBytes, timeout.Token);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    // The upstream was too slow; treat it as unavailable (404), not a server error.
                     return null;
                 }
-                // Bounded: an upstream asset of any size used to be buffered whole (audit T-3).
-                if (response.Content.Headers.ContentLength > thumbnailService.MaxSourceBytes)
-                {
-                    throw new Services.Storage.ThumbnailSourceTooLargeException(thumbnailService.MaxSourceBytes);
-                }
-                await using Stream body = await response.Content.ReadAsStreamAsync(ct);
-                return await Services.Storage.ThumbnailSource.ReadLimitedAsync(body, thumbnailService.MaxSourceBytes, ct);
             },
             cancellationToken);
         httpContext.Response.Headers["X-Thumbnail-Width"] = thumbnail.Width.ToString(System.Globalization.CultureInfo.InvariantCulture);
