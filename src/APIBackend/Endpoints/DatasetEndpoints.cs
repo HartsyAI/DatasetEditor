@@ -1129,6 +1129,7 @@ internal static class DatasetEndpoints
         Services.Storage.IThumbnailService thumbnailService,
         HttpContext httpContext,
         IConfiguration configuration,
+        ILogger<Program> logger,
         [FromQuery] int? w,
         CancellationToken cancellationToken)
     {
@@ -1169,7 +1170,7 @@ internal static class DatasetEndpoints
             : normalizedDatasetFolder + Path.DirectorySeparatorChar;
         if (!normalizedFullPath.StartsWith(containmentPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            return Results.NotFound();
+            return RefuseFileRequest(logger, datasetId, filePath, "path escapes the dataset folder");
         }
 
         if (!File.Exists(normalizedFullPath))
@@ -1187,7 +1188,7 @@ internal static class DatasetEndpoints
             string resolvedTargetPath = Path.GetFullPath(linkTarget.FullName);
             if (!resolvedTargetPath.StartsWith(containmentPrefix, StringComparison.OrdinalIgnoreCase))
             {
-                return Results.NotFound();
+                return RefuseFileRequest(logger, datasetId, filePath, "symlink resolves outside the dataset folder");
             }
         }
 
@@ -1256,6 +1257,7 @@ internal static class DatasetEndpoints
         Services.Storage.IS3StorageService s3StorageService,
         Services.Storage.IThumbnailService thumbnailService,
         HttpContext httpContext,
+        ILogger<Program> logger,
         CancellationToken cancellationToken)
     {
         DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
@@ -1271,9 +1273,14 @@ internal static class DatasetEndpoints
             return Results.NotFound();
         }
 
-        if (string.IsNullOrWhiteSpace(key) || !Services.Storage.S3KeySafety.IsKeyWithinPrefix(dataset.S3Prefix, key))
+        if (string.IsNullOrWhiteSpace(key))
         {
             return Results.NotFound();
+        }
+
+        if (!Services.Storage.S3KeySafety.IsKeyWithinPrefix(dataset.S3Prefix, key))
+        {
+            return RefuseFileRequest(logger, datasetId, key, "S3 key is outside the dataset prefix");
         }
 
         string extension = Path.GetExtension(key).ToLowerInvariant();
@@ -1472,6 +1479,22 @@ internal static class DatasetEndpoints
             cancellationToken);
 
         return Results.Ok(response);
+    }
+
+    /// <summary>
+    /// Answers a refused file request with 404, the same answer a missing file gets, and logs it
+    /// as a warning. These refusals used to be silent, so a probe for files outside a dataset was
+    /// invisible to the operator (audit F-4). Only the dataset id and the requested path are
+    /// logged, never file contents; line breaks in the path are flattened so a crafted path can't
+    /// forge extra log lines.
+    /// </summary>
+    private static IResult RefuseFileRequest(ILogger logger, Guid datasetId, string requestedPath, string reason)
+    {
+        string loggedPath = requestedPath.ReplaceLineEndings(" ");
+        logger.LogWarning(
+            "Refused file request for dataset {DatasetId}: {Reason}. Requested path: {RequestedPath}",
+            datasetId, reason, loggedPath);
+        return Results.NotFound();
     }
 
     /// <summary>Derives a listing/count visibility scope from the current request's principal (anonymous, regular user, or admin).</summary>

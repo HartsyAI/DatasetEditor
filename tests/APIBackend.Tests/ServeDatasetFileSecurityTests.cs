@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.Tests.APIBackend.Fixtures;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Xunit;
 
 namespace DatasetStudio.Tests.APIBackend
@@ -24,6 +26,7 @@ namespace DatasetStudio.Tests.APIBackend
         private DatasetStudioApiFactory _factory = default!;
         private HttpClient _client = default!;
         private string? _secretDirectory;
+        private readonly CapturingLoggerProvider _logs = new();
 
         public ServeDatasetFileSecurityTests(PostgresContainerFixture postgres)
         {
@@ -33,6 +36,7 @@ namespace DatasetStudio.Tests.APIBackend
         public async Task InitializeAsync()
         {
             _factory = new DatasetStudioApiFactory(_postgres.ConnectionString);
+            _factory.ConfigureTestServices = services => services.AddSingleton<ILoggerProvider>(_logs);
             await _factory.InitializeDatabaseAsync();
             _client = _factory.CreateClient();
 
@@ -77,6 +81,8 @@ namespace DatasetStudio.Tests.APIBackend
             HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{created.Id}/files/sneaky.jpg");
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // Audit F-4: the refusal is a security event and must be logged, not just 404'd.
+            _logs.WarningsContaining(created.Id.ToString(), "sneaky.jpg").Should().NotBeEmpty();
         }
 
         // Phase 4 folded the thumbnail resize branch into this same handler specifically so it

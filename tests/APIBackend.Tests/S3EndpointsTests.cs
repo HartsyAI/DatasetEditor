@@ -18,6 +18,7 @@ using DatasetStudio.Tests.APIBackend.Fixtures;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SkiaSharp;
 using Xunit;
 
@@ -43,6 +44,7 @@ namespace DatasetStudio.Tests.APIBackend
         private DatasetStudioApiFactory _factory = default!;
         private HttpClient _client = default!;
         private AmazonS3Client _s3SeedClient = default!;
+        private readonly CapturingLoggerProvider _logs = new();
 
         public S3EndpointsTests(PostgresContainerFixture postgres, S3ContainerFixture s3)
         {
@@ -68,6 +70,7 @@ namespace DatasetStudio.Tests.APIBackend
                     AllowedBuckets = new() { Bucket },
                 };
                 services.AddSingleton<IS3StorageProfileResolver>(new S3StorageProfileResolver(new[] { profile }));
+                services.AddSingleton<ILoggerProvider>(_logs);
             };
 
             await _factory.InitializeDatabaseAsync();
@@ -279,6 +282,8 @@ namespace DatasetStudio.Tests.APIBackend
                 $"/api/datasets/{dataset.Id}/s3-file?key={Uri.EscapeDataString("outside-prefix/secret.png")}");
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // Audit F-4: the refusal is a security event and must be logged, not just 404'd.
+            _logs.WarningsContaining(dataset.Id.ToString(), "outside-prefix/secret.png").Should().NotBeEmpty();
         }
 
         [Fact]
