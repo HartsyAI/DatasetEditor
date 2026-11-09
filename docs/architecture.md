@@ -28,8 +28,8 @@
 └────────────────────────┘                 └─────────────┬─────────────┘
                                                           │
                 ┌─────────────────────────────────────────┼──────────────────────────────┐
-                │ PostgreSQL (EF Core / Npgsql)             │   Apache Parquet (sharded)     │
-                │   dataset metadata, users, captions       │   dataset items, 10M rows/shard │
+                │ PostgreSQL (EF Core / Npgsql)             │   Apache Parquet (segments)    │
+                │   dataset metadata, users, captions       │   dataset items + manifest      │
                 └────────────────────────────────────────────────────────────────────────────┘
                                                           │
                                        HuggingFace datasets-server (streaming rows)
@@ -60,9 +60,10 @@ timestamps). Rich image attributes (photographer, average color, engagement coun
   `DatasetStudioDbContext`. Dataset updates are field-level patches with `xmin` as the concurrency
   token, so request-time edits and background ingestion writes never overwrite each other. Migrations live in `APIBackend/DataAccess/PostgreSQL/Migrations` and
   are applied automatically on API startup.
-- **Items (Parquet):** sharded files `dataset_{id}_shard_{n}.parquet`, **10M rows per shard**,
-  written in batches. Read/write/paging primitives in `ParquetItemReader` / `ParquetItemWriter`,
-  fronted by `ParquetItemRepository`.
+- **Items (Parquet):** per dataset, a manifest (`dataset_{id}.manifest.json`) over immutable
+  segment files (`dataset_{id}_seg_{n}.parquet`), each with a sorted id index. Every write builds
+  new files and commits by replacing the manifest (temp file plus rename), so a crash never
+  damages committed data. Details in `src/APIBackend/DataAccess/Parquet/README.md`.
 
 ---
 
@@ -73,7 +74,8 @@ timestamps). Rich image attributes (photographer, average color, engagement coun
 `pageSize` is clamped to 1–100 on the list and item endpoints; a malformed cursor returns `400`
 rather than restarting the read from the beginning.
 
-- **Local datasets:** cursor is the opaque Parquet `"shard:row"` token. `ReadPageAsync` skips
+- **Local datasets:** cursor is an opaque `r{offset}` token (absolute row offset; the older
+  `"shard:row"` form is still accepted). `ReadPageAsync` skips
   every row group that ends before the cursor using the footer's row counts (nothing is decoded),
   then decodes groups from the cursor until the page fills. Cost is a footer read plus the groups
   the page returns rows from, each `ParquetSchemaDefinition.DefaultBatchSize` = 10,000 rows when
@@ -84,8 +86,9 @@ rather than restarting the read from the beginning.
 
 ### Editing
 Single (`PATCH /api/items/{id}`) and bulk (`PATCH /api/items/bulk`) edits update items
-**shard-scoped**: only the Parquet shard(s) actually containing changed items are rewritten, not
-the whole dataset. Writes are serialized **per dataset** (a keyed semaphore), so editing one
+**segment-scoped**: only the segments holding changed items are rewritten, a row group at a
+time, through a temp file renamed over the segment. Items are found through per-segment id
+indexes, within the dataset the request names. Writes are serialized **per dataset** (a keyed semaphore), so editing one
 dataset never blocks another.
 
 ### Ingestion

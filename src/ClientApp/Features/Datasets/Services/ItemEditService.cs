@@ -30,6 +30,7 @@ public class ItemEditService(DatasetApiClient datasetApiClient, DatasetState dat
         UpdateItemRequest request = new()
         {
             ItemId = item.Id,
+            DatasetId = item.DatasetId,
             Title = title,
             Description = description,
             Tags = tags,
@@ -108,11 +109,13 @@ public class ItemEditService(DatasetApiClient datasetApiClient, DatasetState dat
         List<string> itemIds,
         List<string>? tagsToAdd = null,
         List<string>? tagsToRemove = null,
-        bool? setFavorite = null)
+        bool? setFavorite = null,
+        Guid? datasetId = null)
     {
         BulkUpdateItemsRequest request = new()
         {
             ItemIds = itemIds.Select(Guid.Parse).ToList(),
+            DatasetId = datasetId,
             TagsToAdd = tagsToAdd,
             TagsToRemove = tagsToRemove,
             SetFavorite = setFavorite

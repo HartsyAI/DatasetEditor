@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
@@ -7,17 +9,16 @@ using Parquet.Data;
 namespace DatasetStudio.APIBackend.DataAccess.Parquet;
 
 /// <summary>
-/// Reads dataset items from Parquet shards: cursor pages, single items, counts. A page decodes
-/// only the row groups it returns rows from; groups before the cursor are skipped by their
-/// footer row counts.
+/// Reads dataset items from the segments a <see cref="ParquetManifest"/> lists: cursor pages,
+/// single items (through each segment's <see cref="SegmentIdIndex"/>), counts and whole
+/// segments. A page decodes only the row groups it returns rows from.
 /// </summary>
 public class ParquetItemReader
 {
-    /// <summary>A shard's unfiltered row count and the file version it was read from.</summary>
-    private readonly record struct CachedRowCount(long Length, DateTime LastWriteUtc, long Rows);
+    /// <summary>Prefix of a cursor: an absolute row offset into the dataset.</summary>
+    private const string OffsetCursorPrefix = "r";
 
     private readonly string _dataDirectory;
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CachedRowCount> _rowCountCache = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Initializes a new instance of the ParquetItemReader.
@@ -28,242 +29,206 @@ public class ParquetItemReader
         _dataDirectory = dataDirectory ?? throw new ArgumentNullException(nameof(dataDirectory));
     }
 
-    /// <summary>
-    /// Parses a page cursor of the form "shardIndex:rowIndex". Both parts must be non-negative
-    /// integers: a negative shard index would index <c>shardFiles[-1]</c>, and a cursor from
-    /// another dataset is not detectable here (cursors are not bound to a dataset).
-    /// </summary>
-    /// <param name="cursor">The cursor to parse.</param>
-    /// <param name="shardIndex">The parsed shard index, or 0 when parsing fails.</param>
-    /// <param name="rowIndex">The parsed row index, or 0 when parsing fails.</param>
-    /// <returns>True when the cursor is well formed.</returns>
-    public static bool TryParseCursor(string? cursor, out int shardIndex, out int rowIndex)
-    {
-        shardIndex = 0;
-        rowIndex = 0;
+    private string PathOf(string fileName) => Path.Combine(_dataDirectory, fileName);
 
+    /// <summary>The cursor for an absolute row offset.</summary>
+    public static string FormatCursor(long offset) => OffsetCursorPrefix + offset.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Parses a page cursor into an absolute row offset. Cursors are <c>r{offset}</c>: an offset
+    /// stays valid when compaction merges segments, which a segment-relative position would not.
+    /// The older <c>"shardIndex:rowIndex"</c> form is still accepted (shard i is segment i of a
+    /// dataset adopted from shards). Anything else is malformed, so a client never silently
+    /// restarts from the top (audit G-3).
+    /// </summary>
+    public static bool TryParseCursor(string? cursor, ParquetManifest manifest, out long offset)
+    {
+        offset = 0;
         if (string.IsNullOrEmpty(cursor))
         {
             return false;
         }
 
+        if (cursor.StartsWith(OffsetCursorPrefix, StringComparison.Ordinal))
+        {
+            return long.TryParse(cursor.AsSpan(OffsetCursorPrefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out offset);
+        }
+
         string[] parts = cursor.Split(':');
-        if (parts.Length != 2 ||
-            !int.TryParse(parts[0], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int shard) ||
-            !int.TryParse(parts[1], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int row))
+        if (parts.Length != 2
+            || !int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out int segment)
+            || !long.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out long row))
         {
             return false;
         }
 
-        shardIndex = shard;
-        rowIndex = row;
+        long[] starts = manifest.SegmentStarts();
+        offset = segment < starts.Length ? starts[segment] + row : manifest.TotalRows;
         return true;
     }
 
+    /// <summary>Whether a cursor has a valid form, without resolving it against a dataset.</summary>
+    public static bool IsWellFormedCursor(string cursor) => TryParseCursor(cursor, ParquetManifest.Empty, out _);
+
     /// <summary>
-    /// Reads a page of items from Parquet files with cursor-based pagination.
+    /// Reads a page starting at the cursor. Returns no cursor when the page reaches the last row
+    /// (audit P-10).
     /// </summary>
-    /// <param name="datasetId">The dataset ID.</param>
-    /// <param name="filter">Optional filter criteria.</param>
-    /// <param name="cursor">Optional cursor for pagination (format: "shardIndex:rowIndex").</param>
-    /// <param name="pageSize">Number of items to return.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Tuple of items and next cursor.</returns>
     public async Task<(List<DatasetItemDto> Items, string? NextCursor)> ReadPageAsync(
-        Guid datasetId,
+        ParquetManifest manifest,
         FilterRequest? filter = null,
         string? cursor = null,
         int pageSize = 100,
         CancellationToken cancellationToken = default)
     {
-        var shardFiles = GetShardFiles(datasetId);
-        if (shardFiles.Length == 0)
-            return (new List<DatasetItemDto>(), null);
-
-        // Parse cursor
-        int startShardIndex = 0;
-        int startRowIndex = 0;
-
-        // A malformed cursor used to fall back silently to 0:0, so a client resuming a
-        // paginated read restarted from the top with no signal (audit G-3). Reject it instead.
-        if (!string.IsNullOrEmpty(cursor))
+        long startOffset = 0;
+        if (!string.IsNullOrEmpty(cursor) && !TryParseCursor(cursor, manifest, out startOffset))
         {
-            if (!TryParseCursor(cursor, out startShardIndex, out startRowIndex))
-            {
-                throw new ArgumentException($"Malformed cursor '{cursor}'; expected 'shardIndex:rowIndex'.", nameof(cursor));
-            }
+            throw new ArgumentException($"Malformed cursor '{cursor}'.", nameof(cursor));
         }
 
-        var items = new List<DatasetItemDto>();
-        // Where the next page starts. Past the last shard means there is no next page.
-        int nextShardIndex = shardFiles.Length;
-        int nextRowIndex = 0;
+        List<DatasetItemDto> items = new();
+        long[] starts = manifest.SegmentStarts();
+        long nextOffset = manifest.TotalRows;
 
-        // Read from shards until we have enough items
-        for (int i = startShardIndex; i < shardFiles.Length && items.Count < pageSize; i++)
+        for (int i = 0; i < manifest.Segments.Count && items.Count < pageSize; i++)
         {
-            ShardRead read = await ReadFromShardAsync(
-                shardFiles[i],
-                filter,
-                i == startShardIndex ? startRowIndex : 0,
-                pageSize - items.Count,
-                cancellationToken);
+            ParquetSegment segment = manifest.Segments[i];
+            long segmentEnd = starts[i] + segment.Rows;
+            if (segmentEnd <= startOffset)
+            {
+                continue;
+            }
 
+            int skipRows = (int)Math.Max(0, startOffset - starts[i]);
+            ShardRead read = await ReadFromShardAsync(PathOf(segment.File), filter, skipRows, pageSize - items.Count, cancellationToken);
             items.AddRange(read.Items);
-
-            // RowsExamined is the absolute within-shard row to resume at (see ReadFromShardAsync).
-            // Comparing it with the shard's row count, rather than guessing from how many items
-            // came back, is what stops a page that fills exactly at the end of the data from
-            // emitting a cursor to an empty page (audit P-10).
-            if (read.RowsExamined >= read.ShardRowCount)
-            {
-                nextShardIndex = i + 1;
-                nextRowIndex = 0;
-            }
-            else
-            {
-                nextShardIndex = i;
-                nextRowIndex = read.RowsExamined;
-            }
+            nextOffset = starts[i] + read.RowsExamined;
         }
 
-        string? nextCursor = nextShardIndex < shardFiles.Length ? $"{nextShardIndex}:{nextRowIndex}" : null;
+        string? nextCursor = nextOffset < manifest.TotalRows ? FormatCursor(nextOffset) : null;
         return (items, nextCursor);
     }
 
     /// <summary>
-    /// Reads a specific item by ID from Parquet files.
+    /// Reads the item with this id from whichever segment holds it, using each segment's id index.
+    /// Every segment must have its index (see <see cref="ParquetItemRepository"/>).
     /// </summary>
-    /// <param name="datasetId">The dataset ID.</param>
-    /// <param name="itemId">The item ID to find.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The item if found, null otherwise.</returns>
     public async Task<DatasetItemDto?> ReadItemAsync(
-        Guid datasetId,
+        ParquetManifest manifest,
         Guid itemId,
         CancellationToken cancellationToken = default)
     {
-        var shardFiles = GetShardFiles(datasetId);
-
-        // Search all shards in parallel for better performance
-        var tasks = shardFiles.Select(file => FindItemInShardAsync(file, itemId, cancellationToken));
-        var results = await Task.WhenAll(tasks);
-
-        return results.FirstOrDefault(item => item != null);
+        foreach (ParquetSegment segment in manifest.Segments)
+        {
+            int? row = SegmentIdIndex.Find(PathOf(SegmentIdIndex.FileNameFor(segment.File)), itemId);
+            if (row is int found)
+            {
+                return await ReadRowAsync(PathOf(segment.File), found, cancellationToken);
+            }
+        }
+        return null;
     }
 
-    /// <summary>
-    /// Counts total items in a dataset, optionally with filters.
-    /// </summary>
-    /// <param name="datasetId">The dataset ID.</param>
-    /// <param name="filter">Optional filter criteria.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Total count of items.</returns>
+    /// <summary>Counts items: the manifest's row total, or a scan when filtered.</summary>
     public async Task<long> CountAsync(
-        Guid datasetId,
+        ParquetManifest manifest,
         FilterRequest? filter = null,
         CancellationToken cancellationToken = default)
     {
-        var shardFiles = GetShardFiles(datasetId);
-        if (shardFiles.Length == 0)
-            return 0;
-
-        // Count in parallel across all shards
-        var tasks = shardFiles.Select(file => CountInShardAsync(file, filter, cancellationToken));
-        var counts = await Task.WhenAll(tasks);
-
-        return counts.Sum();
-    }
-
-    /// <summary>
-    /// Reads all items from a dataset (use with caution for large datasets).
-    /// </summary>
-    /// <param name="datasetId">The dataset ID.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>All items in the dataset.</returns>
-    public async Task<List<DatasetItemDto>> ReadAllAsync(
-        Guid datasetId,
-        CancellationToken cancellationToken = default)
-    {
-        var shardFiles = GetShardFiles(datasetId);
-        var allItems = new List<DatasetItemDto>();
-
-        foreach (var file in shardFiles)
+        if (filter == null)
         {
-            ShardRead read = await ReadFromShardAsync(file, null, 0, int.MaxValue, cancellationToken);
-            allItems.AddRange(read.Items);
+            return manifest.TotalRows;
         }
 
+        long count = 0;
+        foreach (ParquetSegment segment in manifest.Segments)
+        {
+            ShardRead read = await ReadFromShardAsync(PathOf(segment.File), filter, 0, int.MaxValue, cancellationToken);
+            count += read.Items.Count;
+        }
+        return count;
+    }
+
+    /// <summary>Reads every item of the dataset (statistics; use with care on large datasets).</summary>
+    public async Task<List<DatasetItemDto>> ReadAllAsync(
+        ParquetManifest manifest,
+        CancellationToken cancellationToken = default)
+    {
+        List<DatasetItemDto> allItems = new();
+        foreach (ParquetSegment segment in manifest.Segments)
+        {
+            ShardRead read = await ReadFromShardAsync(PathOf(segment.File), null, 0, int.MaxValue, cancellationToken);
+            allItems.AddRange(read.Items);
+        }
         return allItems;
     }
 
     /// <summary>
-    /// Gets the shard indices that currently exist for a dataset, in order.
-    /// Used for shard-scoped updates so only affected shards are rewritten.
+    /// Yields a segment one row group at a time, so rewriting or merging segments holds one group
+    /// in memory, never a whole file (audit P-3).
     /// </summary>
-    public IReadOnlyList<int> GetShardIndices(Guid datasetId)
+    public async IAsyncEnumerable<List<DatasetItemDto>> ReadGroupsAsync(
+        string segmentPath,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var files = GetShardFiles(datasetId);
-        var indices = new List<int>(files.Length);
-        foreach (var file in files)
+        await using FileStream stream = File.OpenRead(segmentPath);
+        using ParquetReader reader = await ParquetReader.CreateAsync(stream, ParquetSchemaDefinition.ReaderOptions, cancellationToken: cancellationToken);
+        for (int g = 0; g < reader.RowGroupCount; g++)
         {
-            if (ParquetSchemaDefinition.TryParseFileName(Path.GetFileName(file), out _, out var shardIndex))
+            using ParquetRowGroupReader group = reader.OpenRowGroupReader(g);
+            Dictionary<string, Array> columns = await ReadAllColumnsAsync(group, cancellationToken);
+            int rowCount = (int)group.RowCount;
+            List<DatasetItemDto> items = new(rowCount);
+            for (int row = 0; row < rowCount; row++)
             {
-                indices.Add(shardIndex);
+                items.Add(CreateItemFromRow(columns, row));
             }
+            yield return items;
         }
-        return indices;
     }
 
-    /// <summary>
-    /// Reads every item from a single shard (used to rewrite that shard in place).
-    /// </summary>
-    public async Task<List<DatasetItemDto>> ReadShardAsync(
-        Guid datasetId,
-        int shardIndex,
-        CancellationToken cancellationToken = default)
+    /// <summary>Item ids of a segment in row order, reading only the id column.</summary>
+    public async Task<List<Guid>> ReadIdsAsync(string segmentPath, CancellationToken cancellationToken = default)
     {
-        var fileName = ParquetSchemaDefinition.GetShardFileName(datasetId, shardIndex);
-        var filePath = Path.Combine(_dataDirectory, fileName);
-        if (!File.Exists(filePath))
+        await using FileStream stream = File.OpenRead(segmentPath);
+        using ParquetReader reader = await ParquetReader.CreateAsync(stream, ParquetSchemaDefinition.ReaderOptions, cancellationToken: cancellationToken);
+        List<Guid> ids = new();
+        for (int g = 0; g < reader.RowGroupCount; g++)
         {
-            return new List<DatasetItemDto>();
+            using ParquetRowGroupReader group = reader.OpenRowGroupReader(g);
+            DataColumn column = await group.ReadColumnAsync(ParquetSchemaDefinition.Schema.DataFields[0], cancellationToken);
+            ids.AddRange((Guid[])column.Data);
         }
-        ShardRead read = await ReadFromShardAsync(filePath, null, 0, int.MaxValue, cancellationToken);
-        return read.Items;
+        return ids;
     }
 
-    /// <summary>
-    /// Gets all shard files for a dataset, sorted by shard index.
-    /// </summary>
-    private string[] GetShardFiles(Guid datasetId)
+    /// <summary>Reads one row by its position in the segment, decoding only its row group.</summary>
+    private async Task<DatasetItemDto?> ReadRowAsync(string segmentPath, int row, CancellationToken cancellationToken)
     {
-        var pattern = $"dataset_{datasetId:N}_shard_*.parquet";
-        var files = Directory.GetFiles(_dataDirectory, pattern);
-
-        // Sort by shard index
-        return files.OrderBy(f =>
+        await using FileStream stream = File.OpenRead(segmentPath);
+        using ParquetReader reader = await ParquetReader.CreateAsync(stream, ParquetSchemaDefinition.ReaderOptions, cancellationToken: cancellationToken);
+        long groupStart = 0;
+        for (int g = 0; g < reader.RowGroupCount; g++)
         {
-            var fileName = Path.GetFileName(f);
-            if (ParquetSchemaDefinition.TryParseFileName(fileName, out _, out var shardIndex))
-                return shardIndex;
-            return int.MaxValue;
-        }).ToArray();
+            using ParquetRowGroupReader group = reader.OpenRowGroupReader(g);
+            if (row < groupStart + group.RowCount)
+            {
+                Dictionary<string, Array> columns = await ReadAllColumnsAsync(group, cancellationToken);
+                return CreateItemFromRow(columns, (int)(row - groupStart));
+            }
+            groupStart += group.RowCount;
+        }
+        return null;
     }
 
     /// <summary>
-    /// Reads items from a single shard file.
+    /// Reads rows from one segment file, starting <paramref name="skipRows"/> rows in.
     /// </summary>
     /// <returns>
-    /// The matched items, plus <c>RowsExamined</c> — the within-shard row index (0-based,
-    /// exclusive end) the next read should skip to. This used to be inferred by the caller as
-    /// <c>skipRows + items.Count</c>, which is only correct when every examined row matches
-    /// (no filter, or a filter that happens to match everything): items.Count is the count of
-    /// rows that PASSED the filter, not the count of rows actually looked at, so filtered reads
-    /// undercounted how far into the shard they'd really gotten and the resulting cursor would
-    /// re-scan (and re-return) rows the caller had already consumed. RowsExamined instead
-    /// counts every row visited — skipped, filtered out, or matched — so it's accurate
-    /// regardless of how selective the filter is.
+    /// The matched items, plus <c>RowsExamined</c>: the within-file row index the next read
+    /// should start at. It counts every row visited (skipped, filtered out or matched), so a
+    /// filtered read resumes where it really stopped rather than re-returning rows.
     /// </returns>
     private async Task<ShardRead> ReadFromShardAsync(
         string filePath,
@@ -287,9 +252,8 @@ public class ParquetItemReader
             int groupStart = rowsExamined;
 
             // A group that ends before the cursor is skipped from the footer's row count, without
-            // decoding any of its columns. Every group used to be fully decoded and its rows
-            // skipped one by one, so page N cost O(offset) (audit P-1). skipRows counts rows
-            // examined, filtered or not, so this holds for filtered reads too.
+            // decoding any of its columns (audit P-1). skipRows counts rows examined, filtered or
+            // not, so this holds for filtered reads too.
             if (groupStart + rowCount <= skipRows)
             {
                 rowsExamined += rowCount;
@@ -318,10 +282,10 @@ public class ParquetItemReader
         return new ShardRead(items, rowsExamined, shardRowCount);
     }
 
-    /// <summary>The result of reading part of one shard.</summary>
+    /// <summary>The result of reading part of one segment.</summary>
     /// <param name="Items">Rows that passed the filter.</param>
-    /// <param name="RowsExamined">The within-shard row index the next read should start at.</param>
-    /// <param name="ShardRowCount">Rows in the whole shard.</param>
+    /// <param name="RowsExamined">The within-segment row index the next read should start at.</param>
+    /// <param name="ShardRowCount">Rows in the whole segment.</param>
     private sealed record ShardRead(List<DatasetItemDto> Items, int RowsExamined, long ShardRowCount);
 
     /// <summary>Row count of each row group, from the footer (no column data is read).</summary>
@@ -336,71 +300,6 @@ public class ParquetItemReader
         return counts;
     }
 
-    /// <summary>
-    /// Finds a specific item in a shard file.
-    /// </summary>
-    private async Task<DatasetItemDto?> FindItemInShardAsync(
-        string filePath,
-        Guid itemId,
-        CancellationToken cancellationToken)
-    {
-        using var stream = File.OpenRead(filePath);
-        using var reader = await ParquetReader.CreateAsync(stream, ParquetSchemaDefinition.ReaderOptions, cancellationToken: cancellationToken);
-
-        for (int i = 0; i < reader.RowGroupCount; i++)
-        {
-            using var groupReader = reader.OpenRowGroupReader(i);
-            var rowCount = (int)groupReader.RowCount;
-
-            // Only read ID column for initial search
-            var idColumn = await groupReader.ReadColumnAsync(ParquetSchemaDefinition.Schema.DataFields[0], cancellationToken);
-            var ids = (Guid[])idColumn.Data;
-
-            // Find matching row
-            for (int row = 0; row < rowCount; row++)
-            {
-                if (ids[row] == itemId)
-                {
-                    // Found it - now read all columns for this row group
-                    var columns = await ReadAllColumnsAsync(groupReader, cancellationToken);
-                    return CreateItemFromRow(columns, row);
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Counts items in a single shard file.
-    /// </summary>
-    private async Task<long> CountInShardAsync(
-        string filePath,
-        FilterRequest? filter,
-        CancellationToken cancellationToken)
-    {
-        if (filter == null)
-        {
-            // Fast path: the footer's row counts, cached per file version. A shard is only ever
-            // replaced or appended to, both of which change its length or write time.
-            FileInfo info = new(filePath);
-            if (_rowCountCache.TryGetValue(filePath, out CachedRowCount cached)
-                && cached.Length == info.Length && cached.LastWriteUtc == info.LastWriteTimeUtc)
-            {
-                return cached.Rows;
-            }
-
-            using var stream = File.OpenRead(filePath);
-            using var reader = await ParquetReader.CreateAsync(stream, ParquetSchemaDefinition.ReaderOptions, cancellationToken: cancellationToken);
-            long count = GetRowGroupCounts(reader).Sum();
-            _rowCountCache[filePath] = new CachedRowCount(info.Length, info.LastWriteTimeUtc, count);
-            return count;
-        }
-
-        // Need to read and filter
-        ShardRead read = await ReadFromShardAsync(filePath, filter, 0, int.MaxValue, cancellationToken);
-        return read.Items.Count;
-    }
 
     /// <summary>
     /// Reads all columns from a row group.

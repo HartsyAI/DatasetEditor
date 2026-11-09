@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
@@ -7,23 +8,30 @@ using Microsoft.Extensions.Logging;
 namespace DatasetStudio.APIBackend.DataAccess.Parquet;
 
 /// <summary>
-/// Parquet-based implementation of IDatasetItemRepository for storing billions of dataset items.
-/// Uses automatic sharding (10M items per file) for horizontal scalability.
+/// Parquet storage for local dataset items. Each dataset is a <see cref="ParquetManifest"/> over
+/// immutable segment files, each with a <see cref="SegmentIdIndex"/>. Every write builds new
+/// files first and commits by replacing the manifest (or, for an edit, by renaming a complete
+/// rewritten segment over the old one), so a crash never leaves a dataset half-written.
 /// </summary>
+/// <remarks>
+/// All operations on one dataset are serialised by a per-dataset lock; different datasets never
+/// block each other.
+/// </remarks>
 public class ParquetItemRepository : IDatasetItemRepository, IDisposable
 {
+    /// <summary>Segments smaller than this at the end of a dataset are candidates for merging.</summary>
+    internal const long SmallSegmentRows = 250_000;
+
+    /// <summary>How many small trailing segments trigger a merge.</summary>
+    internal const int CompactionMinSegments = 8;
+
     private readonly ParquetItemReader _reader;
     private readonly ParquetItemWriter _writer;
+    private readonly ParquetManifestStore _manifests;
     private readonly ILogger<ParquetItemRepository> _logger;
-    private readonly string _dataDirectory;
-    // Per-dataset write locks so ingesting/updating one dataset never blocks another.
+    // Per-dataset locks so ingesting/updating one dataset never blocks another.
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _datasetLocks = new();
-    private readonly ConcurrentDictionary<Guid, long> _datasetItemCounts = new();
     private bool _disposed;
-
-    /// <summary>Gets (or creates) the write lock for a single dataset.</summary>
-    private SemaphoreSlim GetDatasetLock(Guid datasetId)
-        => _datasetLocks.GetOrAdd(datasetId, _ => new SemaphoreSlim(1, 1));
 
     /// <summary>
     /// Initializes a new instance of the ParquetItemRepository.
@@ -32,70 +40,70 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
     /// <param name="logger">Logger instance.</param>
     public ParquetItemRepository(string dataDirectory, ILogger<ParquetItemRepository> logger)
     {
-        _dataDirectory = dataDirectory ?? throw new ArgumentNullException(nameof(dataDirectory));
+        ArgumentNullException.ThrowIfNull(dataDirectory);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-        Directory.CreateDirectory(_dataDirectory);
+        Directory.CreateDirectory(dataDirectory);
+        _reader = new ParquetItemReader(dataDirectory);
+        _writer = new ParquetItemWriter(dataDirectory);
+        _manifests = new ParquetManifestStore(dataDirectory);
+    }
 
-        _reader = new ParquetItemReader(_dataDirectory);
-        _writer = new ParquetItemWriter(_dataDirectory);
+    private SemaphoreSlim GetDatasetLock(Guid datasetId)
+        => _datasetLocks.GetOrAdd(datasetId, _ => new SemaphoreSlim(1, 1));
 
-        // Initialize item counts
-        InitializeItemCounts();
+    /// <summary>Runs <paramref name="action"/> holding the dataset's lock, with its manifest.</summary>
+    private async Task<T> WithDatasetAsync<T>(Guid datasetId, Func<ParquetManifest, Task<T>> action, CancellationToken cancellationToken)
+    {
+        SemaphoreSlim datasetLock = GetDatasetLock(datasetId);
+        await datasetLock.WaitAsync(cancellationToken);
+        try
+        {
+            ParquetManifest manifest = await _manifests.LoadAsync(datasetId, cancellationToken);
+            return await action(manifest);
+        }
+        finally
+        {
+            datasetLock.Release();
+        }
     }
 
     /// <summary>
-    /// Adds a range of items to a dataset.
-    /// Items are automatically sharded across multiple Parquet files.
+    /// Adds items as a new segment and commits it to the manifest. The item count is the
+    /// manifest's row total, so there is no separate counter to go stale (audit P-7).
     /// </summary>
     public async Task AddRangeAsync(
         Guid datasetId,
         IEnumerable<DatasetItemDto> items,
         CancellationToken cancellationToken = default)
     {
-        var itemList = items.ToList();
+        List<DatasetItemDto> itemList = items.ToList();
         if (itemList.Count == 0)
+        {
             return;
+        }
 
-        var datasetLock = GetDatasetLock(datasetId);
-        await datasetLock.WaitAsync(cancellationToken);
-        try
+        await WithDatasetAsync(datasetId, async manifest =>
         {
-            // Get current count to determine starting index
-            long startIndex = await GetOrInitializeItemCountAsync(datasetId, cancellationToken);
+            _manifests.SweepOrphans(datasetId, manifest);
+
+            string file = ParquetManifestStore.SegmentFileName(datasetId, manifest.NextSegment);
+            List<Guid> ids = await _writer.WriteSegmentAsync(_manifests.PathOf(file), itemList, cancellationToken);
+            await SegmentIdIndex.WriteAsync(_manifests.PathOf(SegmentIdIndex.FileNameFor(file)), ids, cancellationToken);
+
+            ParquetManifest next = new(
+                manifest.NextSegment + 1,
+                manifest.Segments.Append(new ParquetSegment(file, itemList.Count)).ToList());
+            // The commit. Not cancellable: once the segment is complete it should be published.
+            await _manifests.SaveAsync(datasetId, next, CancellationToken.None);
 
             _logger.LogInformation(
-                "Adding {Count} items to dataset {DatasetId} starting at index {StartIndex}",
-                itemList.Count, datasetId, startIndex);
+                "Added {Count} items to dataset {DatasetId} as {Segment}; total {Total}",
+                itemList.Count, datasetId, file, next.TotalRows);
 
-            // Write in batches for optimal performance
-            var batchSize = ParquetSchemaDefinition.DefaultBatchSize;
-            for (int i = 0; i < itemList.Count; i += batchSize)
-            {
-                var batch = itemList.Skip(i).Take(batchSize).ToList();
-                await _writer.WriteBatchAsync(datasetId, batch, startIndex + i, cancellationToken);
-
-                _logger.LogDebug(
-                    "Wrote batch of {BatchSize} items (total progress: {Progress}/{Total})",
-                    batch.Count, i + batch.Count, itemList.Count);
-            }
-
-            // Update count
-            _datasetItemCounts[datasetId] = startIndex + itemList.Count;
-
-            _logger.LogInformation(
-                "Successfully added {Count} items to dataset {DatasetId}. Total items: {Total}",
-                itemList.Count, datasetId, _datasetItemCounts[datasetId]);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to add items to dataset {DatasetId}", datasetId);
-            throw;
-        }
-        finally
-        {
-            datasetLock.Release();
-        }
+            await TryCompactTailAsync(datasetId, next);
+            return true;
+        }, cancellationToken);
     }
 
     /// <summary>
@@ -108,101 +116,49 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
         int pageSize,
         CancellationToken cancellationToken = default)
     {
-        // AddRangeAsync's writer opens each shard with File.Open(path, FileMode.Open,
-        // FileAccess.ReadWrite) -- that 3-arg overload defaults to FileShare.None (exclusive),
-        // needed for ParquetWriter's backward-seeking footer rewrite (see ParquetItemWriter's
-        // own comment on this). Without also taking the same per-dataset lock here, a read
-        // landing while a write holds that handle throws "the process cannot access the file
-        // because it is being used by another process" -- confirmed live: a real-run gate hit
-        // this exact race (GetDatasetItems called right after a background ingestion's final
-        // write hadn't yet released the handle) and 500'd. Reads and writes for one dataset now
-        // fully serialize; acceptable since writes are already batched/infrequent relative to
-        // reads, and the alternative (shared-read access mid footer-rewrite) risks a torn read
-        // of a Parquet file, not just a thrown exception.
-        var datasetLock = GetDatasetLock(datasetId);
-        await datasetLock.WaitAsync(cancellationToken);
-        try
+        return await WithDatasetAsync(datasetId, async manifest =>
         {
-            _logger.LogDebug(
-                "Getting page for dataset {DatasetId} with cursor '{Cursor}' and page size {PageSize}",
-                datasetId, cursor ?? "null", pageSize);
-
-            var (items, nextCursor) = await _reader.ReadPageAsync(
-                datasetId,
-                filter,
-                cursor,
-                pageSize,
-                cancellationToken);
-
-            _logger.LogDebug(
-                "Retrieved {Count} items for dataset {DatasetId}. Next cursor: '{NextCursor}'",
-                items.Count, datasetId, nextCursor ?? "null");
-
-            return (items, nextCursor);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to get page for dataset {DatasetId}", datasetId);
-            throw;
-        }
-        finally
-        {
-            datasetLock.Release();
-        }
+            (List<DatasetItemDto> items, string? nextCursor) = await _reader.ReadPageAsync(manifest, filter, cursor, pageSize, cancellationToken);
+            return ((IReadOnlyList<DatasetItemDto>)items, nextCursor);
+        }, cancellationToken);
     }
 
     /// <summary>
-    /// Gets a single item by ID.
+    /// Gets an item by id within its dataset: a binary search of each segment's id index. It used
+    /// to read the id column of every row group of every dataset on the server (audit P-2).
+    /// </summary>
+    public async Task<DatasetItemDto?> GetItemAsync(
+        Guid datasetId,
+        Guid itemId,
+        CancellationToken cancellationToken = default)
+    {
+        return await WithDatasetAsync(datasetId, async manifest =>
+        {
+            await EnsureIdIndexesAsync(manifest, cancellationToken);
+            return await _reader.ReadItemAsync(manifest, itemId, cancellationToken);
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets an item when the caller doesn't know its dataset: each dataset's id indexes are
+    /// searched in turn. Callers that know the dataset use the overload that takes it.
     /// </summary>
     public async Task<DatasetItemDto?> GetItemAsync(
         Guid itemId,
         CancellationToken cancellationToken = default)
     {
-        try
+        foreach (Guid datasetId in _manifests.ListDatasets())
         {
-            _logger.LogDebug("Getting item {ItemId}", itemId);
-
-            // We need to search across all datasets since we only have item ID
-            // For better performance, this could be optimized with an index
-            var allDatasetIds = GetAllDatasetIds();
-
-            foreach (var datasetId in allDatasetIds)
+            DatasetItemDto? item = await GetItemAsync(datasetId, itemId, cancellationToken);
+            if (item is not null)
             {
-                // Same shared-lock reasoning as GetPageAsync: the writer's exclusive file
-                // handle during a footer rewrite would otherwise throw here too.
-                var datasetLock = GetDatasetLock(datasetId);
-                await datasetLock.WaitAsync(cancellationToken);
-                DatasetItemDto? item;
-                try
-                {
-                    item = await _reader.ReadItemAsync(datasetId, itemId, cancellationToken);
-                }
-                finally
-                {
-                    datasetLock.Release();
-                }
-                if (item != null)
-                {
-                    _logger.LogDebug("Found item {ItemId} in dataset {DatasetId}", itemId, datasetId);
-                    return item;
-                }
+                return item;
             }
-
-            _logger.LogDebug("Item {ItemId} not found", itemId);
-            return null;
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to get item {ItemId}", itemId);
-            throw;
-        }
+        return null;
     }
 
-    /// <summary>
-    /// Updates a single item.
-    /// Note: Parquet files are immutable, so this requires rewriting the affected shard(s).
-    /// For better performance, use UpdateItemsAsync for bulk updates.
-    /// </summary>
+    /// <summary>Updates a single item.</summary>
     public async Task UpdateItemAsync(
         DatasetItemDto item,
         CancellationToken cancellationToken = default)
@@ -211,70 +167,48 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
     }
 
     /// <summary>
-    /// Updates multiple items in bulk.
-    /// Rewrites affected shards with updated data.
+    /// Updates items. Only the segments that hold an updated item are rewritten, one row group at
+    /// a time to a temp file that is renamed over the segment. Edits used to read the whole
+    /// shard (up to 10M rows) into memory and rewrite it as one row group (audit P-3). A
+    /// segment's rows keep their positions, so its id index stays valid.
     /// </summary>
     public async Task UpdateItemsAsync(
         IEnumerable<DatasetItemDto> items,
         CancellationToken cancellationToken = default)
     {
-        var itemList = items.ToList();
-        if (itemList.Count == 0)
-            return;
-
-        // Update each dataset under its own lock, rewriting ONLY the shards that
-        // actually contain an updated item (instead of reading + rewriting the whole
-        // dataset). For a single-shard dataset this touches one shard; for a sharded
-        // multi-million-row dataset it leaves untouched shards alone.
-        foreach (var datasetGroup in itemList.GroupBy(i => i.DatasetId))
+        foreach (IGrouping<Guid, DatasetItemDto> datasetGroup in items.GroupBy(i => i.DatasetId))
         {
-            var datasetId = datasetGroup.Key;
-            var updateLookup = datasetGroup.ToDictionary(i => i.Id);
+            Guid datasetId = datasetGroup.Key;
+            Dictionary<Guid, DatasetItemDto> updates = datasetGroup.ToDictionary(i => i.Id);
 
-            var datasetLock = GetDatasetLock(datasetId);
-            await datasetLock.WaitAsync(cancellationToken);
-            try
+            await WithDatasetAsync(datasetId, async manifest =>
             {
-                int rewrittenShards = 0;
-
-                foreach (var shardIndex in _reader.GetShardIndices(datasetId))
+                await EnsureIdIndexesAsync(manifest, cancellationToken);
+                int rewritten = 0;
+                foreach (ParquetSegment segment in manifest.Segments)
                 {
-                    var shardItems = await _reader.ReadShardAsync(datasetId, shardIndex, cancellationToken);
-
-                    bool shardChanged = false;
-                    for (int i = 0; i < shardItems.Count; i++)
+                    string indexPath = _manifests.PathOf(SegmentIdIndex.FileNameFor(segment.File));
+                    Dictionary<Guid, DatasetItemDto> inSegment = updates
+                        .Where(u => SegmentIdIndex.Find(indexPath, u.Key) is not null)
+                        .ToDictionary(u => u.Key, u => u.Value);
+                    if (inSegment.Count == 0)
                     {
-                        if (updateLookup.TryGetValue(shardItems[i].Id, out var updatedItem))
-                        {
-                            shardItems[i] = updatedItem with { UpdatedAt = DateTime.UtcNow };
-                            shardChanged = true;
-                        }
+                        continue;
                     }
 
-                    if (shardChanged)
-                    {
-                        // Each shard is replaced atomically (temp file, then rename), so a cancelled
-                        // request never leaves a shard missing or half-written. A multi-shard batch
-                        // cancelled between shards keeps the shards already rewritten; each one is
-                        // complete, but the batch as a whole is not all-or-nothing.
-                        await _writer.ReplaceShardAsync(datasetId, shardIndex, shardItems, cancellationToken);
-                        rewrittenShards++;
-                    }
+                    // Each segment is replaced atomically (temp file, then rename). A batch
+                    // cancelled between segments keeps those already rewritten; each one is
+                    // complete, but the batch as a whole is not all-or-nothing.
+                    string path = _manifests.PathOf(segment.File);
+                    await _writer.WriteSegmentAsync(path, ApplyUpdates(path, inSegment, cancellationToken), cancellationToken);
+                    rewritten++;
                 }
 
                 _logger.LogInformation(
-                    "Updated {Count} items in dataset {DatasetId} ({Shards} shard(s) rewritten)",
-                    updateLookup.Count, datasetId, rewrittenShards);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to update items in dataset {DatasetId}", datasetId);
-                throw;
-            }
-            finally
-            {
-                datasetLock.Release();
-            }
+                    "Updated {Count} items in dataset {DatasetId} ({Segments} segment(s) rewritten)",
+                    updates.Count, datasetId, rewritten);
+                return true;
+            }, cancellationToken);
         }
     }
 
@@ -285,32 +219,21 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
         Guid datasetId,
         CancellationToken cancellationToken = default)
     {
-        var datasetLock = GetDatasetLock(datasetId);
+        SemaphoreSlim datasetLock = GetDatasetLock(datasetId);
         await datasetLock.WaitAsync(cancellationToken);
         try
         {
-            _logger.LogInformation("Deleting all items for dataset {DatasetId}", datasetId);
-
-            _writer.DeleteDatasetShards(datasetId);
-            _datasetItemCounts.TryRemove(datasetId, out _);
-
-            _logger.LogInformation("Successfully deleted all items for dataset {DatasetId}", datasetId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to delete items for dataset {DatasetId}", datasetId);
-            throw;
+            _manifests.Delete(datasetId);
+            _logger.LogInformation("Deleted all items for dataset {DatasetId}", datasetId);
         }
         finally
         {
             datasetLock.Release();
         }
-
-        await Task.CompletedTask;
     }
 
     /// <summary>
-    /// Gets the total count of items in a dataset.
+    /// Gets the total count of items in a dataset: the manifest's row total, or a scan when filtered.
     /// </summary>
     /// <param name="datasetId">The dataset ID.</param>
     /// <param name="filter">Optional filter to count only matching items.</param>
@@ -321,41 +244,7 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
         FilterRequest? filter = null,
         CancellationToken cancellationToken = default)
     {
-        try
-        {
-            // Fast path for unfiltered counts
-            if (filter == null && _datasetItemCounts.TryGetValue(datasetId, out var count))
-            {
-                return count;
-            }
-
-            // Need to count with filter or refresh count. Same shared-lock reasoning as
-            // GetPageAsync -- this hits the Parquet files directly, unlike the cached fast
-            // path above.
-            var datasetLock = GetDatasetLock(datasetId);
-            await datasetLock.WaitAsync(cancellationToken);
-            long actualCount;
-            try
-            {
-                actualCount = await _reader.CountAsync(datasetId, filter, cancellationToken);
-            }
-            finally
-            {
-                datasetLock.Release();
-            }
-
-            if (filter == null)
-            {
-                _datasetItemCounts[datasetId] = actualCount;
-            }
-
-            return actualCount;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to get count for dataset {DatasetId}", datasetId);
-            throw;
-        }
+        return await WithDatasetAsync(datasetId, manifest => _reader.CountAsync(manifest, filter, cancellationToken), cancellationToken);
     }
 
     /// <summary>
@@ -368,121 +257,109 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
         Guid datasetId,
         CancellationToken cancellationToken = default)
     {
-        try
+        List<DatasetItemDto> allItems = await WithDatasetAsync(datasetId, manifest => _reader.ReadAllAsync(manifest, cancellationToken), cancellationToken);
+
+        return new Dictionary<string, object>
         {
-            _logger.LogDebug("Computing statistics for dataset {DatasetId}", datasetId);
+            ["total_items"] = allItems.Count,
+            ["favorite_count"] = allItems.Count(i => i.IsFavorite),
+            ["avg_width"] = allItems.Any() ? allItems.Average(i => i.Width) : 0,
+            ["avg_height"] = allItems.Any() ? allItems.Average(i => i.Height) : 0,
+            ["min_width"] = allItems.Any() ? allItems.Min(i => i.Width) : 0,
+            ["max_width"] = allItems.Any() ? allItems.Max(i => i.Width) : 0,
+            ["min_height"] = allItems.Any() ? allItems.Min(i => i.Height) : 0,
+            ["max_height"] = allItems.Any() ? allItems.Max(i => i.Height) : 0,
+            ["tag_counts"] = allItems
+                .SelectMany(i => i.Tags)
+                .GroupBy(t => t)
+                .ToDictionary(g => g.Key, g => g.Count())
+        };
+    }
 
-            // Same shared-lock reasoning as GetPageAsync.
-            var datasetLock = GetDatasetLock(datasetId);
-            await datasetLock.WaitAsync(cancellationToken);
-            List<DatasetItemDto> allItems;
-            try
-            {
-                allItems = await _reader.ReadAllAsync(datasetId, cancellationToken);
-            }
-            finally
-            {
-                datasetLock.Release();
-            }
-
-            var stats = new Dictionary<string, object>
-            {
-                ["total_items"] = allItems.Count,
-                ["favorite_count"] = allItems.Count(i => i.IsFavorite),
-                ["avg_width"] = allItems.Any() ? allItems.Average(i => i.Width) : 0,
-                ["avg_height"] = allItems.Any() ? allItems.Average(i => i.Height) : 0,
-                ["min_width"] = allItems.Any() ? allItems.Min(i => i.Width) : 0,
-                ["max_width"] = allItems.Any() ? allItems.Max(i => i.Width) : 0,
-                ["min_height"] = allItems.Any() ? allItems.Min(i => i.Height) : 0,
-                ["max_height"] = allItems.Any() ? allItems.Max(i => i.Height) : 0,
-                ["tag_counts"] = allItems
-                    .SelectMany(i => i.Tags)
-                    .GroupBy(t => t)
-                    .ToDictionary(g => g.Key, g => g.Count())
-            };
-
-            return stats;
-        }
-        catch (Exception ex)
+    /// <summary>
+    /// Writes the id index of any segment that lacks one: shards adopted from before manifests,
+    /// read once through their id column. Called with the dataset's lock held.
+    /// </summary>
+    private async Task EnsureIdIndexesAsync(ParquetManifest manifest, CancellationToken cancellationToken)
+    {
+        foreach (ParquetSegment segment in manifest.Segments)
         {
-            _logger.LogError(ex, "Failed to compute statistics for dataset {DatasetId}", datasetId);
-            throw;
+            string indexPath = _manifests.PathOf(SegmentIdIndex.FileNameFor(segment.File));
+            if (!File.Exists(indexPath))
+            {
+                List<Guid> ids = await _reader.ReadIdsAsync(_manifests.PathOf(segment.File), cancellationToken);
+                await SegmentIdIndex.WriteAsync(indexPath, ids, cancellationToken);
+            }
         }
     }
 
     /// <summary>
-    /// Logs how many datasets have existing Parquet files on disk at startup. Does NOT
-    /// pre-populate <see cref="_datasetItemCounts"/> — it used to seed every discovered
-    /// dataset with a count of 0 "to be computed on first access", but that 0 IS the cached
-    /// value from then on: GetOrInitializeItemCountAsync/GetCountAsync's cache check is a
-    /// plain TryGetValue, which succeeds against that placeholder immediately, so the real
-    /// count from the Parquet files was never actually read. In production this meant every
-    /// dataset with existing data showed 0 items after every service restart, and any
-    /// subsequent AddRangeAsync computed new items' starting index from 0 too — silently
-    /// colliding with the dataset's existing item indices. Leaving the cache empty here lets
-    /// the lazy, on-demand count computation these methods already have work as intended.
+    /// Merges small trailing segments into one, so a dataset built from many small appends
+    /// doesn't grow without bound in files (rest of audit P-5). The merged segment is written in
+    /// full, then the manifest swap publishes it and drops the inputs. Best effort: a failure
+    /// leaves the committed segments as they were.
     /// </summary>
-    private void InitializeItemCounts()
+    private async Task TryCompactTailAsync(Guid datasetId, ParquetManifest manifest)
     {
+        int start = manifest.Segments.Count;
+        while (start > 0 && manifest.Segments[start - 1].Rows < SmallSegmentRows)
+        {
+            start--;
+        }
+        int count = manifest.Segments.Count - start;
+        if (count < CompactionMinSegments)
+        {
+            return;
+        }
+
         try
         {
-            var allFiles = Directory.GetFiles(_dataDirectory, "dataset_*.parquet");
-            var datasetIds = new HashSet<Guid>();
+            List<ParquetSegment> inputs = manifest.Segments.Skip(start).ToList();
+            string file = ParquetManifestStore.SegmentFileName(datasetId, manifest.NextSegment);
+            List<Guid> ids = await _writer.WriteSegmentAsync(_manifests.PathOf(file), ConcatGroups(inputs), CancellationToken.None);
+            await SegmentIdIndex.WriteAsync(_manifests.PathOf(SegmentIdIndex.FileNameFor(file)), ids, CancellationToken.None);
 
-            foreach (var file in allFiles)
+            ParquetManifest next = new(
+                manifest.NextSegment + 1,
+                manifest.Segments.Take(start).Append(new ParquetSegment(file, ids.Count)).ToList());
+            await _manifests.SaveAsync(datasetId, next, CancellationToken.None);
+            _manifests.SweepOrphans(datasetId, next);
+            _logger.LogInformation("Merged {Count} segments of dataset {DatasetId} into {Segment}", count, datasetId, file);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not merge segments of dataset {DatasetId}; they stay as they are", datasetId);
+        }
+    }
+
+    private async IAsyncEnumerable<List<DatasetItemDto>> ConcatGroups(IReadOnlyList<ParquetSegment> segments)
+    {
+        foreach (ParquetSegment segment in segments)
+        {
+            await foreach (List<DatasetItemDto> group in _reader.ReadGroupsAsync(_manifests.PathOf(segment.File)))
             {
-                var fileName = Path.GetFileName(file);
-                if (ParquetSchemaDefinition.TryParseFileName(fileName, out var datasetId, out _))
+                yield return group;
+            }
+        }
+    }
+
+    private async IAsyncEnumerable<List<DatasetItemDto>> ApplyUpdates(
+        string segmentPath,
+        IReadOnlyDictionary<Guid, DatasetItemDto> updates,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        DateTime now = DateTime.UtcNow;
+        await foreach (List<DatasetItemDto> group in _reader.ReadGroupsAsync(segmentPath, cancellationToken))
+        {
+            for (int i = 0; i < group.Count; i++)
+            {
+                if (updates.TryGetValue(group[i].Id, out DatasetItemDto? updated))
                 {
-                    datasetIds.Add(datasetId);
+                    group[i] = updated with { UpdatedAt = now };
                 }
             }
-
-            _logger.LogInformation("Initialized repository with {Count} datasets", datasetIds.Count);
+            yield return group;
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to initialize item counts from existing files");
-        }
-    }
-
-    /// <summary>
-    /// Gets or initializes the item count for a dataset.
-    /// </summary>
-    private async Task<long> GetOrInitializeItemCountAsync(Guid datasetId, CancellationToken cancellationToken)
-    {
-        if (_datasetItemCounts.TryGetValue(datasetId, out var count))
-            return count;
-
-        // Need to count existing items. This used to be `task.Wait(); count = task.Result;`
-        // — a blocking sync-over-async call made from inside AddRangeAsync while that method
-        // holds the per-dataset SemaphoreSlim, risking thread-pool starvation/deadlock under
-        // concurrent ingestion load (the blocked thread can't service the async work the
-        // count itself depends on).
-        count = await _reader.CountAsync(datasetId, cancellationToken: cancellationToken);
-
-        _datasetItemCounts[datasetId] = count;
-        return count;
-    }
-
-    /// <summary>
-    /// Gets all dataset IDs that have data in this repository.
-    /// </summary>
-    private IEnumerable<Guid> GetAllDatasetIds()
-    {
-        var allFiles = Directory.GetFiles(_dataDirectory, "dataset_*.parquet");
-        var datasetIds = new HashSet<Guid>();
-
-        foreach (var file in allFiles)
-        {
-            var fileName = Path.GetFileName(file);
-            if (ParquetSchemaDefinition.TryParseFileName(fileName, out var datasetId, out _))
-            {
-                datasetIds.Add(datasetId);
-            }
-        }
-
-        return datasetIds;
     }
 
     public void Dispose()
@@ -490,8 +367,8 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
         if (_disposed)
             return;
 
-        _writer?.Dispose();
-        foreach (var datasetLock in _datasetLocks.Values)
+        _writer.Dispose();
+        foreach (SemaphoreSlim datasetLock in _datasetLocks.Values)
         {
             datasetLock.Dispose();
         }

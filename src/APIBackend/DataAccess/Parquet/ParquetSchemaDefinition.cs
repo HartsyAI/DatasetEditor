@@ -10,9 +10,6 @@ namespace DatasetStudio.APIBackend.DataAccess.Parquet;
 /// </summary>
 public static class ParquetSchemaDefinition
 {
-    /// <summary>Maximum number of items per Parquet file shard.</summary>
-    public const int ItemsPerShard = 10_000_000; // 10 million items per file
-
     /// <summary>Default batch size for writing operations.</summary>
     public const int DefaultBatchSize = 10_000;
 
@@ -61,7 +58,9 @@ public static class ParquetSchemaDefinition
     );
 
     /// <summary>
-    /// Gets the file name for a specific dataset shard.
+    /// The file name of a shard from before manifests (one file per 10M rows, appended in place).
+    /// Such files are adopted as segments by <see cref="ParquetManifestStore"/>; nothing new is
+    /// written under this name.
     /// </summary>
     /// <param name="datasetId">The dataset ID.</param>
     /// <param name="shardIndex">The zero-based shard index.</param>
@@ -69,26 +68,6 @@ public static class ParquetSchemaDefinition
     public static string GetShardFileName(Guid datasetId, int shardIndex)
     {
         return $"dataset_{datasetId:N}_shard_{shardIndex:D6}.parquet";
-    }
-
-    /// <summary>
-    /// Calculates which shard a given item index belongs to.
-    /// </summary>
-    /// <param name="itemIndex">The zero-based item index.</param>
-    /// <returns>The shard index.</returns>
-    public static int GetShardIndex(long itemIndex)
-    {
-        return (int)(itemIndex / ItemsPerShard);
-    }
-
-    /// <summary>
-    /// Calculates the item's index within its shard.
-    /// </summary>
-    /// <param name="itemIndex">The zero-based global item index.</param>
-    /// <returns>The index within the shard.</returns>
-    public static int GetIndexWithinShard(long itemIndex)
-    {
-        return (int)(itemIndex % ItemsPerShard);
     }
 
     /// <summary>
