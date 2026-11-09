@@ -150,6 +150,33 @@ namespace DatasetStudio.Tests.APIBackend
             secondBytes.Should().Equal(firstBytes);
         }
 
+        /// <summary>
+        /// Audit T-2: replacing a file gets a fresh thumbnail. The cache key was the path alone, so
+        /// the old image's thumbnail was served forever. The served width is reported in a header.
+        /// </summary>
+        [Fact]
+        public async Task ServeDatasetFile_FileReplaced_ServesANewThumbnail()
+        {
+            HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
+                "/api/datasets", new CreateDatasetRequest("thumb-local-replaced", null));
+            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            PlantImageFile(created.Id, "thumb-local-replaced", "photo.png", MakeTestPng(200, 100, SKColors.Red));
+            HttpResponseMessage first = await _client.GetAsync($"/api/datasets/{created.Id}/files/photo.png?w=80");
+            (await DecodeDimensionsAsync(first)).Should().Be((80, 40));
+
+            PlantImageFile(created.Id, "thumb-local-replaced", "photo.png", MakeTestPng(100, 200, SKColors.Blue));
+            HttpResponseMessage second = await _client.GetAsync($"/api/datasets/{created.Id}/files/photo.png?w=80");
+
+            (await DecodeDimensionsAsync(second)).Should().Be((80, 160), "the replaced file is portrait, so its thumbnail is too");
+            second.Headers.GetValues("X-Thumbnail-Width").Should().Equal("80");
+        }
+
+        private static async Task<(int Width, int Height)> DecodeDimensionsAsync(HttpResponseMessage response)
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            return DecodeDimensions(await response.Content.ReadAsByteArrayAsync());
+        }
+
         private async Task<(DatasetDetailDto Dataset, Guid UserId)> CreateStreamingDatasetAsync(bool isPublic = true)
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(

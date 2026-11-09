@@ -15,9 +15,19 @@ public enum ThumbnailOutcome
 
     /// <summary>A resized JPEG was generated (or served from cache). <see cref="ThumbnailResult.Bytes"/> holds it.</summary>
     Generated,
+
+    /// <summary>
+    /// The original is bigger than <see cref="ThumbnailOptions.MaxSourceBytes"/> or
+    /// <see cref="ThumbnailOptions.MaxSourcePixels"/>, so no thumbnail is made. No bytes.
+    /// </summary>
+    TooLarge,
 }
 
-public sealed record ThumbnailResult(ThumbnailOutcome Outcome, byte[]? Bytes);
+/// <summary>The result of a thumbnail request.</summary>
+/// <param name="Outcome">What happened.</param>
+/// <param name="Bytes">The JPEG (Generated) or the original (Undecodable).</param>
+/// <param name="Width">The width the request was served at after clamping, so callers can report it.</param>
+public sealed record ThumbnailResult(ThumbnailOutcome Outcome, byte[]? Bytes, int Width = 0);
 
 /// <summary>
 /// Generic (cacheKey, width) -&gt; resized-JPEG-bytes cache backed by disk, shared by every
@@ -29,6 +39,9 @@ public sealed record ThumbnailResult(ThumbnailOutcome Outcome, byte[]? Bytes);
 /// </summary>
 public interface IThumbnailService
 {
+    /// <summary>Largest original a loader should read; <see cref="ThumbnailSource.ReadLimitedAsync"/> enforces it.</summary>
+    long MaxSourceBytes { get; }
+
     Task<ThumbnailResult> GetOrCreateJpegAsync(
         string cacheKey,
         int requestedWidth,

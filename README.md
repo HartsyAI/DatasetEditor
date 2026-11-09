@@ -255,7 +255,8 @@ repo/config/split on the dataset and marks it Completed. `GetDatasetItems` maps
 `/rows?offset=&length=` responses to `DatasetItemDto` (image URL sniffed from common column
 names or `{src:…}` objects), with `ThumbnailUrl` pointing at `/api/datasets/{id}/hf-thumbnail?offset=n`.
 That endpoint re-resolves the row through `HuggingFaceRowPageCache` (100-row pages, 5-min
-TTL), fetches the image server-side, resizes via `ThumbnailService`, and caches on disk.
+TTL, at most 512 pages, least recently used evicted; each page is fetched on its own 30 s timeout
+so one caller cancelling never fails the others), fetches the image server-side, resizes via `ThumbnailService`, and caches on disk.
 
 **Why.** Server-side thumbnailing keeps HF's signed CDN URLs and tokens off the client and lets
 the grid request width-bounded JPEGs. The row cache turns 100 thumbnail requests for one
@@ -327,13 +328,20 @@ can expose non-image files (F-1); directory symlinks escape containment (F-2).
 **How.** `ThumbnailService` (SkiaSharp): width clamped 32–1024, never upscales, always JPEG
 q80, disk cache keyed by SHA-256 of the source key with two-level fan-out, per-key dedupe
 gate plus a global `cores/2` generation semaphore, atomic write-then-rename. Used by local
-files (`?w=`), S3 objects and HF rows.
+files (`?w=`), S3 objects and HF rows. The served width (after clamping) is returned in
+`X-Thumbnail-Width`. The local-file key includes the file's size and write time, so a replaced
+file gets a new thumbnail. Originals are read with a byte limit (`Thumbnails:MaxSourceBytes`,
+64 MB) and refused from the image header past `Thumbnails:MaxSourcePixels` (100 MP) before
+any pixels are decoded; large JPEGs decode at reduced scale. Over a limit, local and S3 files
+are served as the original and HF rows 404. The cache is capped at `Thumbnails:MaxCacheBytes`
+(2 GB): a sweep at startup and every `SweepEveryWrites` (500) writes deletes the oldest files
+(cache hits refresh a file's age hourly).
 
 **Why.** A cold virtualised grid issues a burst of resize requests; bounding concurrency keeps
 the API responsive. JPEG-only keeps one content type.
 
-**Gaps.** No eviction or size cap (T-1); local cache key ignores file mtime (T-2); originals
-are fully buffered before decode (T-3).
+**Gaps.** The size cap is enforced by periodic sweeps, so the cache can briefly exceed it
+between sweeps.
 
 ### 4.9 Virtualised viewer — Working
 
@@ -454,6 +462,7 @@ then environment variables (`ConnectionStrings__DatasetStudio`, `Cors__AllowedOr
 - `Storage:DatasetRootPath|BlobPath|ThumbnailPath|UploadPath|DataProtectionKeysPath`.
 - `Storage:S3StorageProfiles[]` — `Name, ServiceUrl, AccessKey, SecretKey, Region, ForcePathStyle, AllowedBuckets[]`.
 - `Ingestion:MaxDownloadBytes` — largest file HuggingFace download mode fetches (default 5 GB).
+- `Thumbnails:MaxCacheBytes|MaxSourceBytes|MaxSourcePixels|SweepEveryWrites` — thumbnail cache cap and original limits (defaults 2 GB, 64 MB, 100,000,000 px, 500).
 - `Ingestion:MaxConcurrentJobs|MaxQueuedJobs|MaxAttempts|PollInterval` — background import limits (defaults 2, 50, 3, `00:01:00`).
 - `Extensions:BuiltInPath|CommunityPath|DisabledExtensions`.
 

@@ -123,10 +123,12 @@ public static class ServiceCollectionExtensions
         // Thumbnails
         // ========================================
 
+        ThumbnailOptions thumbnailOptions = new();
+        configuration.GetSection(ThumbnailOptions.SectionName).Bind(thumbnailOptions);
         services.AddSingleton<IThumbnailService>(serviceProvider =>
         {
             ILogger<ThumbnailService> logger = serviceProvider.GetRequiredService<ILogger<ThumbnailService>>();
-            return new ThumbnailService(thumbnailPath, logger);
+            return new ThumbnailService(thumbnailPath, logger, thumbnailOptions);
         });
 
         // ========================================
