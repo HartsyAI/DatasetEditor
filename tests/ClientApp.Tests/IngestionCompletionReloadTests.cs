@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -70,6 +71,108 @@ public sealed class IngestionCompletionReloadTests
         Assert.Equal("cat", cache.ActiveFilter!.SearchQuery);
     }
 
+    /// <summary>
+    /// PR 4.4 review: a filtered local scan stops after its row budget and may return no matches
+    /// with a cursor. The first page and later pages keep following that cursor to the matches;
+    /// before, the empty page ended paging and later matches were never shown.
+    /// </summary>
+    [Fact]
+    public async Task SparseFilter_FollowsEmptyScanBudgetPagesToTheMatches()
+    {
+        FakeApi api = new() { Status = IngestionStatusDto.Completed, ItemCount = 5 };
+        DatasetState state = new();
+        DatasetCacheService cache = Create(api, state);
+        await cache.LoadFirstPageAsync(DatasetId);
+
+        api.Pages.Enqueue((0, "r200000"));
+        api.Pages.Enqueue((0, "r400000"));
+        api.Pages.Enqueue((2, "r600000"));
+        await cache.ApplyFilterAsync(new DatasetStudio.DTO.Common.FilterRequest { SearchQuery = "rare" });
+
+        Assert.Equal(2, state.Items.Count);
+        Assert.Contains(api.Requests, u => u.Contains("cursor=r400000"));
+        Assert.True(cache.HasMorePages);
+
+        api.Pages.Enqueue((0, "r800000"));
+        api.Pages.Enqueue((1, null));
+        Assert.True(await cache.LoadNextPageAsync());
+        Assert.Equal(3, state.Items.Count);
+        Assert.False(cache.HasMorePages);
+    }
+
+    /// <summary>A page that hands back its own cursor ends the loop instead of spinning.</summary>
+    [Fact]
+    public async Task SparseFilter_StopsWhenTheCursorDoesNotAdvance()
+    {
+        FakeApi api = new() { Status = IngestionStatusDto.Completed, ItemCount = 5 };
+        DatasetState state = new();
+        DatasetCacheService cache = Create(api, state);
+        await cache.LoadFirstPageAsync(DatasetId);
+
+        api.Pages.Enqueue((0, "r200000"));
+        api.Pages.Enqueue((0, "r200000"));
+        await cache.ApplyFilterAsync(new DatasetStudio.DTO.Common.FilterRequest { SearchQuery = "stuck" });
+
+        Assert.Empty(state.Items);
+        Assert.Equal(2, api.Requests.Count(u => u.Contains("q=stuck")));
+    }
+
+    /// <summary>
+    /// PR 4.4 review: a filter set on one dataset isn't sent with another dataset's requests. It
+    /// was, so a local tag filter made an S3 dataset's first page fail with 400.
+    /// </summary>
+    [Fact]
+    public async Task OpeningAnotherDataset_DropsTheFilter()
+    {
+        FakeApi api = new() { Status = IngestionStatusDto.Completed, ItemCount = 2 };
+        DatasetState state = new();
+        DatasetCacheService cache = Create(api, state);
+        await cache.LoadFirstPageAsync(DatasetId);
+        await cache.ApplyFilterAsync(new DatasetStudio.DTO.Common.FilterRequest { Tags = new[] { "pet" } });
+
+        Guid other = Guid.NewGuid();
+        await cache.LoadFirstPageAsync(other);
+
+        Assert.Null(cache.ActiveFilter);
+        string lastItems = api.Requests.Last(u => u.Contains("/items"));
+        Assert.Contains(other.ToString(), lastItems);
+        Assert.DoesNotContain("tag=", lastItems);
+    }
+
+    /// <summary>Reloading the same dataset (after ingestion, say) keeps its filter.</summary>
+    [Fact]
+    public async Task ReloadingTheSameDataset_KeepsTheFilter()
+    {
+        FakeApi api = new() { Status = IngestionStatusDto.Completed, ItemCount = 2 };
+        DatasetState state = new();
+        DatasetCacheService cache = Create(api, state);
+        await cache.LoadFirstPageAsync(DatasetId);
+        await cache.ApplyFilterAsync(new DatasetStudio.DTO.Common.FilterRequest { Tags = new[] { "pet" } });
+
+        await cache.LoadFirstPageAsync(DatasetId);
+
+        Assert.Contains("tag=pet", api.Requests.Last(u => u.Contains("/items")));
+    }
+
+    /// <summary>Each load that replaces the items is a new result set; appending a page is not.</summary>
+    [Fact]
+    public async Task ResultSetVersion_ChangesOnReplaceNotOnAppend()
+    {
+        FakeApi api = new() { Status = IngestionStatusDto.Completed, ItemCount = 5 };
+        DatasetState state = new();
+        DatasetCacheService cache = Create(api, state);
+        api.Pages.Enqueue((2, "r2"));
+        await cache.LoadFirstPageAsync(DatasetId);
+        int opened = state.ResultSetVersion;
+
+        api.Pages.Enqueue((2, null));
+        await cache.LoadNextPageAsync();
+        Assert.Equal(opened, state.ResultSetVersion);
+
+        await cache.ApplyFilterAsync(new DatasetStudio.DTO.Common.FilterRequest { SearchQuery = "x" });
+        Assert.NotEqual(opened, state.ResultSetVersion);
+    }
+
     /// <summary>Only the Pending/Processing → Completed transition reloads; other refreshes don't.</summary>
     [Theory]
     [InlineData(IngestionStatusDto.Processing, IngestionStatusDto.Completed, true)]
@@ -100,15 +203,20 @@ public sealed class IngestionCompletionReloadTests
 
         public System.Collections.Generic.List<string> Requests { get; } = new();
 
+        /// <summary>When not empty, each items request takes the next (count, next cursor) from here.</summary>
+        public System.Collections.Generic.Queue<(int Count, string? Next)> Pages { get; } = new();
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Requests.Add(request.RequestUri!.PathAndQuery);
             string path = request.RequestUri!.AbsolutePath;
-            object body = path.EndsWith("/items", StringComparison.Ordinal)
+            bool itemsRequest = path.EndsWith("/items", StringComparison.Ordinal);
+            (int count, string? next) = itemsRequest && Pages.Count > 0 ? Pages.Dequeue() : (ItemCount, null);
+            object body = itemsRequest
                 ? new
                 {
-                    items = Enumerable(ItemCount),
-                    nextCursor = (string?)null,
+                    items = Enumerable(count),
+                    nextCursor = next,
                     totalCount = (long?)ItemCount
                 }
                 : new { id = DatasetId, name = "import", status = (int)Status, totalItems = ItemCount };

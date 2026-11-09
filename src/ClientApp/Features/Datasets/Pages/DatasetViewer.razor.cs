@@ -281,7 +281,15 @@ public partial class DatasetViewer : IDisposable
         try
         {
             Logs.Info($"[DatasetViewer] Loading dataset {datasetId} from navigation");
-            await _datasetCache.LoadFirstPageAsync(datasetId);
+            bool otherDataset = _datasetCache.CurrentDatasetId != datasetId;
+            // Starting the load drops the cache's filter for the new dataset first; then the panel
+            // is emptied to match, and its change finds nothing to re-apply.
+            Task load = _datasetCache.LoadFirstPageAsync(datasetId);
+            if (otherDataset && _filterState.HasActiveFilters)
+            {
+                _filterState.ClearFilters();
+            }
+            await load;
             ApplyFilters();
             EnsureStatusPolling();
         }

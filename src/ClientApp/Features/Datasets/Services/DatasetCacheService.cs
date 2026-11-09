@@ -93,6 +93,14 @@ public sealed class DatasetCacheService : IDisposable
     /// </summary>
     public Task LoadFirstPageAsync(Guid datasetId, CancellationToken cancellationToken = default)
     {
+        // A filter belongs to the dataset it was set on. Carried over, a local tag or size filter
+        // made an S3 or HuggingFace dataset's first request fail with 400, and a retry sent it again.
+        // Cleared before the first await, so a FilterState reset the viewer makes next finds no
+        // active filter to reload.
+        if (CurrentDatasetId != datasetId)
+        {
+            ActiveFilter = null;
+        }
         return LoadFirstPageAsync(datasetId, showLoading: true, cancellationToken);
     }
 
@@ -124,7 +132,7 @@ public sealed class DatasetCacheService : IDisposable
                 throw new InvalidOperationException("Dataset not found on server.");
             }
 
-            PageResponse<DatasetItemDto>? page = await FetchPageAsync(datasetId, pageSize: 100, cursor: null, dataset, cancellationToken).ConfigureAwait(false);
+            PageResponse<DatasetItemDto>? page = await FetchMatchingPageAsync(datasetId, pageSize: 100, cursor: null, dataset, cancellationToken).ConfigureAwait(false);
             dataset = WithPageTotal(dataset, page);
 
             DatasetStudio.Core.DomainModels.Datasets.Dataset mappedDataset = MapDataset(dataset);
@@ -166,7 +174,7 @@ public sealed class DatasetCacheService : IDisposable
         await _pageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            PageResponse<DatasetItemDto>? page = await FetchPageAsync(CurrentDatasetId.Value, 100, NextCursor, CurrentDatasetDetail, cancellationToken).ConfigureAwait(false);
+            PageResponse<DatasetItemDto>? page = await FetchMatchingPageAsync(CurrentDatasetId.Value, 100, NextCursor, CurrentDatasetDetail, cancellationToken).ConfigureAwait(false);
             if (page == null || page.Items.Count == 0)
             {
                 NextCursor = null;
@@ -301,6 +309,32 @@ public sealed class DatasetCacheService : IDisposable
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Fetches the next page that has items, or the end. A filtered local request scans a bounded
+    /// number of rows and may return no matches with a cursor to continue from. That empty page
+    /// used to end paging (the viewer drew no load-more sentinel and an empty next page cleared the
+    /// cursor), so matches past the first scan budget were never shown. Stops if the server returns
+    /// the cursor it was given, so a misbehaving source can't loop forever.
+    /// </summary>
+    private async Task<PageResponse<DatasetItemDto>?> FetchMatchingPageAsync(Guid datasetId, int pageSize, string? cursor, DatasetDetailDto? datasetDetail, CancellationToken cancellationToken)
+    {
+        PageResponse<DatasetItemDto>? page = await FetchPageAsync(datasetId, pageSize, cursor, datasetDetail, cancellationToken).ConfigureAwait(false);
+        while (page is { Items.Count: 0 }
+            && !string.IsNullOrEmpty(page.NextCursor)
+            && page.NextCursor != cursor)
+        {
+            cursor = page.NextCursor;
+            PageResponse<DatasetItemDto>? next = await FetchPageAsync(datasetId, pageSize, cursor, datasetDetail, cancellationToken).ConfigureAwait(false);
+            if (next is null)
+            {
+                break;
+            }
+            // Keep the first page's total: later filtered pages may not repeat it.
+            page = next with { TotalCount = next.TotalCount ?? page.TotalCount };
+        }
+        return page;
     }
 
     private async Task<PageResponse<DatasetItemDto>?> FetchPageAsync(Guid datasetId, int pageSize, string? cursor, DatasetDetailDto? datasetDetail, CancellationToken cancellationToken)
