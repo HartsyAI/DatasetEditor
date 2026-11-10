@@ -476,6 +476,12 @@ from the item's edited tags or, before any tag edit, from the tags the client sh
 neither is skipped as `tags-unknown`. S3 objects have no tags of their own. Deleting a dataset
 deletes its overlays (foreign key cascade).
 
+The client sends `If-Match` with the item's version and takes the new version from the reply. On
+`412` it shows "This item was changed by someone else…" and replaces its copy with the server's
+values. `ItemEditService.BulkUpdateAsync` returns a summary of what a bulk edit skipped and why
+("Updated 1 of 3 items. 2 couldn't be edited: 1 not yours to edit, 1 not found."). The favourite
+star on a card saves (it used to change only the local copy).
+
 **Why.** Parquet is immutable, so updates are rewrites; limiting the rewrite to touched segments
 (10,000 rows each from ingestion, up to about 2M after merging) is the cheapest correct option
 without a delta store. Applying the change to the current item inside the lock is what keeps two
@@ -483,7 +489,7 @@ concurrent edits of different fields: the endpoint used to read the item, change
 whole item back, so the last writer won.
 
 **Gaps.** The dataset lock is held for the rewrite, so reads of that dataset wait. There is no
-bulk-edit toolbar in the viewer yet. Search and filters on a streaming dataset see the source's values, not edited ones. A
+bulk-edit toolbar in the viewer yet (`BulkUpdateAsync` and its summary are ready for one). Search and filters on a streaming dataset see the source's values, not edited ones. A
 streamed item's id can't be checked against its source, so an edit of an id that no source item
 has is stored and never shown. The optional IndexedDB page cache can show a page as it was
 before an edit until it is cleared.

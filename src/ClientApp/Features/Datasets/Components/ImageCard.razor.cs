@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using DatasetStudio.ClientApp.Features.Datasets.Services;
+using DatasetStudio.ClientApp.Services.ApiClients;
 using DatasetStudio.ClientApp.Services.StateManagement;
+using DatasetStudio.ClientApp.Shared.Services;
 using DatasetStudio.Core.DomainModels;
 using DatasetStudio.Core.DomainModels.Items;
 using DatasetStudio.Core.Utilities;
@@ -19,6 +21,7 @@ public partial class ImageCard
     [Inject] public DatasetState DatasetState { get; set; } = default!;
     [Inject] public ItemEditService EditService { get; set; } = default!;
     [Inject] public ImageUrlHelper ImageUrlHelper { get; set; } = default!;
+    [Inject] public NotificationService Notifications { get; set; } = default!;
 
     /// <summary>The image item to display.</summary>
     [Parameter] public DatasetItemDto Item { get; set; } = default!;
@@ -138,12 +141,14 @@ public partial class ImageCard
         await OnToggleSelect.InvokeAsync(Item);
     }
 
-    /// <summary>Toggles favorite status.</summary>
-    public void HandleToggleFavorite()
+    /// <summary>
+    /// Toggles favorite status and saves it. The star used to change only the local copy, so the
+    /// favourite was lost on the next load.
+    /// </summary>
+    public async Task HandleToggleFavorite()
     {
-        Item = Item with { IsFavorite = !Item.IsFavorite };
-        DatasetState.UpdateItem(Item);
-        StateHasChanged();
+        ItemUpdateOutcome outcome = await EditService.ToggleFavoriteAsync(Item);
+        ReportFailure(outcome, "Couldn't save the favourite");
     }
 
     /// <summary>Handles image load error.</summary>
@@ -178,11 +183,28 @@ public partial class ImageCard
             return;
         }
 
-        bool success = await EditService.UpdateItemAsync(Item, title: _editTitle);
-        if (!success)
+        ItemUpdateOutcome outcome = await EditService.UpdateItemAsync(Item, title: _editTitle);
+        if (outcome != ItemUpdateOutcome.Saved)
         {
-            // Revert on failure
+            // Revert on failure; on a conflict the item now holds the server's title.
             _editTitle = Item.Title ?? string.Empty;
+        }
+        ReportFailure(outcome, "Couldn't save the title");
+    }
+
+    /// <summary>
+    /// Tells the user an edit didn't save: on a conflict that the item was reloaded with someone
+    /// else's change (audit E-4), otherwise that it failed.
+    /// </summary>
+    private void ReportFailure(ItemUpdateOutcome outcome, string failedMessage)
+    {
+        if (outcome == ItemUpdateOutcome.Conflict)
+        {
+            Notifications.ShowWarning(ItemEditService.ConflictMessage);
+        }
+        else if (outcome == ItemUpdateOutcome.Failed)
+        {
+            Notifications.ShowError(failedMessage);
         }
     }
 

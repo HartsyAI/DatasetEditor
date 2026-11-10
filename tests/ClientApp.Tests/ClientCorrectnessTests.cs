@@ -100,9 +100,9 @@ namespace DatasetStudio.Tests.ClientApp
             ItemEditService service = new(apiClient, new DatasetState());
             DatasetItemDto item = new() { Id = itemId, Title = "before" };
 
-            bool saved = await service.UpdateItemAsync(item, title: "after");
+            ItemUpdateOutcome saved = await service.UpdateItemAsync(item, title: "after");
 
-            Assert.True(saved);
+            Assert.Equal(ItemUpdateOutcome.Saved, saved);
             Assert.NotNull(handler.LastRequest);
             Assert.Equal(HttpMethod.Patch, handler.LastRequest!.Method);
             Assert.Equal("/api/items/" + itemId, handler.LastRequest.RequestUri!.AbsolutePath);
@@ -115,9 +115,9 @@ namespace DatasetStudio.Tests.ClientApp
             StubHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError));
             ItemEditService service = new(new DatasetApiClient(BuildClient(handler)), new DatasetState());
 
-            bool saved = await service.UpdateItemAsync(new DatasetItemDto { Id = Guid.NewGuid() }, title: "x");
+            ItemUpdateOutcome saved = await service.UpdateItemAsync(new DatasetItemDto { Id = Guid.NewGuid() }, title: "x");
 
-            Assert.False(saved);
+            Assert.Equal(ItemUpdateOutcome.Failed, saved);
         }
 
         [Fact]

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Components.Web;
 using MudBlazor;
 using DatasetStudio.ClientApp.Features.Datasets.Components;
 using DatasetStudio.ClientApp.Features.Datasets.Services;
+using DatasetStudio.ClientApp.Services.ApiClients;
 using DatasetStudio.ClientApp.Services.StateManagement;
 using DatasetStudio.Core.DomainModels;
 using DatasetStudio.Core.DomainModels.Items;
@@ -55,16 +56,27 @@ public partial class ImageDetailPanel
         
         if (_editTitle != Item.Title)
         {
-            bool success = await EditService.UpdateItemAsync(Item, title: _editTitle);
-            
-            if (success)
-            {
-                Notifications.ShowSuccess("Title updated");
-            }
-            else
-            {
-                Notifications.ShowError("Failed to update title");
-            }
+            Report(await EditService.UpdateItemAsync(Item, title: _editTitle), "Title updated", "Failed to update title");
+        }
+    }
+
+    /// <summary>
+    /// Tells the user how an edit ended. A conflict means someone else changed the item first: the
+    /// panel now shows their version (audit E-4), so the user is told to make the change again.
+    /// </summary>
+    private void Report(ItemUpdateOutcome outcome, string savedMessage, string failedMessage)
+    {
+        switch (outcome)
+        {
+            case ItemUpdateOutcome.Saved:
+                Notifications.ShowSuccess(savedMessage);
+                break;
+            case ItemUpdateOutcome.Conflict:
+                Notifications.ShowWarning(ItemEditService.ConflictMessage);
+                break;
+            default:
+                Notifications.ShowError(failedMessage);
+                break;
         }
     }
 
@@ -95,33 +107,15 @@ public partial class ImageDetailPanel
         
         if (_editDescription != Item.Description)
         {
-            bool success = await EditService.UpdateItemAsync(Item, description: _editDescription);
-            
-            if (success)
-            {
-                Notifications.ShowSuccess("Description updated");
-            }
-            else
-            {
-                Notifications.ShowError("Failed to update description");
-            }
+            Report(await EditService.UpdateItemAsync(Item, description: _editDescription), "Description updated", "Failed to update description");
         }
     }
 
     public async Task RemoveTag(string tag)
     {
         if (Item == null) return;
-        
-        bool success = await EditService.RemoveTagAsync(Item, tag);
-        
-        if (success)
-        {
-            Notifications.ShowSuccess($"Tag '{tag}' removed");
-        }
-        else
-        {
-            Notifications.ShowError("Failed to remove tag");
-        }
+
+        Report(await EditService.RemoveTagAsync(Item, tag), $"Tag '{tag}' removed", "Failed to remove tag");
     }
 
     public async Task ShowAddTagDialog()
@@ -136,16 +130,7 @@ public partial class ImageDetailPanel
         
         if (result != null && !result.Canceled && result.Data is string newTag)
         {
-            bool success = await EditService.AddTagAsync(Item, newTag);
-            
-            if (success)
-            {
-                Notifications.ShowSuccess($"Tag '{newTag}' added");
-            }
-            else
-            {
-                Notifications.ShowError("Failed to add tag");
-            }
+            Report(await EditService.AddTagAsync(Item, newTag), $"Tag '{newTag}' added", "Failed to add tag");
         }
     }
 
