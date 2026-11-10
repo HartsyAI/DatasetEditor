@@ -37,6 +37,9 @@ namespace DatasetStudio.Tests.APIBackend
 
             var itemRepository = new Mock<IDatasetItemRepository>();
             itemRepository.Setup(r => r.GetItemAsync(itemId, token)).ReturnsAsync(item);
+            itemRepository
+                .Setup(r => r.EditItemAsync(datasetId, itemId, It.IsAny<Func<DatasetItemDto, bool>?>(), It.IsAny<Func<DatasetItemDto, DatasetItemDto>>(), token))
+                .ReturnsAsync(new ItemEditResult(ItemEditStatus.Updated, item with { Title = "after" }));
 
             var datasetRepository = new Mock<IDatasetRepository>();
             datasetRepository.Setup(r => r.GetByIdAsync(datasetId, token)).ReturnsAsync(dataset);
@@ -59,7 +62,7 @@ namespace DatasetStudio.Tests.APIBackend
             datasetRepository.Verify(r => r.GetByIdAsync(datasetId, token), Times.Once);
             permissionService.Verify(p => p.CanReadAsync(dataset, It.IsAny<ClaimsPrincipal?>(), token), Times.Once);
             permissionService.Verify(p => p.CanWriteAsync(dataset, It.IsAny<ClaimsPrincipal?>(), token), Times.Once);
-            itemRepository.Verify(r => r.UpdateItemAsync(It.IsAny<DatasetItemDto>(), token), Times.Once);
+            itemRepository.Verify(r => r.EditItemAsync(datasetId, itemId, It.IsAny<Func<DatasetItemDto, bool>?>(), It.IsAny<Func<DatasetItemDto, DatasetItemDto>>(), token), Times.Once);
         }
 
         [Fact]
@@ -74,6 +77,9 @@ namespace DatasetStudio.Tests.APIBackend
 
             var itemRepository = new Mock<IDatasetItemRepository>();
             itemRepository.Setup(r => r.GetItemAsync(itemId, token)).ReturnsAsync(item);
+            itemRepository
+                .Setup(r => r.EditItemsAsync(datasetId, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<Func<DatasetItemDto, DatasetItemDto>>(), token))
+                .ReturnsAsync(new List<DatasetItemDto> { item with { IsFavorite = true } });
 
             var datasetRepository = new Mock<IDatasetRepository>();
             datasetRepository.Setup(r => r.GetByIdAsync(datasetId, token)).ReturnsAsync(dataset);
@@ -99,7 +105,7 @@ namespace DatasetStudio.Tests.APIBackend
             itemRepository.Verify(r => r.GetItemAsync(itemId, token), Times.Once);
             datasetRepository.Verify(r => r.GetByIdAsync(datasetId, token), Times.Once);
             permissionService.Verify(p => p.CanWriteAsync(dataset, It.IsAny<ClaimsPrincipal?>(), token), Times.Once);
-            itemRepository.Verify(r => r.UpdateItemsAsync(It.IsAny<IEnumerable<DatasetItemDto>>(), token), Times.Once);
+            itemRepository.Verify(r => r.EditItemsAsync(datasetId, It.IsAny<IReadOnlyCollection<Guid>>(), It.IsAny<Func<DatasetItemDto, DatasetItemDto>>(), token), Times.Once);
         }
     }
 }

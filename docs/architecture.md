@@ -93,7 +93,9 @@ Single (`PATCH /api/items/{id}`) and bulk (`PATCH /api/items/bulk`) edits update
 **segment-scoped**: only the segments holding changed items are rewritten, a row group at a
 time, through a temp file renamed over the segment. Items are found through per-segment id
 indexes, within the dataset the request names. Writes are serialized **per dataset** (a keyed semaphore), so editing one
-dataset never blocks another.
+dataset never blocks another. The edit is applied to the item as it stands inside that lock, and
+the `If-Match` check against the item's `Version` (`UpdatedAt` ticks) happens in the same lock, so
+concurrent edits of different fields both survive and an edit from a stale copy gets `412`.
 
 ### Ingestion
 Uploads are saved to a staging file under `Storage:UploadPath` (not the OS temp dir) and **queued** (`IngestionQueue`); the endpoint returns `202`

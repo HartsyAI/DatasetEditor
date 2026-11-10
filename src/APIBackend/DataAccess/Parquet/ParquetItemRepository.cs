@@ -167,10 +167,9 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
     }
 
     /// <summary>
-    /// Updates items. Only the segments that hold an updated item are rewritten, one row group at
-    /// a time to a temp file that is renamed over the segment. Edits used to read the whole
-    /// shard (up to 10M rows) into memory and rewrite it as one row group (audit P-3). A
-    /// segment's rows keep their positions, so its id index stays valid.
+    /// Replaces whole items: each one is written over the stored item with its id. Kept for
+    /// callers that already hold a complete item; request-time edits use
+    /// <see cref="EditItemAsync"/>, which applies the change to the current item instead.
     /// </summary>
     public async Task UpdateItemsAsync(
         IEnumerable<DatasetItemDto> items,
@@ -179,37 +178,109 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
         foreach (IGrouping<Guid, DatasetItemDto> datasetGroup in items.GroupBy(i => i.DatasetId))
         {
             Guid datasetId = datasetGroup.Key;
-            Dictionary<Guid, DatasetItemDto> updates = datasetGroup.ToDictionary(i => i.Id);
+            Dictionary<Guid, DatasetItemDto> replacements = datasetGroup.ToDictionary(i => i.Id);
 
             await WithDatasetAsync(datasetId, async manifest =>
             {
-                await EnsureIdIndexesAsync(manifest, cancellationToken);
-                int rewritten = 0;
-                foreach (ParquetSegment segment in manifest.Segments)
-                {
-                    string indexPath = _manifests.PathOf(SegmentIdIndex.FileNameFor(segment.File));
-                    Dictionary<Guid, DatasetItemDto> inSegment = updates
-                        .Where(u => SegmentIdIndex.Find(indexPath, u.Key) is not null)
-                        .ToDictionary(u => u.Key, u => u.Value);
-                    if (inSegment.Count == 0)
-                    {
-                        continue;
-                    }
-
-                    // Each segment is replaced atomically (temp file, then rename). A batch
-                    // cancelled between segments keeps those already rewritten; each one is
-                    // complete, but the batch as a whole is not all-or-nothing.
-                    string path = _manifests.PathOf(segment.File);
-                    await _writer.WriteSegmentAsync(path, ApplyUpdates(path, inSegment, cancellationToken), cancellationToken);
-                    rewritten++;
-                }
-
-                _logger.LogInformation(
-                    "Updated {Count} items in dataset {DatasetId} ({Segments} segment(s) rewritten)",
-                    updates.Count, datasetId, rewritten);
+                await RewriteItemsAsync(datasetId, manifest, replacements.Keys, current => replacements[current.Id], cancellationToken);
                 return true;
             }, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// Edits one item as it stands. The read, the precondition check and the rewrite all happen
+    /// under the dataset's lock. The edit endpoint used to read the item, change it outside any
+    /// lock and write the whole item back, so of two concurrent edits to different fields only the
+    /// last one survived (audit E-4).
+    /// </summary>
+    public async Task<ItemEditResult> EditItemAsync(
+        Guid datasetId,
+        Guid itemId,
+        Func<DatasetItemDto, bool>? precondition,
+        Func<DatasetItemDto, DatasetItemDto> edit,
+        CancellationToken cancellationToken = default)
+    {
+        return await WithDatasetAsync(datasetId, async manifest =>
+        {
+            await EnsureIdIndexesAsync(manifest, cancellationToken);
+            DatasetItemDto? current = await _reader.ReadItemAsync(manifest, itemId, cancellationToken);
+            if (current is null)
+            {
+                return new ItemEditResult(ItemEditStatus.NotFound, null);
+            }
+            if (precondition is not null && !precondition(current))
+            {
+                return new ItemEditResult(ItemEditStatus.PreconditionFailed, current);
+            }
+
+            Dictionary<Guid, DatasetItemDto> edited = await RewriteItemsAsync(datasetId, manifest, new[] { itemId }, edit, cancellationToken);
+            return edited.TryGetValue(itemId, out DatasetItemDto? written)
+                ? new ItemEditResult(ItemEditStatus.Updated, written)
+                : new ItemEditResult(ItemEditStatus.NotFound, null);
+        }, cancellationToken);
+    }
+
+    /// <summary>Edits many items of one dataset as they stand, under the dataset's lock.</summary>
+    public async Task<IReadOnlyList<DatasetItemDto>> EditItemsAsync(
+        Guid datasetId,
+        IReadOnlyCollection<Guid> itemIds,
+        Func<DatasetItemDto, DatasetItemDto> edit,
+        CancellationToken cancellationToken = default)
+    {
+        if (itemIds.Count == 0)
+        {
+            return Array.Empty<DatasetItemDto>();
+        }
+
+        return await WithDatasetAsync(datasetId, async manifest =>
+        {
+            Dictionary<Guid, DatasetItemDto> edited = await RewriteItemsAsync(datasetId, manifest, itemIds, edit, cancellationToken);
+            return (IReadOnlyList<DatasetItemDto>)edited.Values.ToList();
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// Rewrites the segments holding these items, applying <paramref name="edit"/> to each one as
+    /// it is read. Only the segments that hold an edited item are rewritten, one row group at a
+    /// time to a temp file that is renamed over the segment. Edits used to read the whole shard (up
+    /// to 10M rows) into memory and rewrite it as one row group (audit P-3). A segment's rows keep
+    /// their positions, so its id index stays valid. Called with the dataset's lock held.
+    /// </summary>
+    /// <returns>The items as written, by id; ids the dataset doesn't have are absent.</returns>
+    private async Task<Dictionary<Guid, DatasetItemDto>> RewriteItemsAsync(
+        Guid datasetId,
+        ParquetManifest manifest,
+        IEnumerable<Guid> itemIds,
+        Func<DatasetItemDto, DatasetItemDto> edit,
+        CancellationToken cancellationToken)
+    {
+        await EnsureIdIndexesAsync(manifest, cancellationToken);
+        HashSet<Guid> pending = new(itemIds);
+        Dictionary<Guid, DatasetItemDto> written = new();
+        int rewritten = 0;
+        foreach (ParquetSegment segment in manifest.Segments)
+        {
+            string indexPath = _manifests.PathOf(SegmentIdIndex.FileNameFor(segment.File));
+            HashSet<Guid> inSegment = pending.Where(id => SegmentIdIndex.Find(indexPath, id) is not null).ToHashSet();
+            if (inSegment.Count == 0)
+            {
+                continue;
+            }
+            pending.ExceptWith(inSegment);
+
+            // Each segment is replaced atomically (temp file, then rename). A batch cancelled
+            // between segments keeps those already rewritten; each one is complete, but the
+            // batch as a whole is not all-or-nothing.
+            string path = _manifests.PathOf(segment.File);
+            await _writer.WriteSegmentAsync(path, ApplyEdits(path, inSegment, edit, written, cancellationToken), cancellationToken);
+            rewritten++;
+        }
+
+        _logger.LogInformation(
+            "Updated {Count} items in dataset {DatasetId} ({Segments} segment(s) rewritten)",
+            written.Count, datasetId, rewritten);
+        return written;
     }
 
     /// <summary>
@@ -343,9 +414,16 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
         }
     }
 
-    private async IAsyncEnumerable<List<DatasetItemDto>> ApplyUpdates(
+    /// <summary>
+    /// Streams a segment's row groups with <paramref name="edit"/> applied to the listed items,
+    /// recording each edited item in <paramref name="written"/>. The edit can't move an item to
+    /// another id or dataset. Every edited item gets a new <c>UpdatedAt</c>, which is its version.
+    /// </summary>
+    private async IAsyncEnumerable<List<DatasetItemDto>> ApplyEdits(
         string segmentPath,
-        IReadOnlyDictionary<Guid, DatasetItemDto> updates,
+        IReadOnlySet<Guid> itemIds,
+        Func<DatasetItemDto, DatasetItemDto> edit,
+        Dictionary<Guid, DatasetItemDto> written,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         DateTime now = DateTime.UtcNow;
@@ -353,10 +431,22 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
         {
             for (int i = 0; i < group.Count; i++)
             {
-                if (updates.TryGetValue(group[i].Id, out DatasetItemDto? updated))
+                DatasetItemDto current = group[i];
+                if (!itemIds.Contains(current.Id))
                 {
-                    group[i] = updated with { UpdatedAt = now };
+                    continue;
                 }
+
+                DateTime updatedAt = ItemVersions.NextUpdatedAt(current.UpdatedAt, now);
+                DatasetItemDto edited = edit(current) with
+                {
+                    Id = current.Id,
+                    DatasetId = current.DatasetId,
+                    UpdatedAt = updatedAt,
+                    Version = ItemVersions.ForLocal(updatedAt)
+                };
+                group[i] = edited;
+                written[current.Id] = edited;
             }
             yield return group;
         }

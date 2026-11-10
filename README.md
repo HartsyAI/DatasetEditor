@@ -441,15 +441,24 @@ Placeholder colour + lazy `<img>` give instant layout with zero shift.
 set favourite, add metadata on many.
 
 **How.** `PATCH /api/items/{id}` and `/api/items/bulk` (the client sends the dataset id) →
-`ParquetItemRepository`: the item is found through its dataset's segment id indexes, then
-`UpdateItemsAsync` rewrites only the segments holding an edited item, one row group at a time,
-into a temp file renamed over the segment. Writes for one dataset are serialised; other datasets
-are unaffected. Each edit writes an `[Audit]` log line with the editor's account id, the dataset
+`ParquetItemRepository.EditItemAsync`/`EditItemsAsync`: under the dataset's lock the item is found
+through the segment id indexes, the request's fields are applied to the item as it stands, and
+only the segments holding an edited item are rewritten, one row group at a time, into a temp
+file renamed over the segment. Writes for one dataset are serialised; other datasets are
+unaffected. Each edit writes an `[Audit]` log line with the editor's account id, the dataset
 and item ids and the names of the changed fields, never their values (E-5).
+
+Every item carries a `Version` (a local item's `UpdatedAt` in ticks; each edit moves it forward
+by at least a millisecond). `PATCH /api/items/{id}` returns it as an `ETag` header and in the body
+(`ItemEditResponse`: the version and the item's editable fields), and honours `If-Match`: a
+version that no longer matches gets `412` with the item as it now stands, checked in the same
+lock as the write. Without `If-Match` the edit is accepted, as before (E-4).
 
 **Why.** Parquet is immutable, so updates are rewrites; limiting the rewrite to touched segments
 (10,000 rows each from ingestion, up to about 2M after merging) is the cheapest correct option
-without a delta store.
+without a delta store. Applying the change to the current item inside the lock is what keeps two
+concurrent edits of different fields: the endpoint used to read the item, change it and write the
+whole item back, so the last writer won.
 
 **Gaps.** Only local datasets are editable — streaming items have stable ids now, but nothing
 stores their edits yet, so a PATCH 404s (E-3). The dataset lock is held for the rewrite, so reads of that dataset wait.

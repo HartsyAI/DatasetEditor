@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
 using Parquet;
@@ -366,7 +367,8 @@ public class ParquetItemReader
             IsFavorite = isFavorites[row],
             Metadata = JsonSerializer.Deserialize<Dictionary<string, string>>(metadataJson[row]) ?? new Dictionary<string, string>(),
             CreatedAt = createdAts[row],
-            UpdatedAt = updatedAts[row]
+            UpdatedAt = updatedAts[row],
+            Version = ItemVersions.ForLocal(updatedAts[row])
         };
     }
 

@@ -53,9 +53,13 @@ no data is rewritten. Their id indexes are built the first time an item is looke
 - **Item lookup.** `GetItemAsync(datasetId, itemId)` binary-searches each segment's id index and
   decodes only the row group holding the row. Without a dataset id, each dataset is searched the
   same way (P-2). Edit requests carry the dataset id.
-- **Edits.** `UpdateItemsAsync` rewrites only the segments holding an updated item, streaming one
-  row group at a time into a temp file renamed over the segment (P-3, P-4). Rows keep their
-  positions, so the id index stays valid.
+- **Edits.** `EditItemAsync`/`EditItemsAsync` apply a change to each item as it stands, under the
+  dataset's lock, and rewrite only the segments holding an edited item, streaming one row group at
+  a time into a temp file renamed over the segment (P-3, P-4). Rows keep their positions, so the
+  id index stays valid. `EditItemAsync` checks the caller's precondition (`If-Match`) in the same
+  lock (E-4). Each edit stamps a new `UpdatedAt`, at least a millisecond after the previous one,
+  whose ticks are the item's `Version`. `UpdateItemsAsync` (whole-item replacement) uses the same
+  path.
 - **Locking.** All operations on a dataset are serialised with a `SemaphoreSlim` keyed by dataset
   id; other datasets are unaffected.
 - **Compression.** Snappy, set on every file written.
