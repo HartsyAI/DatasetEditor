@@ -39,7 +39,7 @@
 
 | Project | Target | Responsibility |
 |---|---|---|
-| `Core` | net10.0 | Domain models, parsers, filtering, abstractions |
+| `Core` | net10.0 | Client domain models and enums, storage keys, the `Logs` wrapper, repository interfaces |
 | `DTO` | net10.0 | Shared contracts (`DatasetItemDto`, `PageResponse<T>`, …) |
 | `APIBackend` | net10.0 | API endpoints, EF/Postgres, Parquet storage, ingestion, HF integration |
 | `ClientApp` | net10.0 | Blazor WASM viewer, caching, state, JS interop |

@@ -71,8 +71,7 @@ builder.Services.AddMudServices();
 // LocalStorage for browser storage
 builder.Services.AddBlazoredLocalStorage();
 
-// Dataset data services. (The Core parser/layout/modality registries, FormatDetector, FilterService
-// and SearchService used to be registered here although no UI used them; audit K-2.)
+// Dataset data services.
 builder.Services.AddScoped<DatasetCacheService>();
 builder.Services.AddScoped<IngestionWorkflowService>();
 builder.Services.AddScoped<IndexedDbCache>();

@@ -25,7 +25,7 @@
     [Parameter] public DateTime? To { get; set; }
 
     /// <summary>
-    /// Raised whenever either date changes. FilterPanel should call FilterService.ApplyAsync with updated criteria.
+    /// Raised whenever either date changes, so FilterPanel can update FilterState.
     /// </summary>
     [Parameter] public EventCallback<(DateTime? From, DateTime? To)> OnDateRangeChanged { get; set; }
 

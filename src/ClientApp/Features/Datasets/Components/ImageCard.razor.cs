@@ -5,7 +5,6 @@ using DatasetStudio.ClientApp.Services.ApiClients;
 using DatasetStudio.ClientApp.Services.StateManagement;
 using DatasetStudio.ClientApp.Shared.Services;
 using DatasetStudio.Core.DomainModels;
-using DatasetStudio.Core.DomainModels.Items;
 using DatasetStudio.Core.Utilities.Logging;
 using DatasetStudio.DTO.Items;
 using DatasetStudio.DTO.Datasets;

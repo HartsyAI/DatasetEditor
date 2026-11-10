@@ -17,9 +17,6 @@ public class Dataset
     /// <summary>The modality type of this dataset (Image, Text, Video, etc.)</summary>
     public Modality Modality { get; set; } = Modality.Unknown;
 
-    /// <summary>The format type of the source data (TSV, COCO, YOLO, etc.)</summary>
-    public DatasetFormat Format { get; set; } = DatasetFormat.Unknown;
-
     /// <summary>Total number of items in the dataset</summary>
     public int TotalItems { get; set; }
 

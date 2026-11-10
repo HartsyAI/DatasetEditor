@@ -6,7 +6,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CsvHelper" Version="33.1.0" />
     <!-- For Logs' ILogger wrapper (see Core/Utilities/Logging/Logs.cs). Pinned to 8.0.x, not
          the newer major the API project uses, since this project is also in the WASM client's
          reference graph and the repo already pins EF/WASM there at 8.x. -->
