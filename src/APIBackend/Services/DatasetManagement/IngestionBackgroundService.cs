@@ -3,7 +3,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using CoreItemRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetItemRepository;
 using DatasetRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetRepository;
 
 namespace DatasetStudio.APIBackend.Services.DatasetManagement;
@@ -81,7 +80,7 @@ public sealed class IngestionBackgroundService : BackgroundService
         using IServiceScope scope = _scopeFactory.CreateScope();
         IIngestionJobStore store = scope.ServiceProvider.GetRequiredService<IIngestionJobStore>();
         DatasetRepository datasets = scope.ServiceProvider.GetRequiredService<DatasetRepository>();
-        CoreItemRepository items = scope.ServiceProvider.GetRequiredService<CoreItemRepository>();
+        IDatasetItemRepository items = scope.ServiceProvider.GetRequiredService<IDatasetItemRepository>();
 
         IReadOnlyList<ClaimedIngestionJob> interrupted = await store.GetInterruptedJobsAsync(cancellationToken);
         foreach (ClaimedIngestionJob claimed in interrupted)
@@ -204,7 +203,7 @@ public sealed class IngestionBackgroundService : BackgroundService
 
         try
         {
-            CoreItemRepository items = scope.ServiceProvider.GetRequiredService<CoreItemRepository>();
+            IDatasetItemRepository items = scope.ServiceProvider.GetRequiredService<IDatasetItemRepository>();
             long itemsBefore = await items.GetCountAsync(job.DatasetId, stoppingToken);
             await store.SetItemsBeforeAsync(claimed.Id, itemsBefore, stoppingToken);
 

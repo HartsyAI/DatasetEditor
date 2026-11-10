@@ -13,7 +13,6 @@ using Moq;
 using Xunit;
 // Same aliasing as the other ingestion tests: the service uses the Core repository interfaces.
 using IDatasetRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetRepository;
-using IDatasetItemRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetItemRepository;
 
 namespace DatasetStudio.Tests.APIBackend
 {

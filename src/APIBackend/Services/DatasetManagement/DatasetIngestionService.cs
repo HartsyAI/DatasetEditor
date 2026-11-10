@@ -31,7 +31,7 @@ public class DatasetIngestionService : IDatasetIngestionService
     private const int ChunkSize = DataAccess.Parquet.ParquetSchemaDefinition.DefaultBatchSize;
 
     private readonly Core.Abstractions.Repositories.IDatasetRepository _datasetRepository;
-    private readonly Core.Abstractions.Repositories.IDatasetItemRepository _itemRepository;
+    private readonly IDatasetItemRepository _itemRepository;
     private readonly IHuggingFaceClient _huggingFaceClient;
     private readonly IHuggingFaceDatasetServerClient _huggingFaceDatasetServerClient;
     private readonly IConfiguration _configuration;
@@ -41,7 +41,7 @@ public class DatasetIngestionService : IDatasetIngestionService
 
     public DatasetIngestionService(
         Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
-        Core.Abstractions.Repositories.IDatasetItemRepository itemRepository,
+        IDatasetItemRepository itemRepository,
         IHuggingFaceClient huggingFaceClient,
         IHuggingFaceDatasetServerClient huggingFaceDatasetServerClient,
         IConfiguration configuration,
@@ -313,7 +313,7 @@ public class DatasetIngestionService : IDatasetIngestionService
             chunk.Add(item);
             if (chunk.Count >= ChunkSize)
             {
-                await _itemRepository.InsertItemsAsync(datasetId, chunk, cancellationToken);
+                await _itemRepository.AddRangeAsync(datasetId, chunk, cancellationToken);
                 totalWritten += chunk.Count;
                 _logger.LogInformation("[Ingestion] Wrote chunk of {ChunkCount} items for dataset {DatasetId} (total so far: {TotalWritten})", chunk.Count, datasetId, totalWritten);
                 chunk.Clear();
@@ -323,7 +323,7 @@ public class DatasetIngestionService : IDatasetIngestionService
 
         if (chunk.Count > 0)
         {
-            await _itemRepository.InsertItemsAsync(datasetId, chunk, cancellationToken);
+            await _itemRepository.AddRangeAsync(datasetId, chunk, cancellationToken);
             totalWritten += chunk.Count;
         }
 

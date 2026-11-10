@@ -8,7 +8,6 @@ using DatasetStudio.DTO.Datasets;
 // Same alias convention as StreamingIngestionTests: DatasetIngestionService uses the Core repository
 // interfaces, not the unrelated Services.DatasetManagement item repository.
 using IDatasetRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetRepository;
-using IDatasetItemRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetItemRepository;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;

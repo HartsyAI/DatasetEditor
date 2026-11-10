@@ -140,7 +140,7 @@ namespace DatasetStudio.Tests.APIBackend
                     loaded.ExternalId.Should().Be("item-1");
                 }
 
-                long count = await repository.GetCountAsync(datasetId, null, CancellationToken.None);
+                long count = await repository.GetCountAsync(datasetId, CancellationToken.None);
                 count.Should().Be(2);
             }
             finally
@@ -201,7 +201,7 @@ namespace DatasetStudio.Tests.APIBackend
                 page.Items.Select(i => i.ExternalId).Should().BeEquivalentTo(
                     new[] { "first-batch-1", "first-batch-2", "second-batch-1" });
 
-                long count = await repository.GetCountAsync(datasetId, null, CancellationToken.None);
+                long count = await repository.GetCountAsync(datasetId, CancellationToken.None);
                 count.Should().Be(3);
             }
             finally
@@ -237,7 +237,7 @@ namespace DatasetStudio.Tests.APIBackend
 
                 await repository.AddRangeAsync(datasetId, items, CancellationToken.None);
 
-                long count = await repository.GetCountAsync(datasetId, null, CancellationToken.None);
+                long count = await repository.GetCountAsync(datasetId, CancellationToken.None);
                 count.Should().Be(totalItems);
 
                 // Spot-check content survived the append path intact, not just the count —
@@ -288,7 +288,7 @@ namespace DatasetStudio.Tests.APIBackend
                 // every restart, since ParquetItemRepository is registered as a singleton.
                 using ParquetItemRepository restartedInstance = new ParquetItemRepository(dataDirectory, logger);
 
-                long count = await restartedInstance.GetCountAsync(datasetId, null, CancellationToken.None);
+                long count = await restartedInstance.GetCountAsync(datasetId, CancellationToken.None);
                 count.Should().Be(2);
 
                 // And a subsequent write picks up from the real count, not from 0.
@@ -412,7 +412,7 @@ namespace DatasetStudio.Tests.APIBackend
                     await repository.GetPageAsync(datasetId, null, null, 10, CancellationToken.None);
 
                 page.Items.Count.Should().Be(0);
-                long count = await repository.GetCountAsync(datasetId, null, CancellationToken.None);
+                long count = await repository.GetCountAsync(datasetId, CancellationToken.None);
                 count.Should().Be(0);
             }
             finally
@@ -472,7 +472,7 @@ namespace DatasetStudio.Tests.APIBackend
                     int captured = i;
                     operations.Add(repository.AddRangeAsync(datasetId, new List<DatasetItemDto> { MakeItem(datasetId, captured) }, CancellationToken.None));
                     operations.Add(repository.GetPageAsync(datasetId, null, null, 50, CancellationToken.None));
-                    operations.Add(repository.GetCountAsync(datasetId, null, CancellationToken.None));
+                    operations.Add(repository.GetCountAsync(datasetId, CancellationToken.None));
                     operations.Add(repository.GetItemAsync(Guid.NewGuid(), CancellationToken.None)); // not found, but exercises the same locked read path
                 }
 

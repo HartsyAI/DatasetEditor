@@ -14,7 +14,6 @@ using DatasetStudio.DTO.Datasets;
 // backed one used by ItemEditEndpoints), which the DatasetManagement using above would otherwise
 // collide with.
 using IDatasetRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetRepository;
-using IDatasetItemRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetItemRepository;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -97,7 +96,7 @@ namespace DatasetStudio.Tests.APIBackend
                 var insertedBatchSizes = new List<int>();
 
                 itemRepoMock
-                    .Setup(r => r.InsertItemsAsync(It.IsAny<Guid>(), It.IsAny<IEnumerable<DatasetItemDto>>(), It.IsAny<CancellationToken>()))
+                    .Setup(r => r.AddRangeAsync(It.IsAny<Guid>(), It.IsAny<IEnumerable<DatasetItemDto>>(), It.IsAny<CancellationToken>()))
                     .Callback<Guid, IEnumerable<DatasetItemDto>, CancellationToken>((_, items, _) => insertedBatchSizes.Add(items.Count()))
                     .Returns(Task.CompletedTask);
                 itemRepoMock
@@ -139,7 +138,7 @@ namespace DatasetStudio.Tests.APIBackend
                 Func<Task> act = () => service.StartIngestionAsync(Guid.NewGuid(), tempFile, CancellationToken.None);
 
                 await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("No items were parsed from the file");
-                itemRepoMock.Verify(r => r.InsertItemsAsync(
+                itemRepoMock.Verify(r => r.AddRangeAsync(
                     It.IsAny<Guid>(), It.IsAny<IEnumerable<DatasetItemDto>>(), It.IsAny<CancellationToken>()), Times.Never);
                 datasetRepoMock.Verify(r => r.UpdateStatusAsync(
                     It.IsAny<Guid>(), IngestionStatusDto.Failed, "No items were parsed from the file", It.IsAny<CancellationToken>()), Times.Once);

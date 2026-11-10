@@ -304,18 +304,18 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
     }
 
     /// <summary>
-    /// Gets the total count of items in a dataset: the manifest's row total, or a scan when filtered.
+    /// Gets the total count of items in a dataset: the manifest's row total. (A filtered overload
+    /// that scanned the whole dataset had no caller and was dropped with the second item
+    /// repository interface, audit K-4.)
     /// </summary>
     /// <param name="datasetId">The dataset ID.</param>
-    /// <param name="filter">Optional filter to count only matching items.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Total count of items.</returns>
     public async Task<long> GetCountAsync(
         Guid datasetId,
-        FilterRequest? filter = null,
         CancellationToken cancellationToken = default)
     {
-        return await WithDatasetAsync(datasetId, manifest => _reader.CountAsync(manifest, filter, cancellationToken), cancellationToken);
+        return await WithDatasetAsync(datasetId, manifest => _reader.CountAsync(manifest, null, cancellationToken), cancellationToken);
     }
 
     /// <summary>
