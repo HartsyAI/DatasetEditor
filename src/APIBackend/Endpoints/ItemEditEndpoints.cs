@@ -27,10 +27,10 @@ public static class ItemEditEndpoints
             .ProducesProblem(404)
             .RequireAuthorization();
 
-        // Bulk update items
+        // Bulk update items. Reports the items it skipped and why (audit E-1).
         group.MapPatch("/bulk", BulkUpdateItems)
             .WithName("BulkUpdateItems")
-            .Produces<int>()
+            .Produces<BulkUpdateItemsResponse>()
             .ProducesProblem(400)
             .RequireAuthorization();
     }
@@ -123,6 +123,10 @@ public static class ItemEditEndpoints
             return Results.BadRequest(new { message = "No item IDs provided" });
         }
 
+        // Items that are not edited are reported with the reason, not just left out of a smaller
+        // count: the client couldn't tell a denied item from a missing one (audit E-1).
+        List<BulkSkippedItem> skipped = new();
+
         // Group the ids by dataset: the request's when sent, otherwise each item's own (found by
         // searching every dataset). A bulk request is expected to stay within one open dataset
         // view, but nothing enforces that at the API layer.
@@ -144,6 +148,10 @@ public static class ItemEditEndpoints
                 }
                 ids.Add(itemId);
             }
+            else
+            {
+                skipped.Add(new BulkSkippedItem { ItemId = itemId, Reason = BulkSkipReasons.NotFound });
+            }
         }
 
         List<DatasetItemDto> updated = new();
@@ -152,24 +160,35 @@ public static class ItemEditEndpoints
             DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
             if (dataset is null || !await permissionService.CanWriteAsync(dataset, httpContext.User, cancellationToken))
             {
-                // Same tolerant "skip and keep going" behavior as an item that doesn't exist --
-                // a partial-success count rather than failing the whole batch because one item
-                // belongs to a dataset the caller can't write to.
+                // The rest of the batch still goes ahead. A dataset the caller can't even see
+                // reads as not-found, as everywhere else, so its items aren't revealed.
+                bool visible = dataset is not null && await permissionService.CanReadAsync(dataset, httpContext.User, cancellationToken);
+                string reason = visible ? BulkSkipReasons.Forbidden : BulkSkipReasons.NotFound;
+                skipped.AddRange(ids.Select(id => new BulkSkippedItem { ItemId = id, Reason = reason }));
                 continue;
             }
 
             // Applied to each item as it stands, under the dataset's lock (audit E-4): tags are
             // added to the current list, not to a copy read before a concurrent edit.
-            updated.AddRange(await itemRepository.EditItemsAsync(datasetId, ids, current => ApplyBulk(current, request), cancellationToken));
+            IReadOnlyList<DatasetItemDto> edited = await itemRepository.EditItemsAsync(datasetId, ids, current => ApplyBulk(current, request), cancellationToken);
+            updated.AddRange(edited);
+            HashSet<Guid> editedIds = edited.Select(i => i.Id).ToHashSet();
+            skipped.AddRange(ids.Where(id => !editedIds.Contains(id))
+                .Select(id => new BulkSkippedItem { ItemId = id, Reason = BulkSkipReasons.NotFound }));
         }
 
         // Who changed how many items in which datasets (audit E-5); skipped items aren't counted.
         logger.LogInformation(
-            "[Audit] User {UserId} bulk-edited {ItemCount} of {RequestedCount} items in datasets {DatasetIds}",
+            "[Audit] User {UserId} bulk-edited {ItemCount} of {RequestedCount} items in datasets {DatasetIds} ({SkippedCount} skipped)",
             httpContext.User.GetUserId(), updated.Count, request.ItemIds.Count,
-            string.Join(",", updated.Select(i => i.DatasetId).Distinct()));
+            string.Join(",", updated.Select(i => i.DatasetId).Distinct()), skipped.Count);
 
-        return Results.Ok(new { updatedCount = updated.Count });
+        return Results.Ok(new BulkUpdateItemsResponse
+        {
+            UpdatedCount = updated.Count,
+            Skipped = skipped,
+            Versions = updated.ToDictionary(i => i.Id, i => i.Version ?? ItemVersions.ForLocal(i.UpdatedAt))
+        });
     }
 
     /// <summary>Applies a single-item edit request to the item as it stands.</summary>

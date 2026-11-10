@@ -454,6 +454,11 @@ by at least a millisecond). `PATCH /api/items/{id}` returns it as an `ETag` head
 version that no longer matches gets `412` with the item as it now stands, checked in the same
 lock as the write. Without `If-Match` the edit is accepted, as before (E-4).
 
+A bulk edit answers `{ updatedCount, skipped: [{ itemId, reason }], versions }`: every requested
+item it didn't edit is listed with `not-found` (no such item, or one in a dataset the caller can't
+see) or `forbidden` (visible, but not the caller's to edit), and `versions` holds each edited
+item's new version. It used to return only a lower count (E-1).
+
 **Why.** Parquet is immutable, so updates are rewrites; limiting the rewrite to touched segments
 (10,000 rows each from ingestion, up to about 2M after merging) is the cheapest correct option
 without a delta store. Applying the change to the current item inside the lock is what keeps two
