@@ -154,9 +154,6 @@ public class DatasetEntity
     [ForeignKey(nameof(CreatedByUserId))]
     public UserEntity? CreatedByUser { get; set; }
 
-    /// <summary>Captions associated with items in this dataset</summary>
-    public ICollection<CaptionEntity> Captions { get; set; } = new List<CaptionEntity>();
-
     /// <summary>Permissions granted on this dataset</summary>
     public ICollection<PermissionEntity> Permissions { get; set; } = new List<PermissionEntity>();
 }

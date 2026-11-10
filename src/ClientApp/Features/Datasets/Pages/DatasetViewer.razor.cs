@@ -227,6 +227,23 @@ public partial class DatasetViewer : IDisposable
     }
 
     /// <summary>Closes the detail panel (the small-screen sheet's close button or backdrop).</summary>
+    /// <summary>Opens the share dialog for the open dataset (audit D-2).</summary>
+    private async Task OpenShareDialogAsync()
+    {
+        if (_datasetDetail is null)
+        {
+            return;
+        }
+        DialogParameters<ShareDatasetDialog> parameters = new()
+        {
+            { d => d.DatasetId, _datasetDetail.Id },
+            { d => d.DatasetName, _datasetDetail.Name }
+        };
+        DialogOptions options = new() { MaxWidth = MaxWidth.Small, FullWidth = true, NoHeader = true, CloseOnEscapeKey = true };
+        IDialogReference dialog = await _dialogService.ShowAsync<ShareDatasetDialog>("Share", parameters, options);
+        await dialog.Result;
+    }
+
     private void CloseDetailPanel()
     {
         if (_viewState.ShowDetailPanel)
