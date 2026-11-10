@@ -8,7 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../../SDK/Extensions.SDK.csproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!-- The API supplies the SDK at runtime (its copy always wins, see ExtensionLoadContext), so
+         none goes into this extension's build or publish output (audit R-10). -->
+    <ProjectReference Include="../../../SDK/Extensions.SDK.csproj" Private="false" ExcludeAssets="runtime" />
   </ItemGroup>
 
 </Project>

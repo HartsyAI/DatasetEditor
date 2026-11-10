@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Runtime.Loader;
 using System.Runtime.Versioning;
 using DatasetStudio.Extensions.SDK;
 
@@ -11,8 +10,9 @@ namespace DatasetStudio.APIBackend.Services.Extensions;
 /// </summary>
 /// <remarks>
 /// Everything here runs once at startup, synchronously: it is local file I/O and assembly loading,
-/// and the old async methods never awaited anything (audit X-4). Extensions are never unloaded;
-/// the unload method had no callers and was removed (audit X-2).
+/// and the old async methods never awaited anything (audit X-4). Each extension gets its own
+/// <see cref="ExtensionLoadContext"/>. Extensions are never unloaded; the unload method had no
+/// callers and was removed (audit X-2).
 /// </remarks>
 public sealed class ApiExtensionLoader
 {
@@ -271,7 +271,7 @@ public sealed class ApiExtensionLoader
             }
 
             _logger.LogDebug("Loading assembly: {Path}", apiAssemblyPath);
-            AssemblyLoadContext loadContext = new($"Extension_{extensionId}");
+            ExtensionLoadContext loadContext = new(extensionId, apiAssemblyPath);
             Assembly assembly = loadContext.LoadFromAssemblyPath(apiAssemblyPath);
 
             Type? extensionType = assembly.GetTypes()

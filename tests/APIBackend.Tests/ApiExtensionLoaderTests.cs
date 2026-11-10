@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.Loader;
 using DatasetStudio.APIBackend.Services.Extensions;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -112,6 +114,46 @@ namespace DatasetStudio.Tests.APIBackend
             // The Dockerfile's layout: the extension's publish output sits flat next to its manifest.
             string builtIn = Path.Combine(_scratchDirectory, "BuiltIn");
             CopyFixtureFlat(Path.Combine(builtIn, SampleExtensionId));
+
+            IReadOnlyList<LoadedApiExtension> loaded = CreateLoader(builtIn, AppContext.BaseDirectory).LoadAll();
+
+            loaded.Should().ContainSingle(e => e.Manifest.Metadata.Id == SampleExtensionId);
+        }
+
+        [Fact]
+        public void LoadedExtension_ResolvesItsPrivateDependencyFromItsOwnFolder()
+        {
+            // Audit X-2: the bare load context had no dependency resolver, so the extension's
+            // first call into SampleExtension.Greeting (which only ships in the extension's folder)
+            // threw FileNotFoundException.
+            LoadedApiExtension sample = CreateLoader(FixturesPath, AppContext.BaseDirectory).LoadAll()
+                .Single(e => e.Manifest.Metadata.Id == SampleExtensionId);
+            ServiceCollection services = new();
+
+            sample.Instance.ConfigureServices(services, new ConfigurationBuilder().Build());
+
+            using ServiceProvider provider = services.BuildServiceProvider();
+            provider.GetRequiredKeyedService<string>("SampleExtension.Greeting")
+                .Should().Be("Hello, Dataset Studio, from SampleExtension.Greeting");
+            // Loaded into the extension's own context, not into the API's.
+            AssemblyLoadContext.Default.Assemblies.Select(a => a.GetName().Name).Should().NotContain("SampleExtension.Greeting");
+            AssemblyLoadContext.GetLoadContext(sample.Instance.GetType().Assembly).Should().NotBe(AssemblyLoadContext.Default);
+        }
+
+        [Fact]
+        public void LoadAll_ExtensionShippingItsOwnCopyOfTheSdk_UsesTheApisCopy()
+        {
+            // A plain `dotnet publish` of an extension copies Extensions.SDK.dll next to it (audit
+            // R-10). If the extension's context loaded that copy, its IApiExtension would be a
+            // different type from the API's and the loader would find no implementation.
+            // Without a deps.json the dependency resolver offers every assembly in the folder,
+            // so the SDK copy is resolvable and only the API-first rule keeps it out.
+            string builtIn = Path.Combine(_scratchDirectory, "BuiltIn");
+            string extensionDirectory = Path.Combine(builtIn, SampleExtensionId);
+            CopyFixtureFlat(extensionDirectory);
+            File.Delete(Path.Combine(extensionDirectory, $"{SampleExtensionId}.Api.deps.json"));
+            string sdkPath = typeof(DatasetStudio.Extensions.SDK.IApiExtension).Assembly.Location;
+            File.Copy(sdkPath, Path.Combine(extensionDirectory, Path.GetFileName(sdkPath)));
 
             IReadOnlyList<LoadedApiExtension> loaded = CreateLoader(builtIn, AppContext.BaseDirectory).LoadAll();
 

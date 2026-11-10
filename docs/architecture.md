@@ -160,7 +160,13 @@ the public parameterless constructor. It looks for `{Id}.Api.dll` in two layouts
 the manifest (what `dotnet publish -o` produces; the Dockerfile does this for CoreViewer), or in
 the project's build output `{extension}/{Id}.Api/bin/{Configuration}/{tfm}/`, where `{tfm}` is the
 API's own target framework and the newest build wins. APIBackend has a build-order-only reference
-to `CoreViewer.Api`, so `dotnet run` builds it and the loader finds it. Any failure is logged and skips that extension; it never
+to `CoreViewer.Api`, so `dotnet run` builds it and the loader finds it. Each extension gets its
+own `ExtensionLoadContext` with an `AssemblyDependencyResolver` over its `.deps.json`, so a
+library that ships only with the extension resolves from its folder. Any assembly the API itself
+has (the SDK, ASP.NET Core, Core, DTO) always comes from the API, so there is one
+`IApiExtension` type and an extension gets the API's version of a shared library. Reference the
+SDK with `Private="false" ExcludeAssets="runtime"`, as `CoreViewer.Api.csproj` does, to keep it
+out of the extension's output. Any failure is logged and skips that extension; it never
 stops the API starting. Extensions are never unloaded.
 
 **CoreViewer** (`src/Extensions/BuiltIn/CoreViewer`) is the only built-in extension. It is a
