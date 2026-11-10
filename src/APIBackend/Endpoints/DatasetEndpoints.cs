@@ -719,6 +719,8 @@ internal static class DatasetEndpoints
         return new DatasetItemDto
         {
             Id = Guid.NewGuid(),
+            // Every other source sets it; streamed items left it empty (audit H-8).
+            DatasetId = datasetId,
             ExternalId = externalId,
             Title = string.IsNullOrWhiteSpace(title) ? externalId : title,
             Description = description,
@@ -1432,7 +1434,10 @@ internal static class DatasetEndpoints
             return Results.NotFound();
         }
 
-        if (dataset.SourceType != DatasetSourceType.HuggingFaceStreaming && !dataset.IsStreaming)
+        // HuggingFace streaming only. IsStreaming alone also admitted S3 datasets, which can still
+        // carry HuggingFace fields from an earlier import (audit H-8); only this source type ever
+        // hands out hf-thumbnail URLs (GetDatasetItems).
+        if (dataset.SourceType != DatasetSourceType.HuggingFaceStreaming)
         {
             return Results.NotFound();
         }

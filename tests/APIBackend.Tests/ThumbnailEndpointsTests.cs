@@ -353,6 +353,29 @@ namespace DatasetStudio.Tests.APIBackend
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
 
+        /// <summary>
+        /// Audit H-8: the endpoint accepted any dataset with IsStreaming set, which S3 datasets also
+        /// have. An S3 dataset left with HuggingFace fields from an earlier import must not be served
+        /// HuggingFace rows.
+        /// </summary>
+        [Fact]
+        public async Task GetHuggingFaceThumbnail_S3StreamingDataset_ReturnsNotFound()
+        {
+            (DatasetDetailDto dataset, _) = await CreateStreamingDatasetAsync();
+            using (IServiceScope scope = _factory.Services.CreateScope())
+            {
+                DatasetStudioDbContext db = scope.ServiceProvider.GetRequiredService<DatasetStudioDbContext>();
+                DatasetEntity entity = await db.Datasets.AsTracking().FirstAsync(d => d.Id == dataset.Id);
+                entity.SourceType = DatasetSourceType.ExternalS3Streaming;
+                await db.SaveChangesAsync();
+            }
+            SetupHfRow(0, "https://fake-hf-asset.example.test/image.png");
+
+            HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{dataset.Id}/hf-thumbnail?offset=0&w=120");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
         [Fact]
         public async Task GetHuggingFaceThumbnail_RowNotReturnedByUpstream_ReturnsNotFound()
         {
