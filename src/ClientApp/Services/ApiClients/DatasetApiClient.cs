@@ -93,9 +93,11 @@ public sealed class DatasetApiClient
         return _httpClient.GetFromJsonAsync<DatasetDetailDto>($"api/datasets/{datasetId}", SerializerOptions, cancellationToken);
     }
 
-    public async Task<PageResponse<DatasetItemDto>?> GetDatasetItemsAsync(Guid datasetId, int pageSize = 100, string? cursor = null, string? huggingFaceAccessToken = null, CancellationToken cancellationToken = default)
+    public async Task<PageResponse<DatasetItemDto>?> GetDatasetItemsAsync(Guid datasetId, int pageSize = 100, string? cursor = null, string? huggingFaceAccessToken = null, CancellationToken cancellationToken = default, FilterRequest? filter = null)
     {
         StringBuilder pathBuilder = new StringBuilder($"api/datasets/{datasetId}/items?pageSize={pageSize}");
+        // The server applies the filter (audit G-2); the same parameter names are parsed there.
+        pathBuilder.Append(FilterQueryString.Build(filter));
         if (!string.IsNullOrWhiteSpace(cursor))
         {
             pathBuilder.Append("&cursor=");

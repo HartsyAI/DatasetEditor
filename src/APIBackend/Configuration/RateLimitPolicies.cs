@@ -32,22 +32,14 @@ public static class RateLimitPolicies
     private const int DefaultS3FilePermitsPerMinute = 600;
     private const int DefaultHuggingFaceDiscoverPermitsPerMinute = 10;
 
-    /// <summary>Registers the limiter with the policies above; rejected requests get 429 and Retry-After.</summary>
+    /// <summary>
+    /// Adds the policies above to the rate limiter. The rejection response (429, Retry-After and a
+    /// JSON error) is set once in Program.cs alongside the login and registration policies.
+    /// </summary>
     public static IServiceCollection AddDatasetStudioRateLimits(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddRateLimiter(options =>
         {
-            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-            options.OnRejected = (context, _) =>
-            {
-                if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out TimeSpan retryAfter))
-                {
-                    context.HttpContext.Response.Headers.RetryAfter =
-                        ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
-                }
-                return ValueTask.CompletedTask;
-            };
-
             options.AddPolicy(S3File, httpContext => PerCallerPerMinute(
                 httpContext, ReadLimit(configuration, "S3FilePermitsPerMinute", DefaultS3FilePermitsPerMinute)));
             options.AddPolicy(HuggingFaceDiscover, httpContext => PerCallerPerMinute(

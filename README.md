@@ -111,7 +111,8 @@ database `dataset_studio_dev`). Outside Development the API refuses to start unt
 for you; `--no-launch-profile` does not, so set the variable yourself.
 
 To get an admin account, set `ADMIN_USERNAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` before starting
-the API. Anyone can register a normal account from the UI.
+the API. In Development anyone can also register a normal account from the UI; elsewhere
+registration is off unless `Auth__AllowRegistration=true` (see 4.1).
 
 Stop with `./stop.sh` (`--wipe` also deletes the database volume). Production deployment (one
 container + Caddy TLS): [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
@@ -136,7 +137,7 @@ refer to [docs/refactor-audit.md](docs/refactor-audit.md).
 | 4.8 | Thumbnails | Working |
 | 4.9 | Virtualised viewer (grid / list / detail / lightbox) | Working (caveats) |
 | 4.10 | Item editing (single, bulk) | Partial (local datasets; broken in the dev setup) |
-| 4.11 | Filtering and search | Placeholder (UI only) |
+| 4.11 | Filtering and search | Working (local); search only (HF streaming) |
 | 4.12 | Settings, theme, language | Partial (theme, viewer preferences, HuggingFace token; no i18n) |
 | 4.13 | AI tools | Placeholder |
 | 4.14 | Extensions | Partial (one example) |
@@ -144,24 +145,48 @@ refer to [docs/refactor-audit.md](docs/refactor-audit.md).
 
 ### 4.1 Accounts, sessions, roles — Working
 
-**What.** Register (username, email, password ≥ 8), log in with username or email, log out.
-Roles are `User` and `Admin`. A site admin is bootstrapped from environment variables.
+**What.** Register (when the server allows it), log in with username or email, log out. Roles
+are `User` and `Admin`. A site admin is bootstrapped from environment variables. Usernames are
+3–50 letters, digits, `.`, `_` or `-`; passwords 8 characters to 72 bytes; username and email
+are unique ignoring case.
 
 **How.** `src/APIBackend/Endpoints/AuthEndpoints.cs`, `Services/Auth/*`. ASP.NET Core cookie
 authentication (`DatasetStudio.Auth`, HttpOnly, SameSite=Lax, 7-day sliding). Passwords are
-BCrypt (work factor 11). `AdminBootstrapper` runs after migrations on every start and
-creates-or-resets the admin from `ADMIN_*`. The client's `CookieAuthenticationStateProvider`
-asks `/api/auth/me` and feeds `AuthorizeView`/`[Authorize]`; `CookieCredentialsHandler` makes
-the typed `HttpClient`s send the cookie cross-origin in dev (client :5002 → API :5000).
+BCrypt (work factor 11).
+
+- *Registration* is controlled by `Auth:AllowRegistration`: off by default, on in the
+  Development overlay. `GET /api/auth/settings` tells the client, which then hides "Register"
+  and shows "Registration is closed" on `/register`; the endpoint itself returns 403.
+- *Rate limits* (`Auth:LoginAttemptsPerMinute`, default 10; `Auth:RegistrationsPerHour`,
+  default 20) are per client IP, fixed-window, and answer 429 with `Retry-After`. Behind Caddy
+  the client IP comes from `X-Forwarded-For`, believed only from the proxies listed under
+  `ReverseProxy:KnownProxies`/`KnownNetworks` (`ReverseProxySettings`; none by default, Caddy's
+  fixed address in the production compose file).
+- *Sessions are re-checked.* The cookie carries the account's security stamp. On each request
+  `CookiePrincipalValidator` compares it with the account (cached per user for
+  `Auth:RevalidateEvery`, default 30 s): a deleted or deactivated account, or a changed stamp,
+  ends the session; a changed role is applied to it.
+- *Uniqueness* is enforced by unique indexes on `lower(username)` and `lower(email)`, so two
+  simultaneous registrations of "Alice" and "alice" can't both succeed.
+- `AdminBootstrapper` runs after migrations on every start. It creates the admin from
+  `ADMIN_*` or brings its email, role and flags in line, and replaces the password hash (and
+  rotates the stamp, ending old sessions) only when `ADMIN_PASSWORD` no longer matches. When
+  `ADMIN_USERNAME` isn't `admin`, the seeded placeholder row is deactivated and renamed, freeing
+  `admin` and `admin@localhost`.
+
+The client's `CookieAuthenticationStateProvider` asks `/api/auth/me` and feeds
+`AuthorizeView`/`[Authorize]`; `CookieCredentialsHandler` makes the typed `HttpClient`s send
+the cookie cross-origin in dev (client :5002 → API :5000).
 
 **Why.** Cookies rather than JWT so the WASM client never holds a token it could leak and the
 API can return plain 401/403. `SecurePolicy=SameAsRequest` because dev is plain HTTP; Caddy
-terminates TLS in production. The admin is re-synced on every boot so a forgotten password is
-fixed by changing an env var and restarting. The seeded admin row ships with an unusable
-placeholder hash so an unconfigured install has no default credentials.
+terminates TLS in production. Registration is closed by default because every signed-in user can
+upload 5 GB files and start HuggingFace downloads. The admin is re-synced on every boot so a
+forgotten password is fixed by changing an env var and restarting. The seeded admin row ships
+with an unusable placeholder hash so an unconfigured install has no default credentials.
 
-**Gaps.** Open registration with no rate limit (A-1, A-2); role/active flags frozen in the
-cookie until expiry (A-3).
+**Gaps.** No email verification, password reset flow or user-management UI; admins manage
+accounts in the database.
 
 ### 4.2 Dataset library, ownership, visibility — Working
 
@@ -389,8 +414,7 @@ Cards and rows are keyboard reachable (Enter or Space opens the item).
 **Why.** Row virtualisation keeps a responsive N-column grid inside a single `<Virtualize>`.
 Placeholder colour + lazy `<img>` give instant layout with zero shift.
 
-**Gaps.** Client-side filters are not applied (U-6, needs server-side filtering, PR 4.4).
-Gallery mode renders like the grid.
+**Gaps.** Gallery mode renders like the grid.
 
 ### 4.10 Item editing — Partial
 
@@ -410,18 +434,31 @@ without a delta store.
 **Gaps.** Only local datasets are editable — streaming items get a fresh `Id` per page so a
 PATCH always 404s (E-3). The dataset lock is held for the rewrite, so reads of that dataset wait.
 
-### 4.11 Filtering and search — Placeholder
+### 4.11 Filtering and search — Working (local datasets)
 
-**What.** The viewer's filter panel offers text search, tags, dimensions and date range; the
-library filters by status/source and search text.
+**What.** The viewer's filter panel offers text search, favourites only, tags, dimensions and a
+date range; the library filters by status/source and search text.
 
-**How.** `FilterState` collects criteria, but `DatasetViewer.ApplyFiltersQuiet` assigns the
-unfiltered window straight through, so the grid never changes — only the count label does
-(U-6). Tag checkboxes use v6 parameter names and never fire. The API's items endpoint accepts
-no filter parameters, although `ParquetItemReader.MatchesFilter` exists unreachably. The
-library's "Only ready datasets" switch doesn't re-filter.
+**How.** The server filters. `GET /api/datasets/{id}/items` takes `q`, repeated `tag`,
+`favorites`, `minWidth`, `maxWidth`, `minHeight`, `maxHeight`, `dateFrom`, `dateTo`
+(`DTO/Common/FilterQueryString` builds them; `Endpoints/ItemFilterQuery` parses them; a malformed
+value is a 400).
+- **Local datasets** apply every filter in the Parquet reader (`MatchesFilter`). The cursor
+  counts rows examined, so a filtered read resumes exactly where it stopped. A request examines
+  at most 200,000 rows, so a sparse filter returns a short page with a cursor instead of
+  scanning the whole dataset. A filtered page reports no `TotalCount`.
+- **HuggingFace streaming datasets** support text search only, through datasets-server
+  `/search`; the panel offers just the search box and says why.
+- **S3 datasets** have no filters; the panel says so, and the API returns 400 if asked.
 
-**Gaps.** Real filtering needs server-side support (G-2) and a client that applies it.
+In the client, a filter change makes `DatasetCacheService.ApplyFilterAsync` reload the first page
+with the filter (the grid stays mounted, so the panel keeps its text and focus). The count label
+reads "N matches" (or "so far" while more pages remain). The IndexedDB page cache is bypassed
+while a filter is active.
+
+**Gaps.** Text search on local datasets is a case-insensitive substring match over title,
+description and tags, not a full-text index. HuggingFace search works only on datasets that
+datasets-server has indexed.
 
 ### 4.12 Settings, theme, language — Partial
 

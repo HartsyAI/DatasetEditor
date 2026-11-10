@@ -32,6 +32,22 @@ public interface IHuggingFaceDatasetServerClient
         int length,
         string? accessToken,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Full-text search of one config/split through datasets-server <c>/search</c>. Same page
+    /// shape as <see cref="GetRowsAsync"/>; <c>NumRowsTotal</c> is the number of matches. Not every
+    /// dataset is indexed for search; datasets-server then answers with an error, which throws
+    /// <see cref="HuggingFaceUpstreamException"/>.
+    /// </summary>
+    Task<HuggingFaceRowsPage?> SearchRowsAsync(
+        string dataset,
+        string config,
+        string split,
+        string query,
+        int offset,
+        int length,
+        string? accessToken,
+        CancellationToken cancellationToken = default);
 }
 
 internal sealed class HuggingFaceDatasetServerClient : IHuggingFaceDatasetServerClient
@@ -181,12 +197,45 @@ internal sealed class HuggingFaceDatasetServerClient : IHuggingFaceDatasetServer
             url += "&config=" + Uri.EscapeDataString(config);
         }
 
-        string json = await GetJsonAsync(url, accessToken, "/rows", dataset, cancellationToken).ConfigureAwait(false);
-        HfRowsResponse? parsed = ParseBody<HfRowsResponse>(json, "/rows", dataset);
+        return await ReadRowsPageAsync(url, "/rows", dataset, config, split, accessToken, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<HuggingFaceRowsPage?> SearchRowsAsync(
+        string dataset,
+        string config,
+        string split,
+        string query,
+        int offset,
+        int length,
+        string? accessToken,
+        CancellationToken cancellationToken = default)
+    {
+        string url = DatasetServerBaseUrl + "/search?dataset=" + Uri.EscapeDataString(dataset) +
+                     "&config=" + Uri.EscapeDataString(config) +
+                     "&split=" + Uri.EscapeDataString(split) +
+                     "&query=" + Uri.EscapeDataString(query) +
+                     "&offset=" + Math.Max(0, offset).ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                     "&length=" + (length <= 0 ? 100 : length).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return await ReadRowsPageAsync(url, "/search", dataset, config, split, accessToken, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Fetches and maps a <c>/rows</c>-shaped response (<c>/rows</c> and <c>/search</c> share it).</summary>
+    private async Task<HuggingFaceRowsPage> ReadRowsPageAsync(
+        string url,
+        string endpoint,
+        string dataset,
+        string? config,
+        string split,
+        string? accessToken,
+        CancellationToken cancellationToken)
+    {
+        string json = await GetJsonAsync(url, accessToken, endpoint, dataset, cancellationToken).ConfigureAwait(false);
+        HfRowsResponse? parsed = ParseBody<HfRowsResponse>(json, endpoint, dataset);
 
         if (parsed?.Rows == null)
         {
-            throw new HuggingFaceUpstreamException($"datasets-server /rows returned no rows section for {dataset}");
+            throw new HuggingFaceUpstreamException($"datasets-server {endpoint} returned no rows section for {dataset}");
         }
 
         List<HuggingFaceRow> rows = new List<HuggingFaceRow>(parsed.Rows.Count);

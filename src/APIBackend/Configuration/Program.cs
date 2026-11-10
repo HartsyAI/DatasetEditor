@@ -12,6 +12,7 @@ using DatasetStudio.Extensions.SDK;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 
@@ -137,8 +138,54 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
             context.Response.StatusCode = StatusCodes.Status403Forbidden;
             return Task.CompletedTask;
         };
+        // Deactivation, demotion and password resets take effect within Auth:RevalidateEvery
+        // instead of after the cookie's 7-day life (audit A-3).
+        options.Events.OnValidatePrincipal = CookiePrincipalValidator.ValidateAsync;
     });
 builder.Services.AddAuthorization();
+builder.Services.AddMemoryCache();
+builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection(AuthOptions.SectionName));
+
+// Behind the Caddy proxy every request comes from the proxy's address, so the client IP the rate
+// limits key on comes from X-Forwarded-For, believed only from the proxies configured under
+// ReverseProxy (see ReverseProxySettings). Read when the options are first used, after the host
+// is built, so every configuration source counts.
+builder.Services.AddOptions<ForwardedHeadersOptions>()
+    .Configure<IConfiguration>(DatasetStudio.APIBackend.Configuration.ReverseProxySettings.Apply);
+
+// Login and registration each cost a BCrypt hash and had no limit, inviting CPU exhaustion and
+// password guessing (audit A-2). Limits are per client IP and read from Auth options.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        if (context.Lease.TryGetMetadata(System.Threading.RateLimiting.MetadataName.RetryAfter, out TimeSpan retryAfter))
+        {
+            context.HttpContext.Response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+        await context.HttpContext.Response.WriteAsJsonAsync(new { error = "Too many attempts. Wait a minute and try again." }, cancellationToken);
+    };
+    options.AddPolicy(AuthEndpoints.LoginRateLimitPolicy, httpContext =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = httpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthOptions>>().Value.LoginAttemptsPerMinute,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+            }));
+    options.AddPolicy(AuthEndpoints.RegisterRateLimitPolicy, httpContext =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                PermitLimit = httpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Options.IOptions<AuthOptions>>().Value.RegistrationsPerHour,
+                Window = TimeSpan.FromHours(1),
+                QueueLimit = 0,
+            }));
+});
+
 // Per-caller limits for routes that spend S3 egress or HuggingFace quota (audit S-1, H-2).
 builder.Services.AddDatasetStudioRateLimits(builder.Configuration);
 
@@ -207,6 +254,9 @@ builder.Services.AddCors(options =>
     });
 });
 WebApplication app = builder.Build();
+
+// First, so everything after (rate limits, HTTPS detection for the cookie) sees the real client.
+app.UseForwardedHeaders();
 
 // Routes Core.Utilities.Logging.Logs (used by the shared Core project's ingestion/parsing code,
 // which predates real DI-based logging there) through this app's actual configured logging

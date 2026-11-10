@@ -533,6 +533,12 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("role");
 
+                    b.Property<string>("SecurityStamp")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("security_stamp");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
@@ -547,15 +553,9 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
 
                     b.HasIndex("CreatedAt");
 
-                    b.HasIndex("Email")
-                        .IsUnique();
-
                     b.HasIndex("IsActive");
 
                     b.HasIndex("Role");
-
-                    b.HasIndex("Username")
-                        .IsUnique();
 
                     b.ToTable("users");
 
@@ -570,6 +570,7 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
                             IsActive = true,
                             PasswordHash = "$2a$11$placeholder_hash_replace_on_first_run",
                             Role = "Admin",
+                            SecurityStamp = "",
                             Username = "admin"
                         });
                 });
