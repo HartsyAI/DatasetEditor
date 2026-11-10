@@ -49,6 +49,13 @@ public sealed class ShareFormState
         };
     }
 
+    /// <summary>
+    /// The earliest end date the picker offers: today, which still ends in the future (at the end
+    /// of the day). Starting at tomorrow left a sharer whose own share ends tomorrow at noon with
+    /// no date the server would accept.
+    /// </summary>
+    public static DateTime EarliestEndDate => DateTime.Today;
+
     /// <summary>The picker's local date means the share runs to the end of that day.</summary>
     public static DateTime? FromPickerDate(DateTime? pickerDate) =>
         pickerDate?.Date.AddDays(1).ToUniversalTime();

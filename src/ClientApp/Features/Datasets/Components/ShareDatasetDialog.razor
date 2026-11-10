@@ -27,7 +27,7 @@
                         <MudDatePicker @bind-Date="_expiresOn"
                                        Label="Ends on (optional)"
                                        Variant="Variant.Outlined"
-                                       MinDate="@DateTime.Today.AddDays(1)"
+                                       MinDate="@ShareFormState.EarliestEndDate"
                                        Clearable="true"
                                        Class="ds-share-expiry"
                                        Disabled="@_isSaving" />

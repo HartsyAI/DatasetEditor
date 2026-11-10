@@ -54,6 +54,17 @@ public sealed class ShareFormStateTests
         Assert.Null(form.ToRequest("pat@example.com", DatasetAccessLevel.Read, false, false, null).UserId);
     }
 
+    /// <summary>
+    /// PR 5.2 review: the picker started at tomorrow, so a sharer whose own share ends tomorrow at
+    /// noon had no date the server would accept. Today is offered, and still ends in the future.
+    /// </summary>
+    [Fact]
+    public void EarliestEndDate_IsToday_AndEndsInTheFuture()
+    {
+        Assert.Equal(DateTime.Today, ShareFormState.EarliestEndDate);
+        Assert.True(ShareFormState.FromPickerDate(ShareFormState.EarliestEndDate) > DateTime.UtcNow);
+    }
+
     /// <summary>A share ending at local midnight shows the day before (the form's end-of-day convention).</summary>
     [Fact]
     public void PickerDate_ForAMidnightEnd_IsTheDayBefore()
