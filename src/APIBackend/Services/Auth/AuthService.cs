@@ -83,7 +83,7 @@ public sealed class AuthService : IAuthService
             // Lost a race with a simultaneous registration of the same name (audit A-4).
             return AuthResult.Fail("That username or email is already taken.");
         }
-        _logger.LogInformation("[Auth] Registered new user '{Username}' ({UserId})", request.Username, createdId);
+        _logger.LogInformation("[Auth] Registered new user {UserId}", createdId);
 
         return AuthResult.Ok(newUser with { Id = createdId });
     }
@@ -138,6 +138,8 @@ public sealed class AuthService : IAuthService
 
         if (user is null || !user.IsActive)
         {
+            // No name: what was typed may be a mistyped password or someone else's address.
+            _logger.LogInformation("[Auth] Failed login: no active account matched");
             return AuthResult.Fail(genericFailure);
         }
 
@@ -145,13 +147,16 @@ public sealed class AuthService : IAuthService
         // placeholder hash -- see BCryptPasswordHasher's doc comment.
         if (!_passwordHasher.Verify(request.Password, user.PasswordHash))
         {
+            // Repeated wrong passwords for one account are worth seeing (audit E-5).
+            _logger.LogWarning("[Auth] Failed login for user {UserId}: wrong password", user.Id);
             return AuthResult.Fail(genericFailure);
         }
 
         UserDto updated = user with { LastLoginAt = DateTime.UtcNow };
         await _userRepository.UpdateAsync(updated, cancellationToken);
 
-        _logger.LogInformation("[Auth] User '{Username}' ({UserId}) logged in", user.Username, user.Id);
+        // The account id identifies the user; the username is personal data the log doesn't need (audit E-5).
+        _logger.LogInformation("[Auth] User {UserId} logged in", user.Id);
         return AuthResult.Ok(updated);
     }
 }
