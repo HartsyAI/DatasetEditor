@@ -216,5 +216,60 @@ namespace DatasetStudio.Tests.APIBackend
 
             page!.Items.Should().ContainSingle().Which.DatasetId.Should().Be(dataset.Id);
         }
+
+        /// <summary>A page of rows with the given indexes, each with a text caption.</summary>
+        private static HuggingFaceRowsPage RowsPage(long numRowsTotal, params long[] rowIndexes)
+        {
+            List<HuggingFaceRow> rows = new();
+            foreach (long index in rowIndexes)
+            {
+                rows.Add(new HuggingFaceRow
+                {
+                    RowIndex = index,
+                    Columns = new Dictionary<string, System.Text.Json.JsonElement>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["text"] = System.Text.Json.JsonSerializer.SerializeToElement($"caption {index}"),
+                    },
+                });
+            }
+            return new HuggingFaceRowsPage { Dataset = Repo, Config = "default", Split = "train", NumRowsTotal = numRowsTotal, Rows = rows };
+        }
+
+        private async Task<List<DatasetItemDto>> GetItemsAsync(Guid datasetId, string query = "")
+        {
+            HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{datasetId}/items?pageSize=10{query}");
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            DatasetStudio.DTO.Common.PageResponse<DatasetItemDto>? page =
+                await response.Content.ReadFromJsonAsync<DatasetStudio.DTO.Common.PageResponse<DatasetItemDto>>();
+            return page!.Items.ToList();
+        }
+
+        /// <summary>
+        /// Audit E-3: each page request gave every row a new Guid, so an id taken from one page
+        /// was unknown by the next request and edits always 404'd. A search result for the same
+        /// row (datasets-server reports its original row_idx) must carry the same id as well.
+        /// </summary>
+        [Fact]
+        public async Task GetItems_SameRow_HasTheSameIdAcrossRequestsAndSearch()
+        {
+            DatasetDetailDto dataset = await CreateStreamingDatasetAsync(split: "train");
+            _hfServerClientMock
+                .Setup(c => c.GetRowsAsync(
+                    It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(),
+                    It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(() => RowsPage(3, 0, 1, 2));
+            _hfServerClientMock
+                .Setup(c => c.SearchRowsAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                    It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(() => RowsPage(1, 1));
+
+            List<DatasetItemDto> first = await GetItemsAsync(dataset.Id);
+            List<DatasetItemDto> second = await GetItemsAsync(dataset.Id);
+            List<DatasetItemDto> found = await GetItemsAsync(dataset.Id, "&q=caption");
+
+            first.Select(i => i.Id).Should().OnlyHaveUniqueItems().And.Equal(second.Select(i => i.Id));
+            found.Should().ContainSingle().Which.Id.Should().Be(first[1].Id);
+        }
     }
 }

@@ -308,6 +308,11 @@ count from `num_rows_total` when they differ. `/size` reports the selected split
 the sum over all splits. Upstream failures return `403` for an auth refusal (401/403) and
 `502` for anything else, with the reason in `error`; they are no longer an empty `200`.
 
+Each row's item id is derived from the dataset id, repository, config, split and the row's index
+(`StreamingItemIds`: SHA-256 of those parts, as a version 8 UUID), so a row keeps its id on every
+page request and in search results, which report the original row index (E-3). It used to be a
+new `Guid` per request.
+
 Cached rows and thumbnails are keyed by the caller's access scope (a SHA-256 prefix of their
 token, or anonymous), so an image fetched with one user's token for a gated repository is never
 served from the cache to someone without that token (H-5). A user with a token therefore doesn't
@@ -339,7 +344,8 @@ and the API proxies images and thumbnails. Works with AWS S3, MinIO, R2, Backbla
 token as cursor, filtered to image extensions. The dataset prefix is treated as a folder: it is
 listed with a trailing `/` (so `images` doesn't also list `images-other/…`), and `S3KeySafety`
 accepts a key only under that folder and without a `.` or `..` path segment (a name such as
-`photo..final.jpg` is fine).
+`photo..final.jpg` is fine). An object's item id is derived from the dataset id, profile, bucket
+and key (`StreamingItemIds`), so it is the same on every listing (E-3).
 
 **Why.** Proxying rather than presigned URLs makes the dataset permission check and the
 thumbnail cache the single enforcement point. Bucket allow-lists exist because registration
@@ -445,8 +451,8 @@ and item ids and the names of the changed fields, never their values (E-5).
 (10,000 rows each from ingestion, up to about 2M after merging) is the cheapest correct option
 without a delta store.
 
-**Gaps.** Only local datasets are editable — streaming items get a fresh `Id` per page so a
-PATCH always 404s (E-3). The dataset lock is held for the rewrite, so reads of that dataset wait.
+**Gaps.** Only local datasets are editable — streaming items have stable ids now, but nothing
+stores their edits yet, so a PATCH 404s (E-3). The dataset lock is held for the rewrite, so reads of that dataset wait.
 
 ### 4.11 Filtering and search — Working (local datasets)
 

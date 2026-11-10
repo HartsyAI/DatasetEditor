@@ -268,6 +268,22 @@ namespace DatasetStudio.Tests.APIBackend
             secondPage.Items[0].ExternalId.Should().NotBe(firstPage.Items[0].ExternalId, "the second page must return a different object, not repeat the first");
         }
 
+        /// <summary>Audit E-3: each listing gave every object a new Guid, so an S3 item could never be edited.</summary>
+        [Fact]
+        public async Task GetDatasetItems_S3Object_HasTheSameIdAcrossRequests()
+        {
+            string prefix = $"ids-{Guid.NewGuid():N}/";
+            await PutObjectAsync($"{prefix}a.png", MakeTestPng(5, 5, SKColors.Red));
+            await PutObjectAsync($"{prefix}b.png", MakeTestPng(5, 5, SKColors.Green));
+            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+
+            PageResponse<DatasetItemDto>? first = await _client.GetFromJsonAsync<PageResponse<DatasetItemDto>>($"/api/datasets/{dataset.Id}/items?pageSize=100");
+            PageResponse<DatasetItemDto>? second = await _client.GetFromJsonAsync<PageResponse<DatasetItemDto>>($"/api/datasets/{dataset.Id}/items?pageSize=100");
+
+            first!.Items.Select(i => i.Id).Should().HaveCount(2).And.OnlyHaveUniqueItems()
+                .And.Equal(second!.Items.Select(i => i.Id));
+        }
+
         [Fact]
         public async Task GetS3File_ServesOriginalBytesUnmodifiedWithoutWidthQuery()
         {

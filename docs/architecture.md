@@ -82,8 +82,11 @@ rather than restarting the read from the beginning.
   the page returns rows from, each `ParquetSchemaDefinition.DefaultBatchSize` = 10,000 rows when
   written by ingestion. A page that ends exactly at the last row returns no cursor. Re-importing
   in many small uploads still produces smaller groups (no compaction yet). No full scans.
-- **Streaming datasets:** the request maps to a HuggingFace `/rows?offset=…` call; rows are mapped
-  to DTOs on the fly. Config/split are auto-discovered once and cached on the dataset.
+- **Streaming datasets:** the request maps to a HuggingFace `/rows?offset=…` call (or an S3
+  `ListObjectsV2` page); rows are mapped to DTOs on the fly. Config/split are auto-discovered once
+  and cached on the dataset. Item ids are deterministic (`StreamingItemIds`: a SHA-256 name-based
+  UUID of dataset id + repository/config/split/row index, or dataset id + profile/bucket/key), so
+  the same row or object has the same id on every request.
 
 ### Editing
 Single (`PATCH /api/items/{id}`) and bulk (`PATCH /api/items/bulk`) edits update items

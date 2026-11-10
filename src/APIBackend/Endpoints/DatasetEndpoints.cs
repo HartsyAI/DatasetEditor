@@ -679,7 +679,9 @@ internal static class DatasetEndpoints
             string fileUrl = $"/api/datasets/{datasetId}/s3-file?key={encodedKey}";
             items.Add(new DatasetItemDto
             {
-                Id = Guid.NewGuid(),
+                // Derived from profile, bucket and key, so the item keeps its id across page
+                // requests and can be edited (audit E-3); it was a fresh Guid per request.
+                Id = StreamingItemIds.ForS3Object(datasetId, dataset.S3StorageProfileName, dataset.S3Bucket, key),
                 DatasetId = datasetId,
                 ExternalId = key,
                 Title = Path.GetFileNameWithoutExtension(key),
@@ -754,15 +756,16 @@ internal static class DatasetEndpoints
         // row from HF's own trusted datasets-server rather than trusting a client-supplied
         // URL -- see hf-thumbnail's doc comment) instead of the raw HF asset URL, so ImageCard
         // gets a cached, width-bounded thumbnail instead of pulling the original every time.
-        // Streaming items have no stable id across requests (Id above is a fresh Guid on every
-        // single mapping call), so RowIndex is what makes the thumbnail cacheable/re-fetchable.
+        // The item id is a one-way hash, so RowIndex is what lets the thumbnail endpoint re-fetch the row.
         string? thumbnailUrl = string.IsNullOrWhiteSpace(imageUrl)
             ? null
             : $"/api/datasets/{datasetId}/hf-thumbnail?offset={row.RowIndex}";
 
         return new DatasetItemDto
         {
-            Id = Guid.NewGuid(),
+            // Derived from where the row lives, so it is the same on every page request and in
+            // search results (audit E-3); it was a fresh Guid per mapping, so edits always 404'd.
+            Id = StreamingItemIds.ForHuggingFaceRow(datasetId, repository, config, split, row.RowIndex),
             // Every other source sets it; streamed items left it empty (audit H-8).
             DatasetId = datasetId,
             ExternalId = externalId,
