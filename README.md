@@ -249,7 +249,8 @@ viewer pages rows straight from the HuggingFace datasets-server with real thumbn
 is downloaded. Gated repos work with a personal access token (sent per request, stored only in
 the browser).
 
-**How.** `POST /api/datasets/huggingface/discover` → `HuggingFaceDiscoveryService` (Hub
+**How.** `POST /api/datasets/huggingface/discover` (signed-in users only, rate limited by
+`RateLimiting:HuggingFaceDiscoverPermitsPerMinute`, 10 a minute) → `HuggingFaceDiscoveryService` (Hub
 `/api/datasets/{repo}` + datasets-server `/size`, `/rows` probe fallback). Import stores
 repo/config/split on the dataset and marks it Completed. `GetDatasetItems` maps
 `/rows?offset=&length=` responses to `DatasetItemDto` (image URL sniffed from common column

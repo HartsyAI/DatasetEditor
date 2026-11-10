@@ -28,10 +28,16 @@ internal static class DatasetEndpoints
     {
         RouteGroupBuilder group = app.MapGroup("/api/datasets").WithTags("Datasets");
 
+        // Signed-in and rate limited: each call makes several upstream Hub requests (with any
+        // token the caller supplies) on long timeouts, and was anonymous and unthrottled (audit
+        // H-2). Discovery only ever precedes creating a dataset, which needs an account anyway.
         group.MapPost("/huggingface/discover", DiscoverHuggingFaceDataset)
             .WithName("DiscoverHuggingFaceDataset")
             .Produces<HuggingFaceDiscoveryResponse>()
-            .Produces(StatusCodes.Status400BadRequest);
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status429TooManyRequests)
+            .RequireAuthorization()
+            .RequireRateLimiting(Configuration.RateLimitPolicies.HuggingFaceDiscover);
 
         // Anonymous-reachable, but each handler below scopes its own results/checks to what
         // the caller may actually see (IDatasetPermissionService / DatasetVisibilityFilter) --
