@@ -120,6 +120,63 @@ namespace DatasetStudio.Tests.APIBackend
             File.Exists(destination).Should().BeFalse("a partial download must not be left behind");
         }
 
+        /// <summary>
+        /// Audit H-3: the repository was interpolated raw, so <c>?</c> or <c>#</c> in it turned the
+        /// rest into a query or fragment and requested a different URL.
+        /// </summary>
+        [Fact]
+        public async Task GetDatasetInfo_EscapesTheRepositoryButKeepsOwnerSlash()
+        {
+            StubHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
+            HuggingFaceClient client = new(new HttpClient(handler), NullLogger<HuggingFaceClient>.Instance);
+
+            await client.GetDatasetInfoAsync("org/my ds?x=1#y");
+
+            handler.Requests.Should().ContainSingle()
+                .Which.Should().Be("https://huggingface.co/api/datasets/org/my%20ds%3Fx%3D1%23y");
+        }
+
+        [Fact]
+        public async Task DownloadFile_EscapesTheRepository()
+        {
+            StubHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(new byte[10]) });
+            HuggingFaceClient client = new(new HttpClient(handler), NullLogger<HuggingFaceClient>.Instance);
+
+            await client.DownloadFileAsync("org/a#b", "data/f.csv", Path.Combine(_folder, "f.csv"));
+
+            handler.Requests.Should().ContainSingle()
+                .Which.Should().Be("https://huggingface.co/datasets/org/a%23b/resolve/main/data/f.csv");
+        }
+
+        /// <summary>
+        /// A dot segment would be collapsed by URI normalisation into a different Hub path (the
+        /// unescaped "../../models/x" requested /models/x), even percent-encoded, so it is refused
+        /// and nothing is requested.
+        /// </summary>
+        [Fact]
+        public async Task GetDatasetInfo_DotSegmentRepository_IsRefusedWithoutARequest()
+        {
+            StubHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
+            HuggingFaceClient client = new(new HttpClient(handler), NullLogger<HuggingFaceClient>.Instance);
+
+            HuggingFaceDatasetInfo? info = await client.GetDatasetInfoAsync("../../models/x");
+
+            info.Should().BeNull();
+            handler.Requests.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task DownloadFile_DotSegmentInFileName_IsRefusedWithoutARequest()
+        {
+            StubHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(new byte[10]) });
+            HuggingFaceClient client = new(new HttpClient(handler), NullLogger<HuggingFaceClient>.Instance);
+
+            Func<Task> act = () => client.DownloadFileAsync("org/ds", "../../../models/x/file.bin", Path.Combine(_folder, "f.bin"));
+
+            await act.Should().ThrowAsync<ArgumentException>();
+            handler.Requests.Should().BeEmpty();
+        }
+
         [Fact]
         public async Task DownloadFile_EscapesPathSegmentsButKeepsFolders()
         {

@@ -62,6 +62,20 @@ boot, then `Cors__AllowedOrigins__0` in `docker-compose.prod.yml` (`https://${DO
 automatically follows it. Changing `DOMAIN` after Caddy has already issued a certificate for
 the old value: `docker compose -f docker-compose.yml -f docker-compose.prod.yml restart caddy`.
 
+## Logs
+
+The API logs to the console (`docker compose logs api`). What it records:
+
+- One line per `/api` request under the category `DatasetStudio.Requests`: method, route
+  pattern, dataset id, status, time and the caller's account id (or `anonymous`). The route
+  pattern is logged rather than the path, and the query string is left out, so file names and
+  search terms don't reach the log. Image and thumbnail fetches are logged at Debug (a grid page
+  makes about a hundred); 5xx answers at Error. Tune it with
+  `Logging__LogLevel__DatasetStudio.Requests` (e.g. `Warning` to keep only failures).
+- `[Audit]` lines for item edits: who, which dataset and items, which fields; never the values.
+- Sign-ins, registrations and failed logins by account id; usernames and emails aren't logged.
+- Imports refused because the queue is full, with the dataset and user.
+
 ## Backups
 
 Everything that matters lives in three places:
@@ -105,6 +119,57 @@ MinIO/R2/Backblaze), `AccessKey`, `SecretKey`, `ForcePathStyle`, and
 `AllowedBuckets__0`/`__1`/... — the explicit allow-list a profile's credentials may actually
 reach (see `S3StorageProfileConfig`'s own doc comment for why this isn't just "whatever bucket
 the request names").
+
+`ForcePathStyle` is optional. Left unset, a profile with a `ServiceUrl` uses path-style addressing
+(what MinIO and most self-hosted endpoints need, and what every profile used before) and a real
+AWS profile (no `ServiceUrl`) uses virtual-hosted style, which AWS requires for buckets that don't
+accept path-style requests. Set `true` or `false` to override either default.
+
+Every image an S3 dataset shows is proxied through the API with the profile's credentials, so a
+public S3 dataset spends your egress. Two settings bound that:
+
+- `Storage:S3MaxServeBytes` (default `67108864`, 64 MB): originals larger than this are not
+  proxied (404, logged as a warning); their `?w=` thumbnails still are. `0` or less turns the cap off.
+- `RateLimiting:S3FilePermitsPerMinute` (default `600`): requests to the S3 file route per caller
+  per minute; see "Rate limits".
+
+## Rate limits
+
+Two routes have a fixed one-minute window per caller, where the caller is the signed-in user, or
+the client IP address for anonymous requests. Over the limit the API answers `429` with
+`Retry-After`.
+
+| Setting | Default | Route |
+|---|---|---|
+| `RateLimiting:S3FilePermitsPerMinute` | 600 | `GET /api/datasets/{id}/s3-file` |
+| `RateLimiting:HuggingFaceDiscoverPermitsPerMinute` | 10 | `POST /api/datasets/huggingface/discover` |
+
+A grid page requests one thumbnail per visible card, so keep the S3 limit well above the number of
+cards a user scrolls past in a minute. Behind Caddy (or any reverse proxy) the API sees the proxy's
+address, so anonymous callers are told apart by the `X-Forwarded-For` address Caddy sends. The
+API believes that header only from the proxies in `ReverseProxy__KnownProxies__*` /
+`ReverseProxy__KnownNetworks__*`; the production compose file names Caddy's fixed address (see
+"Accounts"). With nothing configured, anonymous callers share one budget.
+Signed-in users always get their own budget.
+
+## Server folder import (opt-in)
+
+Admins can point a dataset at a folder already on the server ("Server folder" on the create
+page). It is off until you list the folders it may read in `Storage:FolderImportRoots`: with the
+default empty list, the import is refused with a 400 that says so. A folder is accepted when it is
+one of the roots or inside one, compared by real path (a symlink inside a root that leads
+elsewhere is refused). In Docker the roots are container paths, so mount the image folder and list
+the mount point, for example in the `api` service of `docker-compose.prod.yml`:
+
+```yaml
+    volumes:
+      - /srv/photos:/imports/photos:ro
+    environment:
+      Storage__FolderImportRoots__0: "/imports"
+```
+
+Don't list `/app/data` or anything above it: it holds the DataProtection key ring. Only image files
+(`.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`) are ever served from an imported folder.
 
 ## Extensions (trust model)
 

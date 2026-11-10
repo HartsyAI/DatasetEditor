@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using DatasetStudio.APIBackend.Services.Storage;
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace DatasetStudio.Tests.APIBackend
@@ -62,6 +63,35 @@ namespace DatasetStudio.Tests.APIBackend
             S3StorageProfileResolver resolver = CreateResolver();
 
             resolver.IsBucketAllowed("minio-dev", "some-other-tenants-bucket").Should().BeFalse();
+        }
+
+        /// <summary>
+        /// Audit S-4: ForcePathStyle defaulted to true for every profile, which breaks real AWS S3
+        /// buckets that only accept virtual-hosted requests. Unset now means path style for a
+        /// custom endpoint (the old behaviour for MinIO and friends) and virtual-hosted for AWS;
+        /// an explicit setting always wins. Bound from configuration, the way profiles are loaded.
+        /// </summary>
+        [Theory]
+        [InlineData(null, null, false)]
+        [InlineData("http://minio:9000", null, true)]
+        [InlineData(null, "true", true)]
+        [InlineData("http://minio:9000", "false", false)]
+        public void UsePathStyle_DefaultsByEndpointAndHonoursAnExplicitSetting(string? serviceUrl, string? forcePathStyle, bool expected)
+        {
+            Dictionary<string, string?> values = new() { ["Profiles:0:Name"] = "p" };
+            if (serviceUrl is not null)
+            {
+                values["Profiles:0:ServiceUrl"] = serviceUrl;
+            }
+            if (forcePathStyle is not null)
+            {
+                values["Profiles:0:ForcePathStyle"] = forcePathStyle;
+            }
+            IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+
+            S3StorageProfileConfig[] profiles = configuration.GetSection("Profiles").Get<S3StorageProfileConfig[]>()!;
+
+            profiles.Should().ContainSingle().Which.UsePathStyle.Should().Be(expected);
         }
 
         [Fact]

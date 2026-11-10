@@ -180,6 +180,9 @@ builder.Services.AddRateLimiter(options =>
             }));
 });
 
+// Per-caller limits for routes that spend S3 egress or HuggingFace quota (audit S-1, H-2).
+builder.Services.AddDatasetStudioRateLimits(builder.Configuration);
+
 // Extensions register their services before Build(), after the API's own so an extension can
 // replace a core registration on purpose. Until audit C-5 this built a throwaway service provider
 // (a second copy of every singleton, ASP0000) only to get a logger and hand extensions a provider;
@@ -278,7 +281,12 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseCors(corsPolicyName);
 app.UseAuthentication();
+// After authentication so the caller is known, and before authorization and the rate limiter so
+// their 401/403/429 answers are logged too (audit E-5).
+DatasetStudio.APIBackend.Configuration.RequestLogging.UseRequestLogging(app);
 app.UseAuthorization();
+// After authentication so the limiter can partition by signed-in user; after routing so it sees
+// each endpoint's policy.
 app.UseRateLimiter();
 
 // Each extension's endpoints go in an authenticated route group at /api/extensions/{id}.

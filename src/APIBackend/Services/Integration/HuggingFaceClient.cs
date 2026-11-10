@@ -37,7 +37,7 @@ internal sealed class HuggingFaceClient : IHuggingFaceClient
         try
         {
             revision ??= "main";
-            string url = $"{HuggingFaceApiBase}/api/datasets/{repository}";
+            string url = $"{HuggingFaceApiBase}/api/datasets/{EscapePath(repository)}";
 
             using HttpRequestMessage request = new(HttpMethod.Get, url);
             if (!string.IsNullOrWhiteSpace(accessToken))
@@ -95,7 +95,7 @@ internal sealed class HuggingFaceClient : IHuggingFaceClient
             // recursive=true: without it the Hub lists only the top level, so the usual layout
             // (data/train-00000-of-00001.parquet) looked like a repository with no data files
             // (audit I-7). Large repositories are paged; the next page is in the Link header.
-            string? url = $"{HuggingFaceApiBase}/api/datasets/{repository}/tree/{Uri.EscapeDataString(revision)}?recursive=true";
+            string? url = $"{HuggingFaceApiBase}/api/datasets/{EscapePath(repository)}/tree/{Uri.EscapeDataString(revision)}?recursive=true";
             List<HuggingFaceDatasetFile> files = new();
 
             for (int page = 0; url is not null && page < MaxTreePages; page++)
@@ -147,10 +147,9 @@ internal sealed class HuggingFaceClient : IHuggingFaceClient
     {
         revision ??= "main";
 
-        // Escape each path segment but keep the slashes: files usually sit in folders
-        // (data/train-00000.parquet), and a raw name with spaces or '#' broke the URL.
-        string escapedPath = string.Join('/', fileName.Split('/').Select(Uri.EscapeDataString));
-        string url = $"{HuggingFaceApiBase}/datasets/{repository}/resolve/{Uri.EscapeDataString(revision)}/{escapedPath}";
+        // Files usually sit in folders (data/train-00000.parquet), and a raw name with spaces or
+        // '#' broke the URL; EscapePath keeps the folder slashes.
+        string url = $"{HuggingFaceApiBase}/datasets/{EscapePath(repository)}/resolve/{Uri.EscapeDataString(revision)}/{EscapePath(fileName)}";
 
         _logger.LogInformation("Downloading {FileName} from {Repository} to {Destination}",
             fileName, repository, destinationPath);
@@ -189,6 +188,27 @@ internal sealed class HuggingFaceClient : IHuggingFaceClient
                 TryDeletePartialDownload(destinationPath);
             }
         }
+    }
+
+    /// <summary>
+    /// Escapes each <c>/</c>-separated segment of a repository id (<c>owner/name</c>) or file path
+    /// and keeps the slashes. The repository used to be interpolated raw, so a value containing
+    /// <c>?</c>, <c>#</c> or <c>%</c> changed which URL was requested (audit H-3). A <c>.</c> or
+    /// <c>..</c> segment is refused: System.Uri collapses it, even percent-encoded, into a
+    /// different Hub path (<c>../../models/x</c> requested <c>/models/x</c>).
+    /// </summary>
+    internal static string EscapePath(string path)
+    {
+        return string.Join('/', path.Split('/').Select(EscapeSegment));
+    }
+
+    private static string EscapeSegment(string segment)
+    {
+        if (segment is "." or "..")
+        {
+            throw new ArgumentException($"'{segment}' is not allowed as a path segment in a HuggingFace repository or file path.");
+        }
+        return Uri.EscapeDataString(segment);
     }
 
     /// <summary>Most tree pages followed for one repository (the Hub returns 1,000 entries per page).</summary>

@@ -181,5 +181,40 @@ namespace DatasetStudio.Tests.APIBackend
                 c => c.GetRowsAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()),
                 Times.Never);
         }
+
+        /// <summary>Audit H-8: streamed items never had DatasetId set, unlike every other source.</summary>
+        [Fact]
+        public async Task GetItems_StreamingRows_CarryTheirDatasetId()
+        {
+            DatasetDetailDto dataset = await CreateStreamingDatasetAsync(split: "train");
+            _hfServerClientMock
+                .Setup(c => c.GetRowsAsync(
+                    It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(),
+                    It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new HuggingFaceRowsPage
+                {
+                    Dataset = Repo,
+                    Config = "default",
+                    Split = "train",
+                    NumRowsTotal = 1,
+                    Rows = new List<HuggingFaceRow>
+                    {
+                        new()
+                        {
+                            RowIndex = 0,
+                            Columns = new Dictionary<string, System.Text.Json.JsonElement>(StringComparer.OrdinalIgnoreCase)
+                            {
+                                ["text"] = System.Text.Json.JsonSerializer.SerializeToElement("a caption"),
+                            },
+                        },
+                    },
+                });
+
+            HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{dataset.Id}/items?pageSize=10");
+            DatasetStudio.DTO.Common.PageResponse<DatasetItemDto>? page =
+                await response.Content.ReadFromJsonAsync<DatasetStudio.DTO.Common.PageResponse<DatasetItemDto>>();
+
+            page!.Items.Should().ContainSingle().Which.DatasetId.Should().Be(dataset.Id);
+        }
     }
 }

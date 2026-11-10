@@ -51,6 +51,31 @@ namespace DatasetStudio.Tests.APIBackend
             S3KeySafety.IsKeyWithinPrefix("images/", key).Should().BeFalse();
         }
 
+        /// <summary>
+        /// Audit S-3: a plain <c>Contains("..")</c> rejected legitimate object names. Only a whole
+        /// <c>..</c> (or <c>.</c>) path segment is a traversal.
+        /// </summary>
+        [Theory]
+        [InlineData(null, "photo..final.jpg")]
+        [InlineData("images/", "images/photo..final.jpg")]
+        [InlineData("images/", "images/..hidden.jpg")]
+        [InlineData("images/", "images/archive.../cover.jpg")]
+        public void IsKeyWithinPrefix_DoubleDotInsideAName_ReturnsTrue(string? prefix, string key)
+        {
+            S3KeySafety.IsKeyWithinPrefix(prefix, key).Should().BeTrue();
+        }
+
+        [Theory]
+        [InlineData("images/..")]
+        [InlineData("images/./photo.jpg")]
+        [InlineData("images/..\\..\\secret.jpg")]
+        [InlineData("images\\..\\secret.jpg")]
+        public void IsKeyWithinPrefix_DotSegment_ReturnsFalse(string key)
+        {
+            S3KeySafety.IsKeyWithinPrefix("images/", key).Should().BeFalse();
+            S3KeySafety.IsKeyWithinPrefix(null, key).Should().BeFalse();
+        }
+
         [Fact]
         public void IsKeyWithinPrefix_EmptyKey_ReturnsFalse()
         {
