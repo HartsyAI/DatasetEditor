@@ -168,8 +168,8 @@ namespace DatasetStudio.Tests.APIBackend
             HttpResponseMessage deniedResponse = await otherClient.DeleteAsync($"/api/datasets/{dataset.Id}");
             deniedResponse.StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-            // 2. Grant a non-expired CanDelete permission directly (no grant endpoint exists in
-            // this phase's scope -- see the verification README).
+            // 2. Grant a non-expired CanDelete permission directly in the database, isolating the
+            // permission check from the share endpoints (DatasetSharingTests covers those).
             await GrantPermissionAsync(dataset.Id, other.Id, accessLevel: "Write", canDelete: true, expiresAt: null);
             HttpResponseMessage allowedResponse = await otherClient.DeleteAsync($"/api/datasets/{dataset.Id}");
             allowedResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);

@@ -128,7 +128,7 @@ refer to [docs/refactor-audit.md](docs/refactor-audit.md).
 | # | Feature | Status |
 |---|---|---|
 | 4.1 | Accounts, sessions, roles | Working |
-| 4.2 | Dataset library, ownership, visibility | Working (sharing grants Partial) |
+| 4.2 | Dataset library, ownership, visibility, sharing | Working |
 | 4.3 | Upload ingestion (CSV/TSV/JSON/JSONL/ZIP) | Working |
 | 4.4 | HuggingFace streaming | Working (row count Partial) |
 | 4.5 | HuggingFace download/import | Partial |
@@ -188,13 +188,16 @@ with an unusable placeholder hash so an unconfigured install has no default cred
 **Gaps.** No email verification, password reset flow or user-management UI; admins manage
 accounts in the database.
 
-### 4.2 Dataset library, ownership, visibility — Working
+### 4.2 Dataset library, ownership, visibility, sharing — Working
 
-**What.** `/datasets` (`/my-datasets` still works) lists what you may see: your own plus public
-datasets (anonymous visitors see public only). Cards (`DatasetCard`) show status, source,
-counts and when the dataset was last updated, with Open and a confirmed Delete; `LibraryFilterBar`
-searches and filters the loaded page by status, source and "only ready". New datasets are
-private by default; `IsPublic` makes them visible to everyone.
+**What.** `/datasets` (`/my-datasets` still works) lists what you may see: your own, those
+shared with you, and public datasets (anonymous visitors see public only). Cards (`DatasetCard`)
+show status, source, counts and when the dataset was last updated, with Open and a confirmed
+Delete; `LibraryFilterBar` searches and filters the loaded page by status, source and "only
+ready". New datasets are private by default; `IsPublic` makes them visible to everyone. The
+viewer's Share button (owner, admin, or anyone whose share includes "can share") opens
+`ShareDatasetDialog`: share with a username or email for viewing or editing, optionally with
+delete and share rights and an end date; change or end shares from the same list.
 
 **How.** `DatasetEndpoints.GetAllDatasets/GetDataset/CreateDataset/DeleteDataset`,
 `DataAccess/PostgreSQL/Repositories/DatasetRepository.cs`, `Services/Auth/DatasetPermissionService.cs`.
@@ -208,11 +211,21 @@ profile/bucket/prefix, folder) is one unit: changing any of it while another req
 any of it is refused as a whole, so no request can store a mix nobody chose. A full-row overwrite from a stale snapshot used to revert background
 ingestion's status and count (D-4).
 
+Shares are rows in `permissions`, managed by `DatasetShareEndpoints`
+(`GET`/`PUT /api/datasets/{id}/shares`, `DELETE …/shares/{userId}`).
+`IDatasetPermissionService.GetAccessAsync` answers everything a caller may do in one lookup;
+`GET /api/datasets/{id}` returns `CanShare` from it so the viewer knows whether to offer Share.
+Someone sharing through their own share can't grant more than they hold (write, delete), can't
+give a share that outlasts their own, and manages only the shares they granted (enforced in the
+same SQL statement as the write, so a concurrent owner change can't be taken over); the owner and
+admins manage all. Anyone may end their own
+share. Expired shares neither open nor list the dataset.
+
 **Why.** 404-not-403 for private datasets mirrors GitHub's handling of private repos. The
 filter lives in SQL so counts and pages agree.
 
-**Gaps.** The `permissions` grant table has no write path — sharing a private dataset with a
-specific user is impossible from the API (D-2).
+**Gaps.** The viewer doesn't yet hide item editing from users who may only view (the server
+refuses their edits with 403).
 
 ### 4.3 Upload ingestion — Working
 

@@ -94,8 +94,14 @@ public sealed class DatasetRepository : IDatasetRepository
             return query; // unfiltered: internal/background caller, or an admin who can see everything
         }
 
+        // Datasets shared with the caller (an unexpired grant) are listed too, the same set the
+        // permission service lets them open (audit D-2).
         Guid? userId = visibility.Value.RequestingUserId;
-        return query.Where(d => d.IsPublic || (userId != null && d.CreatedByUserId == userId));
+        DateTime now = DateTime.UtcNow;
+        return query.Where(d => d.IsPublic
+            || (userId != null
+                && (d.CreatedByUserId == userId
+                    || d.Permissions.Any(p => p.UserId == userId && (p.ExpiresAt == null || p.ExpiresAt > now)))));
     }
 
     public async Task UpdateAsync(DatasetDto original, DatasetDto updated, CancellationToken cancellationToken = default)

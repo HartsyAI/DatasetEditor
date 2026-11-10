@@ -22,82 +22,6 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.CaptionEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<Guid?>("CreatedByUserId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("created_by_user_id");
-
-                    b.Property<Guid>("DatasetId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("dataset_id");
-
-                    b.Property<bool>("IsPrimary")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_primary");
-
-                    b.Property<string>("ItemId")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("item_id");
-
-                    b.Property<string>("Language")
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)")
-                        .HasColumnName("language");
-
-                    b.Property<string>("Metadata")
-                        .HasColumnType("jsonb")
-                        .HasColumnName("metadata");
-
-                    b.Property<float?>("Score")
-                        .HasColumnType("real")
-                        .HasColumnName("score");
-
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("source");
-
-                    b.Property<string>("Text")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("text");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedAt");
-
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("DatasetId");
-
-                    b.HasIndex("IsPrimary");
-
-                    b.HasIndex("Score");
-
-                    b.HasIndex("Source");
-
-                    b.HasIndex("DatasetId", "ItemId");
-
-                    b.ToTable("captions");
-                });
-
             modelBuilder.Entity("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.DatasetEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -242,103 +166,6 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
                     b.HasIndex("Name");
 
                     b.ToTable("datasets");
-                });
-
-            modelBuilder.Entity("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.DatasetItemEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<string>("Caption")
-                        .HasColumnType("text")
-                        .HasColumnName("caption");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<Guid>("DatasetId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("dataset_id");
-
-                    b.Property<float?>("DurationSeconds")
-                        .HasColumnType("real")
-                        .HasColumnName("duration_seconds");
-
-                    b.Property<byte[]>("Embedding")
-                        .HasColumnType("bytea")
-                        .HasColumnName("embedding");
-
-                    b.Property<string>("FilePath")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
-                        .HasColumnName("file_path");
-
-                    b.Property<long?>("FileSizeBytes")
-                        .HasColumnType("bigint")
-                        .HasColumnName("file_size_bytes");
-
-                    b.Property<int?>("Height")
-                        .HasColumnType("integer")
-                        .HasColumnName("height");
-
-                    b.Property<bool>("IsDeleted")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_deleted");
-
-                    b.Property<bool>("IsFlagged")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_flagged");
-
-                    b.Property<string>("ItemId")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("item_id");
-
-                    b.Property<string>("Metadata")
-                        .HasColumnType("jsonb")
-                        .HasColumnName("metadata");
-
-                    b.Property<string>("MimeType")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("mime_type");
-
-                    b.Property<float?>("QualityScore")
-                        .HasColumnType("real")
-                        .HasColumnName("quality_score");
-
-                    b.Property<string>("Tags")
-                        .HasColumnType("text")
-                        .HasColumnName("tags");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.Property<int?>("Width")
-                        .HasColumnType("integer")
-                        .HasColumnName("width");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CreatedAt");
-
-                    b.HasIndex("DatasetId");
-
-                    b.HasIndex("IsDeleted");
-
-                    b.HasIndex("IsFlagged");
-
-                    b.HasIndex("QualityScore");
-
-                    b.HasIndex("DatasetId", "ItemId")
-                        .IsUnique();
-
-                    b.ToTable("dataset_items");
                 });
 
             modelBuilder.Entity("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.IngestionJobEntity", b =>
@@ -575,24 +402,6 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
                         });
                 });
 
-            modelBuilder.Entity("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.CaptionEntity", b =>
-                {
-                    b.HasOne("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.UserEntity", "CreatedByUser")
-                        .WithMany()
-                        .HasForeignKey("CreatedByUserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.DatasetEntity", "Dataset")
-                        .WithMany("Captions")
-                        .HasForeignKey("DatasetId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("CreatedByUser");
-
-                    b.Navigation("Dataset");
-                });
-
             modelBuilder.Entity("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.DatasetEntity", b =>
                 {
                     b.HasOne("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.UserEntity", "CreatedByUser")
@@ -601,17 +410,6 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("CreatedByUser");
-                });
-
-            modelBuilder.Entity("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.DatasetItemEntity", b =>
-                {
-                    b.HasOne("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.DatasetEntity", "Dataset")
-                        .WithMany()
-                        .HasForeignKey("DatasetId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Dataset");
                 });
 
             modelBuilder.Entity("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.IngestionJobEntity", b =>
@@ -653,8 +451,6 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
 
             modelBuilder.Entity("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.DatasetEntity", b =>
                 {
-                    b.Navigation("Captions");
-
                     b.Navigation("Permissions");
                 });
 

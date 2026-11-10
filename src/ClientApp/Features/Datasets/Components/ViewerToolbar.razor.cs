@@ -46,4 +46,10 @@ public partial class ViewerToolbar
 
     /// <summary>Raised when the page cache switch changes.</summary>
     [Parameter] public EventCallback<bool> OnIndexedDbChanged { get; set; }
+
+    /// <summary>Whether the user may manage shares; shows the Share button.</summary>
+    [Parameter] public bool CanShare { get; set; }
+
+    /// <summary>Opens the share dialog.</summary>
+    [Parameter] public EventCallback OnShare { get; set; }
 }

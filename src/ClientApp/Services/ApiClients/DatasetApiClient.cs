@@ -53,6 +53,45 @@ public sealed class DatasetApiClient
         return response.IsSuccessStatusCode;
     }
 
+    /// <summary>Everyone the dataset is shared with. Throws when the caller may not manage its shares.</summary>
+    public async Task<List<DatasetShareDto>> GetSharesAsync(Guid datasetId, CancellationToken cancellationToken = default)
+    {
+        List<DatasetShareDto>? shares = await _httpClient.GetFromJsonAsync<List<DatasetShareDto>>($"api/datasets/{datasetId}/shares", SerializerOptions, cancellationToken);
+        return shares ?? new List<DatasetShareDto>();
+    }
+
+    /// <summary>
+    /// Shares the dataset with an account, or changes its share. On refusal the server's reason
+    /// ("No active account has that username or email.", "Your own access is read-only…") comes
+    /// back as the error, for the dialog to show as is.
+    /// </summary>
+    public async Task<(DatasetShareDto? Share, string? Error)> ShareDatasetAsync(Guid datasetId, ShareDatasetRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await _httpClient.PutAsJsonAsync($"api/datasets/{datasetId}/shares", request, SerializerOptions, cancellationToken);
+        if (response.IsSuccessStatusCode)
+        {
+            return (await response.Content.ReadFromJsonAsync<DatasetShareDto>(SerializerOptions, cancellationToken), null);
+        }
+        string? error = null;
+        try
+        {
+            Dictionary<string, string>? body = await response.Content.ReadFromJsonAsync<Dictionary<string, string>>(SerializerOptions, cancellationToken);
+            error = body?.GetValueOrDefault("error");
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // A bare status (403 from Forbid()) has no body.
+        }
+        return (null, error ?? $"Sharing failed (HTTP {(int)response.StatusCode}).");
+    }
+
+    /// <summary>Ends a user's share. False when it was already gone or not the caller's to end.</summary>
+    public async Task<bool> RevokeShareAsync(Guid datasetId, Guid userId, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await _httpClient.DeleteAsync($"api/datasets/{datasetId}/shares/{userId}", cancellationToken);
+        return response.IsSuccessStatusCode;
+    }
+
     /// <summary>
     /// Patches one item. Goes through this client so the cookie handler is attached; a raw
     /// HttpClient hits the client origin and every edit fails (audit U-2).

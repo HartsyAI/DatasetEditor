@@ -29,7 +29,7 @@
                                                           │
                 ┌─────────────────────────────────────────┼──────────────────────────────┐
                 │ PostgreSQL (EF Core / Npgsql)             │   Apache Parquet (segments)    │
-                │   dataset metadata, users, captions       │   dataset items + manifest      │
+                │   dataset metadata, users, shares         │   dataset items + manifest      │
                 └────────────────────────────────────────────────────────────────────────────┘
                                                           │
                                        HuggingFace datasets-server (streaming rows)
@@ -56,8 +56,9 @@ timestamps). Rich image attributes (photographer, average color, engagement coun
 (`DatasetItemDtoExtensions.AverageColor()`, `Photographer()`, …).
 
 - **Metadata (Postgres):** `DatasetEntity` (name, status, counts, source type/URI, HuggingFace
-  repo/config/split, error message) and related tables (users, captions, permissions) via
-  `DatasetStudioDbContext`. Dataset updates are field-level patches with `xmin` as the concurrency
+  repo/config/split, error message) and related tables (users, permissions, ingestion jobs) via
+  `DatasetStudioDbContext`. `permissions` holds dataset shares (one row per dataset and user).
+  Item data is only in Parquet; the unused `dataset_items` and `captions` tables were dropped. Dataset updates are field-level patches with `xmin` as the concurrency
   token, so request-time edits and background ingestion writes never overwrite each other. Migrations live in `APIBackend/DataAccess/PostgreSQL/Migrations` and
   are applied automatically on API startup.
 - **Items (Parquet):** per dataset, a manifest (`dataset_{id}.manifest.json`) over immutable
