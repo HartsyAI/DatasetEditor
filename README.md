@@ -304,8 +304,12 @@ accepts a key only under that folder and without a `.` or `..` path segment (a n
 thumbnail cache the single enforcement point. Bucket allow-lists exist because registration
 is open.
 
+A failed listing is logged and answered `502` (it used to be an empty page). A profile's
+`ForcePathStyle` defaults to path style when `ServiceUrl` is set (MinIO, R2, Backblaze) and to
+virtual-hosted style for real AWS S3; set it explicitly to override.
+
 **Gaps.** A public S3 dataset is an anonymous, unmetered egress proxy for the bucket (S-1);
-thumbnail generation buffers whole objects (S-2); list failures are swallowed silently (S-4).
+thumbnail generation buffers whole objects (S-2).
 
 ### 4.7 Server folder import — Working, admin-only
 

@@ -390,6 +390,7 @@ internal static class DatasetEndpoints
         Services.Storage.IS3StorageService s3StorageService,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
+        ILogger<Program> logger,
         CancellationToken cancellationToken)
     {
         DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
@@ -407,7 +408,7 @@ internal static class DatasetEndpoints
         // have silently misrouted every S3 dataset into it.
         if (dataset.SourceType == DatasetSourceType.ExternalS3Streaming)
         {
-            return await GetS3DatasetItemsPage(datasetId, dataset, cursor, size, s3StorageService, cancellationToken);
+            return await GetS3DatasetItemsPage(datasetId, dataset, cursor, size, s3StorageService, logger, cancellationToken);
         }
 
         // Handle HuggingFace streaming datasets
@@ -580,6 +581,7 @@ internal static class DatasetEndpoints
         string? cursor,
         int size,
         Services.Storage.IS3StorageService s3StorageService,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(dataset.S3StorageProfileName) || string.IsNullOrWhiteSpace(dataset.S3Bucket))
@@ -597,14 +599,18 @@ internal static class DatasetEndpoints
                 dataset.S3StorageProfileName, dataset.S3Bucket, Services.Storage.S3KeySafety.NormalizeFolderPrefix(dataset.S3Prefix),
                 cursor, size, cancellationToken);
         }
-        catch (Exception)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            return Results.Ok(new PageResponse<DatasetItemDto>
-            {
-                Items = Array.Empty<DatasetItemDto>(),
-                NextCursor = null,
-                TotalCount = 0
-            });
+            // This used to answer an empty 200 page with no log, so a broken profile or bucket
+            // looked exactly like an empty dataset (audit S-4). Same 502 shape as an HF failure;
+            // the SDK's message stays in the log, since anonymous readers of a public dataset get
+            // this response too.
+            logger.LogWarning(ex,
+                "Listing S3 objects failed for dataset {DatasetId} (profile {Profile}, bucket {Bucket})",
+                datasetId, dataset.S3StorageProfileName, dataset.S3Bucket);
+            return Results.Json(
+                new { error = $"Could not list the dataset's S3 bucket '{dataset.S3Bucket}'. The server log has the cause." },
+                statusCode: StatusCodes.Status502BadGateway);
         }
 
         List<DatasetItemDto> items = new(page.Keys.Count);
@@ -1327,13 +1333,13 @@ internal static class DatasetEndpoints
                 w.Value,
                 async ct =>
                 {
-                    await using Stream? objectStream = await s3StorageService.GetObjectStreamAsync(profileName, bucket, key, ct);
-                    if (objectStream is null)
+                    await using Services.Storage.S3ObjectContent? s3Object = await s3StorageService.GetObjectAsync(profileName, bucket, key, ct);
+                    if (s3Object is null)
                     {
                         return null;
                     }
                     // Bounded: the whole object used to be buffered whatever its size (audit S-2).
-                    return await Services.Storage.ThumbnailSource.ReadLimitedAsync(objectStream, thumbnailService.MaxSourceBytes, ct);
+                    return await Services.Storage.ThumbnailSource.ReadLimitedAsync(s3Object.Content, thumbnailService.MaxSourceBytes, ct);
                 },
                 cancellationToken);
             httpContext.Response.Headers["X-Thumbnail-Width"] = thumbnail.Width.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -1349,12 +1355,15 @@ internal static class DatasetEndpoints
             // Undecodable: fall through to proxy the original below.
         }
 
-        Stream? stream = await s3StorageService.GetObjectStreamAsync(profileName, bucket, key, cancellationToken);
-        if (stream is null)
+        Services.Storage.S3ObjectContent? s3Object = await s3StorageService.GetObjectAsync(profileName, bucket, key, cancellationToken);
+        if (s3Object is null)
         {
             return Results.NotFound();
         }
-        return Results.Stream(stream, contentType);
+        // Disposed with the request, however it ends: the SDK response used to be left
+        // undisposed once its stream was handed to the result (audit S-4).
+        httpContext.Response.RegisterForDisposeAsync(s3Object);
+        return Results.Stream(s3Object.Content, contentType);
     }
 
     /// <summary>How long a HuggingFace thumbnail's upstream fetch may take, headers and body together.</summary>

@@ -84,6 +84,11 @@ MinIO/R2/Backblaze), `AccessKey`, `SecretKey`, `ForcePathStyle`, and
 reach (see `S3StorageProfileConfig`'s own doc comment for why this isn't just "whatever bucket
 the request names").
 
+`ForcePathStyle` is optional. Left unset, a profile with a `ServiceUrl` uses path-style addressing
+(what MinIO and most self-hosted endpoints need, and what every profile used before) and a real
+AWS profile (no `ServiceUrl`) uses virtual-hosted style, which AWS requires for buckets that don't
+accept path-style requests. Set `true` or `false` to override either default.
+
 ## Server folder import (opt-in)
 
 Admins can point a dataset at a folder already on the server ("Server folder" on the create

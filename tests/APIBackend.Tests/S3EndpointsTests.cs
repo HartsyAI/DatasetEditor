@@ -370,5 +370,27 @@ namespace DatasetStudio.Tests.APIBackend
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }
+
+        /// <summary>
+        /// Audit S-4: a failed listing used to be swallowed into an empty 200 page with no log, so a
+        /// broken bucket looked like an empty dataset. It is logged and reported as 502.
+        /// </summary>
+        [Fact]
+        public async Task GetDatasetItems_S3ListingFails_Returns502AndLogs()
+        {
+            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: "images/");
+            using (IServiceScope scope = _factory.Services.CreateScope())
+            {
+                DatasetStudioDbContext db = scope.ServiceProvider.GetRequiredService<DatasetStudioDbContext>();
+                DatasetEntity entity = await db.Datasets.AsTracking().FirstAsync(d => d.Id == dataset.Id);
+                entity.S3Bucket = $"no-such-bucket-{Guid.NewGuid():N}"[..30];
+                await db.SaveChangesAsync();
+            }
+
+            HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{dataset.Id}/items?pageSize=10");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+            _logs.WarningsContaining(dataset.Id.ToString()).Should().NotBeEmpty();
+        }
     }
 }
