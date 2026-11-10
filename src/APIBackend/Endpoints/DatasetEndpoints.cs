@@ -345,6 +345,12 @@ internal static class DatasetEndpoints
     /// </summary>
     private static IResult IngestionQueueFull(HttpContext httpContext)
     {
+        // A refused import used to leave no trace on the server (audit E-5); a full queue is
+        // worth seeing in the log, with who asked and for which dataset.
+        // GetService, not GetRequiredService: handlers are also called directly with a bare context.
+        httpContext.RequestServices?.GetService<ILogger<Program>>()?.LogWarning(
+            "[Ingestion] Queue full; refused an import for dataset {DatasetId} from user {UserId}",
+            httpContext.Request.RouteValues["datasetId"], httpContext.User.GetUserId());
         httpContext.Response.Headers.RetryAfter = "30";
         return Results.Json(
             new { error = "The import queue is full. Try again in a minute." },

@@ -312,6 +312,9 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseCors(corsPolicyName);
 app.UseAuthentication();
+// After authentication so the caller is known, and before authorization and the rate limiter so
+// their 401/403/429 answers are logged too (audit E-5).
+DatasetStudio.APIBackend.Configuration.RequestLogging.UseRequestLogging(app);
 app.UseAuthorization();
 app.UseRateLimiter();
 
