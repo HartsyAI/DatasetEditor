@@ -475,6 +475,38 @@ INSERT INTO users (id, username, email, password_hash, role, is_active, email_ve
             (await users.GetByUsernameAsync("owner"))!.PasswordHash.Should().Be(owner.PasswordHash);
         }
 
+        /// <summary>
+        /// PR 5.1 review: the seeded row was renamed to a fixed "retired-seed-admin", which an
+        /// existing account could already have; the unique index then failed the bootstrap and with
+        /// it the API's startup. The first unused name is taken instead, and a second boot is a no-op.
+        /// </summary>
+        [Fact]
+        public async Task AdminBootstrap_RetiresTheSeededAdminUnderAnUnusedName()
+        {
+            DatasetStudioApiFactory factory = await NewFactoryAsync();
+            using IServiceScope scope = factory.Services.CreateScope();
+            IUserRepository users = scope.ServiceProvider.GetRequiredService<IUserRepository>();
+            IPasswordHasher hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
+            await users.CreateAsync(new UserDto { Id = Guid.NewGuid(), Username = "retired-seed-admin", Email = "someone@example.com", PasswordHash = "x" });
+            await users.CreateAsync(new UserDto { Id = Guid.NewGuid(), Username = "someone-else", Email = "retired-seed-admin-2@localhost", PasswordHash = "x" });
+
+            AdminBootstrapper bootstrapper = new(users, hasher,
+                new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ADMIN_USERNAME"] = "owner",
+                    ["ADMIN_PASSWORD"] = "owner-password"
+                }).Build(),
+                NullLogger<AdminBootstrapper>.Instance);
+            await bootstrapper.RunAsync();
+            await bootstrapper.RunAsync();
+
+            UserDto seeded = (await users.GetByIdAsync(Guid.Parse("00000000-0000-0000-0000-000000000001")))!;
+            seeded.Username.Should().Be("retired-seed-admin-3");
+            seeded.Email.Should().Be("retired-seed-admin-3@localhost");
+            seeded.IsActive.Should().BeFalse();
+            (await users.GetByUsernameAsync("owner")).Should().NotBeNull();
+        }
+
         [Fact]
         public void DatasetDetail_IsPrivateByDefault_LikeTheOtherDatasetContracts()
         {

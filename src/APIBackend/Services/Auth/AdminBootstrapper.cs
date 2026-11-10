@@ -107,11 +107,24 @@ public sealed class AdminBootstrapper : IAdminBootstrapper
         {
             return;
         }
+        // The first name/email pair no other account has. A fixed pair could already belong to an
+        // account, and the unique indexes would then fail the update and the API's startup.
+        string retiredName;
+        for (int n = 1; ; n++)
+        {
+            retiredName = n == 1 ? RetiredPlaceholderUsername : $"{RetiredPlaceholderUsername}-{n}";
+            UserDto? byName = await _userRepository.GetByUsernameAsync(retiredName, cancellationToken);
+            UserDto? byEmail = await _userRepository.GetByEmailAsync(retiredName + "@localhost", cancellationToken);
+            if ((byName is null || byName.Id == seeded.Id) && (byEmail is null || byEmail.Id == seeded.Id))
+            {
+                break;
+            }
+        }
         UserDto retired = seeded with
         {
             IsActive = false,
-            Username = RetiredPlaceholderUsername,
-            Email = RetiredPlaceholderUsername + "@localhost"
+            Username = retiredName,
+            Email = retiredName + "@localhost"
         };
         if (retired != seeded)
         {
