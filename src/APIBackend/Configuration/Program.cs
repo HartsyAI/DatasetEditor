@@ -8,7 +8,6 @@ using DatasetStudio.APIBackend.Services.Extensions;
 using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.APIBackend.DataAccess.PostgreSQL;
-using DatasetStudio.Extensions.SDK;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Features;
@@ -89,14 +88,9 @@ builder.Services.AddDataProtection()
     .SetApplicationName("DatasetStudio");
 
 // AddDatasetServices runs before builder.Build(), so there's no DI container yet to resolve a
-// logger from -- same constraint the extension-discovery block below solves with its own
-// throwaway ServiceProvider. This one is cheaper to build directly since AddDatasetServices
-// only needs a logger, not a whole container.
-using (ILoggerFactory bootstrapLoggerFactory = LoggerFactory.Create(logging =>
-{
-    logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
-    logging.AddConsole();
-}))
+// logger from. It only needs a logger, so it gets one from a short-lived logger factory instead
+// of a throwaway service provider (ASP0000), as does the extension loader below.
+using (ILoggerFactory bootstrapLoggerFactory = CreateBootstrapLoggerFactory(builder.Configuration))
 {
     builder.Services.AddDatasetServices(builder.Configuration, builder.Environment, bootstrapLoggerFactory.CreateLogger("Startup"));
 }
@@ -189,48 +183,20 @@ builder.Services.AddRateLimiter(options =>
 // Per-caller limits for routes that spend S3 egress or HuggingFace quota (audit S-1, H-2).
 builder.Services.AddDatasetStudioRateLimits(builder.Configuration);
 
-// Extension discovery/ConfigureServices has to run before builder.Build(), so it needs a
-// service provider before one otherwise exists, and DiscoverAndLoadAsync's result is used
-// again further down (after app = builder.Build()), so both are declared here and assigned
-// inside the throwaway-provider scope below.
-ApiExtensionRegistry extensionRegistry;
-List<IExtension> extensions;
-
-// Build exactly one throwaway provider for pre-Build() needs (previously this built three
-// separate ones — each a distinct set of singleton instances discarded seconds later, per
-// the ASP0000 warning) and reuse it for both the registry's own logger and any
-// per-extension configure-time logging below.
-using (ServiceProvider startupServices = builder.Services.BuildServiceProvider())
+// Extensions register their services before Build(), after the API's own so an extension can
+// replace a core registration on purpose. Until audit C-5 this built a throwaway service provider
+// (a second copy of every singleton, ASP0000) only to get a logger and hand extensions a provider;
+// the loader needs just a logger, and extensions get configuration instead of a provider.
+// The list is kept for MapEndpoints after Build().
+IReadOnlyList<LoadedApiExtension> extensions;
+using (ILoggerFactory extensionLoggerFactory = CreateBootstrapLoggerFactory(builder.Configuration))
 {
-    extensionRegistry = new ApiExtensionRegistry(
-        startupServices.GetRequiredService<ILogger<ApiExtensionRegistry>>(),
+    ApiExtensionLoader extensionLoader = new(
+        extensionLoggerFactory.CreateLogger<ApiExtensionLoader>(),
         builder.Configuration,
-        startupServices,
         builder.Environment.ContentRootPath);
-
-    extensions = await extensionRegistry.DiscoverAndLoadAsync();
-
-    // Configure services for each extension
-    foreach (var extension in extensions)
-    {
-        try
-        {
-            extension.ConfigureServices(builder.Services);
-        }
-        catch (Exception ex)
-        {
-            var startupLogger = startupServices.GetRequiredService<ILogger<Program>>();
-            startupLogger.LogError(ex, "Failed to configure services for extension: {ExtensionId}",
-                extension.GetManifest().Metadata.Id);
-        }
-    }
+    extensions = extensionLoader.ConfigureServices(extensionLoader.LoadAll(), builder.Services);
 }
-
-// Register the already-initialized instance itself (not the type) so that anything later
-// resolving ApiExtensionRegistry via DI gets this same discovered/loaded registry, not a
-// second, never-discovered instance the container would otherwise construct on first
-// injection.
-builder.Services.AddSingleton(extensionRegistry);
 
 string corsPolicyName = "DatasetEditorClient";
 string[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
@@ -323,52 +289,8 @@ app.UseAuthorization();
 // each endpoint's policy.
 app.UseRateLimiter();
 
-// Configure and initialize extensions
-var logger = app.Services.GetRequiredService<ILogger<Program>>();
-foreach (var extension in extensions)
-{
-    try
-    {
-        var extensionId = extension.GetManifest().Metadata.Id;
-        logger.LogInformation("Configuring extension: {ExtensionId}", extensionId);
-
-        // Configure app pipeline (API-only hook; client extensions don't implement it)
-        if (extension is DatasetStudio.Extensions.SDK.IApiExtension apiExtension)
-        {
-            apiExtension.ConfigureApp(app);
-        }
-
-        // Create extension context
-        var context = new ExtensionContextBuilder()
-            .WithManifest(extension.GetManifest())
-            .WithServices(app.Services)
-            .WithConfiguration(builder.Configuration.GetSection($"Extensions:{extensionId}"))
-            .WithLogger(app.Services.GetRequiredService<ILoggerFactory>()
-                .CreateLogger($"Extension.{extensionId}"))
-            .WithEnvironment(ExtensionEnvironment.Api)
-            .WithExtensionDirectory(extensionRegistry.GetExtension(extensionId)?.Directory ?? "")
-            .Build();
-
-        // Initialize extension
-        await extension.InitializeAsync(context);
-
-        // Validate extension
-        var isValid = await extension.ValidateAsync();
-        if (!isValid)
-        {
-            logger.LogWarning("Extension validation failed: {ExtensionId}", extensionId);
-        }
-        else
-        {
-            logger.LogInformation("Extension ready: {ExtensionId}", extensionId);
-        }
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Failed to initialize extension: {ExtensionId}",
-            extension.GetManifest().Metadata.Id);
-    }
-}
+// Each extension's endpoints go in an authenticated route group at /api/extensions/{id}.
+ApiExtensionLoader.MapEndpoints(app, extensions, app.Services.GetRequiredService<ILogger<Program>>());
 
 // Map all endpoints
 app.MapAuthEndpoints();
@@ -388,6 +310,15 @@ app.MapMethods(
 app.MapFallbackToFile("{*path:nonfile}", "index.html");
 
 app.Run();
+
+// A console logger for code that runs before Build(), when there is no DI container to resolve
+// one from. Callers dispose it once their startup step is done.
+static ILoggerFactory CreateBootstrapLoggerFactory(IConfiguration configuration) =>
+    LoggerFactory.Create(logging =>
+    {
+        logging.AddConfiguration(configuration.GetSection("Logging"));
+        logging.AddConsole();
+    });
 
 // Top-level statements compile into a `private` Program class by default, which
 // WebApplicationFactory<Program> (Microsoft.AspNetCore.Mvc.Testing) can't target from the

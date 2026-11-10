@@ -2,18 +2,12 @@
   "schemaVersion": 1,
   "metadata": {
     "id": "CoreViewer",
-    "name": "Core Dataset Viewer",
+    "name": "Core Viewer (reference extension)",
     "version": "1.0.0",
-    "description": "Basic dataset viewing capabilities including grid view, list view, and detail view",
+    "description": "Reference API extension. It loads, registers no services and maps no endpoints; copy it to start a new extension.",
     "author": "Dataset Studio Team",
-    "license": "MIT",
-    "tags": ["viewer", "grid", "list", "core"],
-    "categories": ["Viewing"]
+    "license": "MIT"
   },
-  "deploymentTarget": "Both",
-  "dependencies": {},
-  "requiredPermissions": [
-    "datasets.read",
-    "items.read"
-  ]
+  "deploymentTarget": "Api",
+  "dependencies": {}
 }

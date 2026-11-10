@@ -8,13 +8,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- WASM-safe abstractions only (no full ASP.NET shared framework) so the Blazor
-         WebAssembly client can reference this SDK. API-only hosting types live in
-         Extensions.SDK.Api. -->
-    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.14" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.14" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.14" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
+    <!-- IApiExtension hands extensions IServiceCollection, IConfiguration and IEndpointRouteBuilder,
+         which are ASP.NET Core shared-framework types. The SDK used to be split into a WASM-safe
+         half and an API half for client extensions, but nothing ever loaded a client extension,
+         so the split was removed with them (audit X-5). -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
 </Project>
