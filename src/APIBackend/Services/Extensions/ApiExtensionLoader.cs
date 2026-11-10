@@ -78,13 +78,28 @@ public sealed class ApiExtensionLoader
 
         _logger.LogInformation("Total API extensions to load: {Count}", manifests.Count);
 
+        // ExtensionManifest has reference equality, so two folders with the same id stay distinct keys.
+        Dictionary<ExtensionManifest, string> directories = manifests.ToDictionary(m => m.Manifest, m => m.Directory);
+        IReadOnlyList<ExtensionManifest> ordered = OrderByDependencies(manifests.Select(m => m.Manifest).ToList(), _logger);
+        _logger.LogInformation("Extension load order: {Order}", string.Join(" -> ", ordered.Select(m => m.Metadata.Id)));
+
         List<LoadedApiExtension> loaded = new();
-        foreach ((ExtensionManifest manifest, string directory) in ResolveDependencies(manifests))
+        HashSet<string> loadedIds = new(StringComparer.OrdinalIgnoreCase);
+        foreach (ExtensionManifest manifest in ordered)
         {
-            LoadedApiExtension? extension = LoadExtension(manifest, directory);
+            // Dependencies come first, so one that failed to load is already known here.
+            string? failedDependency = manifest.Dependencies.Keys.FirstOrDefault(dependency => !loadedIds.Contains(dependency));
+            if (failedDependency is not null)
+            {
+                _logger.LogError("Skipping extension {ExtensionId}: its dependency {Dependency} failed to load", manifest.Metadata.Id, failedDependency);
+                continue;
+            }
+
+            LoadedApiExtension? extension = LoadExtension(manifest, directories[manifest]);
             if (extension is not null)
             {
                 loaded.Add(extension);
+                loadedIds.Add(manifest.Metadata.Id);
             }
         }
 
@@ -181,72 +196,103 @@ public sealed class ApiExtensionLoader
     }
 
     /// <summary>
-    /// Resolves extension dependencies and returns them in load order.
-    /// Uses topological sort to ensure dependencies are loaded before dependents.
+    /// Orders manifests so every extension comes after the extensions it depends on, keeping
+    /// discovery order otherwise. Drops a duplicate id (the first one found wins), an extension
+    /// whose dependency is not in the list, and every extension in or behind a dependency cycle;
+    /// each drop is logged, none stops startup.
     /// </summary>
-    private List<(ExtensionManifest Manifest, string Directory)> ResolveDependencies(
-        List<(ExtensionManifest Manifest, string Directory)> manifests)
+    /// <remarks>
+    /// Audit X-4: the old Kahn's algorithm incremented the in-degree of each dependency instead of
+    /// each dependent, so it emitted dependents first. It also only warned about a missing
+    /// dependency and then loaded the dependent anyway, and threw on a cycle, which stopped the
+    /// API from starting.
+    /// </remarks>
+    /// <param name="manifests">Manifests in discovery order (built-in first, then community).</param>
+    /// <param name="logger">Where drops are reported.</param>
+    /// <returns>The manifests to load, in load order.</returns>
+    internal static IReadOnlyList<ExtensionManifest> OrderByDependencies(IReadOnlyList<ExtensionManifest> manifests, ILogger logger)
     {
-        // Build dependency graph
-        Dictionary<string, List<string>> graph = new();
-        Dictionary<string, (ExtensionManifest, string)> manifestMap = new();
-
-        foreach ((ExtensionManifest manifest, string directory) in manifests)
+        Dictionary<string, ExtensionManifest> byId = new(StringComparer.OrdinalIgnoreCase);
+        List<string> discoveryOrder = new();
+        foreach (ExtensionManifest manifest in manifests)
         {
-            graph[manifest.Metadata.Id] = manifest.Dependencies.Keys.ToList();
-            manifestMap[manifest.Metadata.Id] = (manifest, directory);
+            if (byId.TryAdd(manifest.Metadata.Id, manifest))
+            {
+                discoveryOrder.Add(manifest.Metadata.Id);
+            }
+            else
+            {
+                logger.LogError("Extension id {ExtensionId} is used by more than one extension folder; loading only the first one found", manifest.Metadata.Id);
+            }
         }
 
-        // Topological sort using Kahn's algorithm
-        Dictionary<string, int> inDegree = graph.Keys.ToDictionary(k => k, k => 0);
-
-        foreach (List<string> dependencies in graph.Values)
+        // Drop extensions whose dependencies are not installed or are disabled, repeating until
+        // nothing changes so a dependent of a dropped extension is dropped too.
+        bool dropped;
+        do
         {
-            foreach (string dep in dependencies)
+            dropped = false;
+            foreach (string id in discoveryOrder.Where(byId.ContainsKey).ToList())
             {
-                if (inDegree.ContainsKey(dep))
+                string? missing = byId[id].Dependencies.Keys.FirstOrDefault(dependency => !byId.ContainsKey(dependency));
+                if (missing is not null)
                 {
-                    inDegree[dep]++;
+                    logger.LogError("Skipping extension {ExtensionId}: it depends on {Dependency}, which is not installed, is disabled or was skipped", id, missing);
+                    byId.Remove(id);
+                    dropped = true;
                 }
-                else
+            }
+        }
+        while (dropped);
+
+        // Kahn's algorithm with edges dependency -> dependent: an extension is ready once all of
+        // its dependencies have been emitted.
+        Dictionary<string, int> unmetDependencies = new(StringComparer.OrdinalIgnoreCase);
+        Dictionary<string, List<string>> dependents = new(StringComparer.OrdinalIgnoreCase);
+        foreach ((string id, ExtensionManifest manifest) in byId)
+        {
+            List<string> dependencies = manifest.Dependencies.Keys.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            unmetDependencies[id] = dependencies.Count;
+            foreach (string dependency in dependencies)
+            {
+                if (!dependents.TryGetValue(dependency, out List<string>? list))
                 {
-                    _logger.LogWarning("Dependency {Dependency} not found", dep);
+                    list = new List<string>();
+                    dependents[dependency] = list;
+                }
+                list.Add(id);
+            }
+        }
+
+        Queue<string> ready = new(discoveryOrder.Where(id => byId.ContainsKey(id) && unmetDependencies[id] == 0));
+        List<ExtensionManifest> ordered = new();
+        while (ready.Count > 0)
+        {
+            string id = ready.Dequeue();
+            ordered.Add(byId[id]);
+            if (!dependents.TryGetValue(id, out List<string>? waiting))
+            {
+                continue;
+            }
+
+            // Dependents become ready in discovery order, so the result is deterministic.
+            foreach (string dependent in discoveryOrder.Where(waiting.Contains))
+            {
+                unmetDependencies[dependent]--;
+                if (unmetDependencies[dependent] == 0)
+                {
+                    ready.Enqueue(dependent);
                 }
             }
         }
 
-        Queue<string> queue = new(inDegree.Where(kv => kv.Value == 0).Select(kv => kv.Key));
-        List<string> sorted = new();
-
-        while (queue.Count > 0)
+        if (ordered.Count < byId.Count)
         {
-            string node = queue.Dequeue();
-            sorted.Add(node);
-
-            foreach (string dep in graph[node])
-            {
-                if (inDegree.ContainsKey(dep))
-                {
-                    inDegree[dep]--;
-                    if (inDegree[dep] == 0)
-                    {
-                        queue.Enqueue(dep);
-                    }
-                }
-            }
+            IEnumerable<string> stuck = discoveryOrder.Where(id => byId.ContainsKey(id) && !ordered.Contains(byId[id]));
+            logger.LogError("Skipping extensions with a circular dependency (or depending on one): {Extensions}", string.Join(", ", stuck));
         }
 
-        // Check for circular dependencies
-        if (sorted.Count != graph.Count)
-        {
-            List<string> missing = graph.Keys.Except(sorted).ToList();
-            _logger.LogError("Circular dependency detected in extensions: {Extensions}", string.Join(", ", missing));
-            throw new InvalidOperationException($"Circular dependency detected in extensions: {string.Join(", ", missing)}");
-        }
-
-        _logger.LogInformation("Extension load order: {Order}", string.Join(" → ", sorted));
-
-        return sorted.Select(id => manifestMap[id]).ToList();
+        return ordered;
     }
 
     /// <summary>

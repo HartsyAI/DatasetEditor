@@ -160,6 +160,28 @@ namespace DatasetStudio.Tests.APIBackend
             loaded.Should().ContainSingle(e => e.Manifest.Metadata.Id == SampleExtensionId);
         }
 
+        [Fact]
+        public void LoadAll_DependencyThatFailsToLoad_SkipsTheDependent()
+        {
+            // Audit X-4: dependents were loaded whether or not their dependency had loaded. "Base"
+            // has a manifest but no assembly, so it fails to load, and SampleExtension needs it.
+            string builtIn = Path.Combine(_scratchDirectory, "BuiltIn");
+            string sampleDirectory = Path.Combine(builtIn, SampleExtensionId);
+            CopyFixtureFlat(sampleDirectory);
+            File.WriteAllText(Path.Combine(sampleDirectory, "extension.manifest.json"), """
+                { "schemaVersion": 1, "metadata": { "id": "SampleExtension", "name": "S", "version": "1.0.0" },
+                  "deploymentTarget": "Api", "dependencies": { "Base": ">=1.0.0" } }
+                """);
+            Directory.CreateDirectory(Path.Combine(builtIn, "Base"));
+            File.WriteAllText(Path.Combine(builtIn, "Base", "extension.manifest.json"), """
+                { "schemaVersion": 1, "metadata": { "id": "Base", "name": "B", "version": "1.0.0" }, "deploymentTarget": "Api" }
+                """);
+
+            IReadOnlyList<LoadedApiExtension> loaded = CreateLoader(builtIn, AppContext.BaseDirectory).LoadAll();
+
+            loaded.Should().BeEmpty();
+        }
+
         /// <summary>
         /// Copies the fixture's manifest and build output into <paramref name="extensionDirectory"/>
         /// the way <c>dotnet publish -o</c> lays an extension out.

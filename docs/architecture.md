@@ -156,7 +156,9 @@ enforced.
 `Extensions:BuiltInPath` and `Extensions:CommunityPath` (defaults `../Extensions/BuiltIn` and
 `../Extensions/Community` relative to the API's content root), skips ids listed in
 `Extensions:DisabledExtensions`, loads each extension's assembly and creates its instance with
-the public parameterless constructor. It looks for `{Id}.Api.dll` in two layouts: flat next to
+the public parameterless constructor. Dependencies load before their dependents; an extension
+whose dependency is missing, disabled, in a cycle or failed to load is skipped, and when two
+folders use the same id the built-in one wins. It looks for `{Id}.Api.dll` in two layouts: flat next to
 the manifest (what `dotnet publish -o` produces; the Dockerfile does this for CoreViewer), or in
 the project's build output `{extension}/{Id}.Api/bin/{Configuration}/{tfm}/`, where `{tfm}` is the
 API's own target framework and the newest build wins. APIBackend has a build-order-only reference

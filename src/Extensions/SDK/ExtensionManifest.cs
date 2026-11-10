@@ -47,8 +47,9 @@ public class ExtensionManifest
     public required ExtensionDeploymentTarget DeploymentTarget { get; set; }
 
     /// <summary>
-    /// Ids of extensions this one needs, mapped to a version range. The version range is
-    /// recorded but not checked.
+    /// Ids of extensions this one needs, mapped to a version range. The API loads dependencies
+    /// before their dependents and skips an extension whose dependency is missing, disabled,
+    /// part of a cycle or failed to load. The version range is recorded but not checked.
     /// </summary>
     public Dictionary<string, string> Dependencies { get; set; } = new();
 
