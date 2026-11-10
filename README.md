@@ -472,9 +472,10 @@ Nav entry and page explicitly say "Coming soon". Needs a model-serving decision 
 
 ### 4.14 Extensions — Partial
 
-Manifest-discovered API plugins (`src/Extensions`). One built-in example (`CoreViewer`) with
-two placeholder endpoints and no auth. No client-side loading. See `docs/architecture.md` §6
-and audit X-1…X-4.
+Manifest-discovered API plugins (`src/Extensions`). An extension implements `IApiExtension`:
+it registers services before the host is built and maps endpoints into an authenticated route
+group at `/api/extensions/{id}`. The one built-in extension, `CoreViewer`, is a reference that
+registers and maps nothing. No client-side loading. See `docs/architecture.md` §6.
 
 ### 4.15 Production deployment — Working
 
@@ -491,7 +492,7 @@ via `docker-compose.prod.yml`; secrets via `.env`. See [docs/DEPLOYMENT.md](docs
 | `src/DTO` | net10.0 | Wire contracts shared by API and client |
 | `src/APIBackend` | net10.0 | Minimal API, EF Core 10/Npgsql, Parquet storage, ingestion, HF/S3 integration |
 | `src/ClientApp` | net10.0 | Blazor WASM UI (MudBlazor 7.8) |
-| `src/Extensions` | net10.0 | SDK, SDK.Api, built-in manifests |
+| `src/Extensions` | net10.0 | Extension SDK (manifest, `IApiExtension`) and the CoreViewer reference extension |
 
 All projects target net10.0 (audit C-4). Package versions are pinned, and each project keeps a committed `packages.lock.json` (audit C-9). Restore with `dotnet restore` and review the lock-file diff when you change a package.
 | `tests/` | — | `APIBackend.Tests` (xUnit, Testcontainers Postgres and S3Mock), `ClientApp.Tests` |

@@ -43,7 +43,7 @@
 | `DTO` | net10.0 | Shared contracts (`DatasetItemDto`, `PageResponse<T>`, …) |
 | `APIBackend` | net10.0 | API endpoints, EF/Postgres, Parquet storage, ingestion, HF integration |
 | `ClientApp` | net10.0 | Blazor WASM viewer, caching, state, JS interop |
-| `Extensions/SDK` (+ `SDK.Api`) | net10.0 | Extension contracts (client-safe + API-only) |
+| `Extensions/SDK` | net10.0 | Extension manifest model and the `IApiExtension` contract |
 
 ---
 
@@ -124,43 +124,45 @@ API → DatasetApiClient → DatasetCacheService → DatasetState.Items (sliding
 
 ## 6. Extensions
 
-Extensions are manifest-described plugins discovered at startup on the API. The contract is
-split across two assemblies so the WASM client could reference the client-safe half without
-pulling in ASP.NET hosting types: `IExtension` (`Extensions.SDK`) and
-`IApiExtension : IExtension` (`Extensions.SDK.Api`, adds `ConfigureApp(IApplicationBuilder)`).
-`BaseApiExtension` implements the boilerplate (`Context`/`Logger`/`Services`
-accessors, virtual `OnInitializeAsync`/`OnConfigureApp`/`OnValidateAsync` hooks) so a concrete
-extension only overrides what it needs.
+An extension is an API plugin: a folder with an `extension.manifest.json` and a compiled
+`{Id}.Api.dll` that implements `IApiExtension`. Plan item 6.3 cut the extension system down to
+three pieces that work; everything else it used to declare (client extensions, lifecycle and
+health hooks, endpoint descriptors, permission lists) was deleted (audit X-5).
 
-A manifest (`extension.manifest.json`, one per extension directory under
-`src/Extensions/BuiltIn/`) needs at minimum:
+**Manifest.** `ExtensionManifest` in `src/Extensions/SDK`:
 ```json
 {
   "schemaVersion": 1,
   "metadata": { "id": "MyExtension", "name": "My Extension", "version": "1.0.0" },
-  "deploymentTarget": "Api"
+  "deploymentTarget": "Api",
+  "dependencies": { "OtherExtension": ">=1.0.0" }
 }
 ```
-`deploymentTarget` is `Api` | `Client` | `Both`. `ApiExtensionRegistry` scans
-`Extensions:BuiltInPath` (defaults to `../Extensions/BuiltIn` relative to the API's content
-root) for these manifests, then looks for a matching `{Id}.Api.dll` next to each one — built by
-`dotnet publish`ing that extension's own `.Api.csproj` (see the `Dockerfile`'s extension-publish
-stage for the one real example: `CoreViewer.Api`).
+The id may contain letters, digits, `.`, `-` and `_` only, because it becomes a file name and a
+URL segment. `deploymentTarget` is `Api` | `Client` | `Both`; the API skips `Client`. Unknown
+fields are ignored, including `requiredPermissions` from older manifests, which was never
+enforced.
 
-**Real state as of Phase 7** (found by actually running the pipeline end-to-end for the first
-time, not assumed from the design): the only built-in extension is **CoreViewer**
-(`src/Extensions/BuiltIn/CoreViewer`); the manifest-only `Creator`/`Editor`/`AdvancedTools`/`AITools`
-folders and the unreachable `CoreViewer.Client` project were deleted (audit X-5). CoreViewer
-works only after fixing a lifecycle bug where
-`BaseApiExtension`'s `Logger` property threw before `InitializeAsync` ran, which is *before*
-`ConfigureServices`/`ConfigureApp` are called in the real startup order. Its two endpoints are
-explicitly reference/example code (hardcoded placeholder data, no permission checks) — see the
-class-level comment in `CoreViewerApiExtension.cs`; copy that file's shape for a real extension,
-not the endpoints' own bodies. There is currently **no client-side extension loading** — the prior `ClientExtensionRegistry` was deleted
-in Phase 7: it scanned the real filesystem (`Directory.Exists`/`File.Exists`), which doesn't work
-in a Blazor WebAssembly browser sandbox, and had zero call sites of its own. A working
-client-extension loader needs a different design (e.g. an HTTP-served manifest + dynamic WASM
-assembly loading), not built here.
+**Contract.** `IApiExtension` (same assembly) has two methods:
+- `ConfigureServices(IServiceCollection, IConfiguration)` runs before the host is built, after the
+  API's own registrations. There is no service provider at that point, by design: Program.cs no
+  longer builds a throwaway one (audit C-5).
+- `MapEndpoints(IEndpointRouteBuilder)` runs after the host is built. The builder is a route group
+  at `/api/extensions/{id}` (id in lower case) that already requires an authenticated user. The
+  group cannot check dataset permissions (`IDatasetPermissionService` lives in the API, not the
+  SDK), so an extension must not return or change dataset data.
+
+**Loader.** `ApiExtensionLoader` (`src/APIBackend/Services/Extensions`) scans
+`Extensions:BuiltInPath` and `Extensions:CommunityPath` (defaults `../Extensions/BuiltIn` and
+`../Extensions/Community` relative to the API's content root), skips ids listed in
+`Extensions:DisabledExtensions`, loads each extension's assembly and creates its instance with
+the public parameterless constructor. Any failure is logged and skips that extension; it never
+stops the API starting. Extensions are never unloaded.
+
+**CoreViewer** (`src/Extensions/BuiltIn/CoreViewer`) is the only built-in extension. It is a
+reference: it registers nothing and maps nothing. Its two old routes returned placeholder data
+without authentication and were removed. There is no client-side extension loading; a WASM
+loader would need a different design (an HTTP-served manifest plus dynamic assembly loading).
 
 ---
 
@@ -169,9 +171,9 @@ assembly loading), not built here.
 - **Filtering:** server-side on the items endpoint (README §4.11). Local text search is a
   substring scan, not an index; HuggingFace streaming supports search only; S3 has no filters.
 - **Full defect list and refactor sequencing:** `docs/refactor-audit.md`. UI target: `DESIGN.md`.
-- **Extensions:** the one built-in extension (CoreViewer) is a reference example; endpoint
-  auto-registration, permission enforcement for extension routes, and any client-side extension
-  loading are all still unbuilt. See §6 above for the real state.
+- **Extensions:** API-only, and the one built-in extension (CoreViewer) is a reference that does
+  nothing. Dataset permission checks for extension routes, sandboxing, signing and client-side
+  extension loading are not built. See §6 above.
 - **AI Tools:** nav entry and page both explicitly labeled "Coming soon" (Phase 7) rather than
   shipped as a placeholder that reads as broken — needs its own model-serving decision (local
   hosting vs. a third-party API) before it's buildable.

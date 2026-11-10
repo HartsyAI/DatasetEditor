@@ -31,7 +31,7 @@ RUN dotnet publish src/APIBackend/APIBackend.csproj \
     --self-contained false \
     -o /app/publish
 
-# Built-in extensions load via ApiExtensionRegistry scanning /Extensions/BuiltIn at runtime
+# Built-in extensions load via ApiExtensionLoader scanning /Extensions/BuiltIn at runtime
 # (one level above the API's own content root, /app) -- a directory APIBackend.csproj's own
 # publish never touches, since extensions are discovered out-of-band via
 # AssemblyLoadContext.LoadFromAssemblyPath, not referenced as a ProjectReference. Without this,
@@ -61,7 +61,7 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh && chown -R app:app /app
 
 # Extension manifests, copied individually (not the whole src/Extensions/BuiltIn tree) so no
-# .cs/.csproj source ships into the runtime image. ApiExtensionRegistry's default scan path is
+# .cs/.csproj source ships into the runtime image. ApiExtensionLoader's default scan path is
 # one level above its content root (/app here), i.e. /Extensions/BuiltIn -- see this file's
 # build-stage comment for why this step exists at all.
 COPY src/Extensions/BuiltIn/CoreViewer/extension.manifest.json /Extensions/BuiltIn/CoreViewer/extension.manifest.json

@@ -50,8 +50,8 @@
     <ProjectReference Include="..\Core\Core.csproj" />
     <ProjectReference Include="..\DTO\DTO.csproj" />
     <ProjectReference Include="..\ClientApp\ClientApp.csproj" />
-    <!-- API-side extension SDK (IApiExtension, BaseApiExtension) -->
-    <ProjectReference Include="..\Extensions\SDK.Api\Extensions.SDK.Api.csproj" />
+    <!-- Extension SDK (manifest model, IApiExtension) -->
+    <ProjectReference Include="..\Extensions\SDK\Extensions.SDK.csproj" />
   </ItemGroup>
 
   <ItemGroup>
