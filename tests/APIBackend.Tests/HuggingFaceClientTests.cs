@@ -120,6 +120,47 @@ namespace DatasetStudio.Tests.APIBackend
             File.Exists(destination).Should().BeFalse("a partial download must not be left behind");
         }
 
+        /// <summary>
+        /// Audit H-3: the repository was interpolated raw, so <c>?</c> or <c>#</c> in it turned the
+        /// rest into a query or fragment and requested a different URL.
+        /// </summary>
+        [Fact]
+        public async Task GetDatasetInfo_EscapesTheRepositoryButKeepsOwnerSlash()
+        {
+            StubHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
+            HuggingFaceClient client = new(new HttpClient(handler), NullLogger<HuggingFaceClient>.Instance);
+
+            await client.GetDatasetInfoAsync("org/my ds?x=1#y");
+
+            handler.Requests.Should().ContainSingle()
+                .Which.Should().Be("https://huggingface.co/api/datasets/org/my%20ds%3Fx%3D1%23y");
+        }
+
+        [Fact]
+        public async Task DownloadFile_EscapesTheRepository()
+        {
+            StubHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(new byte[10]) });
+            HuggingFaceClient client = new(new HttpClient(handler), NullLogger<HuggingFaceClient>.Instance);
+
+            await client.DownloadFileAsync("org/a#b", "data/f.csv", Path.Combine(_folder, "f.csv"));
+
+            handler.Requests.Should().ContainSingle()
+                .Which.Should().Be("https://huggingface.co/datasets/org/a%23b/resolve/main/data/f.csv");
+        }
+
+        /// <summary>A dot segment must not be collapsed into a different Hub path by URI normalisation.</summary>
+        [Fact]
+        public async Task GetDatasetInfo_DotSegmentRepository_StaysUnderTheDatasetsPath()
+        {
+            StubHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
+            HuggingFaceClient client = new(new HttpClient(handler), NullLogger<HuggingFaceClient>.Instance);
+
+            await client.GetDatasetInfoAsync("../../models/x");
+
+            handler.Requests.Should().ContainSingle()
+                .Which.Should().StartWith("https://huggingface.co/api/datasets/%2E%2E/%2E%2E/models/x");
+        }
+
         [Fact]
         public async Task DownloadFile_EscapesPathSegmentsButKeepsFolders()
         {
