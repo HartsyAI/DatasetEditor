@@ -472,9 +472,9 @@ Nav entry and page explicitly say "Coming soon". Needs a model-serving decision 
 
 ### 4.14 Extensions — Partial
 
-Manifest-discovered API plugins (`src/Extensions`). One real example (`CoreViewer`) with two
-placeholder endpoints and no auth; the other four manifests have no code. No client-side
-loading. See `docs/architecture.md` §6 and audit X-1…X-4.
+Manifest-discovered API plugins (`src/Extensions`). One built-in example (`CoreViewer`) with
+two placeholder endpoints and no auth. No client-side loading. See `docs/architecture.md` §6
+and audit X-1…X-4.
 
 ### 4.15 Production deployment — Working
 

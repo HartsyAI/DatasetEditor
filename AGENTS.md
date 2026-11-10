@@ -23,7 +23,7 @@ src/Core/          Domain models, parsers, shared business logic (net10.0; refer
 src/DTO/           Wire contracts shared by API and client (net10.0)
 src/APIBackend/    ASP.NET Core minimal API: Endpoints/, Services/, DataAccess/{PostgreSQL,Parquet}, Configuration/
 src/ClientApp/     Blazor WASM: Features/<Feature>/{Pages,Components,Services}, Shared/{Layout,Components,Services}, Services/{ApiClients,Caching,Interop,StateManagement}, wwwroot/
-src/Extensions/    SDK, SDK.Api and BuiltIn/* manifests (only CoreViewer has code; see README)
+src/Extensions/    SDK, SDK.Api and BuiltIn/CoreViewer (the only built-in extension; see README)
 tests/             APIBackend.Tests (xUnit + Testcontainers), ClientApp.Tests
 docs/              architecture.md, DEPLOYMENT.md, refactor-audit.md, verification/phase-N (historical run logs)
 docker-compose.yml, docker-compose.prod.yml, Dockerfile, Caddyfile, start.sh, stop.sh
@@ -161,8 +161,8 @@ Gotchas:
 
 Say so rather than building on them:
 
-- Extensions: five manifests, one working example (`CoreViewer`) with placeholder endpoints
-  and no auth; no client-side extension loading exists.
+- Extensions: one built-in example (`CoreViewer`) with placeholder endpoints and no auth; no
+  client-side extension loading exists.
 - AI Tools: nav entry and page are "Coming soon" placeholders.
 - i18n: there is none (the unused `wwwroot/translations` files were deleted in PR 2.6).
 - `Core.BusinessLogic` (parsers, layout/modality registries, `FilterService`, `SearchService`)

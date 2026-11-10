@@ -128,7 +128,7 @@ Extensions are manifest-described plugins discovered at startup on the API. The 
 split across two assemblies so the WASM client could reference the client-safe half without
 pulling in ASP.NET hosting types: `IExtension` (`Extensions.SDK`) and
 `IApiExtension : IExtension` (`Extensions.SDK.Api`, adds `ConfigureApp(IApplicationBuilder)`).
-`BaseApiExtension`/`BaseClientExtension` implement the boilerplate (`Context`/`Logger`/`Services`
+`BaseApiExtension` implements the boilerplate (`Context`/`Logger`/`Services`
 accessors, virtual `OnInitializeAsync`/`OnConfigureApp`/`OnValidateAsync` hooks) so a concrete
 extension only overrides what it needs.
 
@@ -148,23 +148,19 @@ root) for these manifests, then looks for a matching `{Id}.Api.dll` next to each
 stage for the one real example: `CoreViewer.Api`).
 
 **Real state as of Phase 7** (found by actually running the pipeline end-to-end for the first
-time, not assumed from the design): of the 5 built-in manifests
-(`src/Extensions/BuiltIn/{CoreViewer,Creator,Editor,AdvancedTools,AITools}`), only **CoreViewer**
-has both a real project and working code — and even that only after fixing a lifecycle bug where
+time, not assumed from the design): the only built-in extension is **CoreViewer**
+(`src/Extensions/BuiltIn/CoreViewer`); the manifest-only `Creator`/`Editor`/`AdvancedTools`/`AITools`
+folders and the unreachable `CoreViewer.Client` project were deleted (audit X-5). CoreViewer
+works only after fixing a lifecycle bug where
 `BaseApiExtension`'s `Logger` property threw before `InitializeAsync` ran, which is *before*
 `ConfigureServices`/`ConfigureApp` are called in the real startup order. Its two endpoints are
 explicitly reference/example code (hardcoded placeholder data, no permission checks) — see the
 class-level comment in `CoreViewerApiExtension.cs`; copy that file's shape for a real extension,
-not the endpoints' own bodies. `Creator` has empty stub `.Api`/`.Client` projects (build, but
-contain no `IExtension` implementation). `Editor`/`AdvancedTools`/`AITools` are manifest-only, no
-project at all. `ApiExtensionRegistry` handles all of this gracefully (logs "API assembly not
-found", doesn't crash), so this is an honest capability gap, not a runtime bug. There is
-currently **no client-side extension loading** — the prior `ClientExtensionRegistry` was deleted
+not the endpoints' own bodies. There is currently **no client-side extension loading** — the prior `ClientExtensionRegistry` was deleted
 in Phase 7: it scanned the real filesystem (`Directory.Exists`/`File.Exists`), which doesn't work
 in a Blazor WebAssembly browser sandbox, and had zero call sites of its own. A working
 client-extension loader needs a different design (e.g. an HTTP-served manifest + dynamic WASM
-assembly loading), not built here — `BaseClientExtension` and the `.Client` projects exist only
-as SDK surface/compile-checked scaffolding today.
+assembly loading), not built here.
 
 ---
 
@@ -173,7 +169,7 @@ as SDK surface/compile-checked scaffolding today.
 - **Filtering:** server-side on the items endpoint (README §4.11). Local text search is a
   substring scan, not an index; HuggingFace streaming supports search only; S3 has no filters.
 - **Full defect list and refactor sequencing:** `docs/refactor-audit.md`. UI target: `DESIGN.md`.
-- **Extensions:** only 1 of 5 built-in manifests (CoreViewer) has real, working code; endpoint
+- **Extensions:** the one built-in extension (CoreViewer) is a reference example; endpoint
   auto-registration, permission enforcement for extension routes, and any client-side extension
   loading are all still unbuilt. See §6 above for the real state.
 - **AI Tools:** nav entry and page both explicitly labeled "Coming soon" (Phase 7) rather than

@@ -108,25 +108,6 @@ public class ExtensionManifest
     public string? FileHash { get; set; }
 
     /// <summary>
-    /// Loads a manifest from the specified directory.
-    /// </summary>
-    /// <param name="directoryPath">Path to the extension directory containing extension.manifest.json</param>
-    /// <returns>Loaded manifest or null if manifest not found</returns>
-    public static ExtensionManifest? LoadFromDirectory(string directoryPath)
-    {
-        // TODO: Phase 3 - Implement manifest loading
-        // Steps:
-        // 1. Validate directory exists
-        // 2. Check for extension.manifest.json file
-        // 3. Read file contents
-        // 4. Parse JSON to manifest object
-        // 5. Validate manifest
-        // 6. Return populated ExtensionManifest instance
-
-        throw new NotImplementedException("TODO: Phase 3 - Implement manifest loading from directory");
-    }
-
-    /// <summary>
     /// Loads a manifest from a file path.
     /// </summary>
     /// <param name="filePath">Full path to the extension.manifest.json file</param>
@@ -345,54 +326,6 @@ public class ExtensionManifest
         var hashBytes = sha256.ComputeHash(stream);
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
-}
-
-/// <summary>
-/// Describes a capability provided by an extension.
-/// </summary>
-public class ExtensionCapabilityDescriptor
-{
-    // TODO: Phase 3 - Add capability descriptor properties
-    // Properties needed:
-    // - string Name (unique capability identifier)
-    // - string DisplayName
-    // - string Description
-    // - string Category
-    // - IReadOnlyList<string> Parameters
-    // - string Version
-    // - bool IsPublic
-}
-
-/// <summary>
-/// Validator for extension manifest files.
-/// </summary>
-public class ManifestValidator
-{
-    // TODO: Phase 3 - Implement manifest schema validation
-    // Methods needed:
-    // - bool ValidateSchema(string jsonContent)
-    // - IReadOnlyList<string> GetSchemaValidationErrors()
-    // - bool ValidateManifestStructure(ExtensionManifest manifest)
-    // - bool ValidateCapabilities(IReadOnlyList<ExtensionCapabilityDescriptor> capabilities)
-    // - bool ValidateDependencies(IReadOnlyDictionary<string, string> dependencies)
-
-    // TODO: Phase 3 - Add detailed error reporting
-    // Methods needed:
-    // - ManifestValidationResult Validate(ExtensionManifest manifest)
-    // Returns detailed error/warning information with line numbers and suggestions
-}
-
-/// <summary>
-/// Result of manifest validation with detailed information.
-/// </summary>
-public class ManifestValidationResult
-{
-    // TODO: Phase 3 - Add validation result properties
-    // Properties needed:
-    // - bool IsValid
-    // - IReadOnlyList<ManifestValidationError> Errors
-    // - IReadOnlyList<ManifestValidationWarning> Warnings
-    // - string SummaryMessage
 }
 
 /// <summary>

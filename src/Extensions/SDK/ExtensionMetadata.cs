@@ -120,36 +120,3 @@ public class ExtensionMetadata
         return errors;
     }
 }
-
-/// <summary>
-/// Represents version information for an extension.
-/// </summary>
-public class ExtensionVersion
-{
-    // TODO: Phase 3 - Implement semantic versioning
-    // Properties needed:
-    // - int Major
-    // - int Minor
-    // - int Patch
-    // - string PreRelease (beta, alpha, rc)
-    // - string Metadata (build info)
-
-    // Methods needed:
-    // - bool IsCompatibleWith(string coreVersion)
-    // - int CompareTo(ExtensionVersion other)
-    // - bool IsPrereleaseVersion
-    // - string ToString() (returns 1.2.3-beta+build)
-}
-
-/// <summary>
-/// Represents author/publisher information for an extension.
-/// </summary>
-public class ExtensionPublisher
-{
-    // TODO: Phase 3 - Add publisher information
-    // Properties needed:
-    // - string Name
-    // - string Email
-    // - string Website
-    // - string PublisherId (for verification)
-}
