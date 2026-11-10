@@ -290,6 +290,35 @@ namespace DatasetStudio.Tests.APIBackend
             (await shared.Content.ReadFromJsonAsync<DatasetShareDto>())!.Username.Should().Be("old@name");
         }
 
+        /// <summary>
+        /// PR 5.2 review: one account's username can equal another's email. Editing a share named
+        /// the account by that string, and the email lookup reached the other account. An edit now
+        /// names the account by id.
+        /// </summary>
+        [Fact]
+        public async Task Share_ByUserId_TargetsThatAccountEvenWhenItsNameIsAnotherAccountsEmail()
+        {
+            (HttpClient owner, _) = await SignUpAsync("sh-owner11");
+            DatasetDetailDto dataset = await CreatePrivateDatasetAsync(owner, "id-target");
+            Guid named = Guid.NewGuid();
+            Guid emailed = Guid.NewGuid();
+            using (IServiceScope scope = _factory.Services.CreateScope())
+            {
+                Core.Abstractions.Repositories.IUserRepository users =
+                    scope.ServiceProvider.GetRequiredService<Core.Abstractions.Repositories.IUserRepository>();
+                await users.CreateAsync(new UserDto { Id = named, Username = "pat@example.com", Email = "pat-real@example.com", PasswordHash = "x" });
+                await users.CreateAsync(new UserDto { Id = emailed, Username = "someone", Email = "pat@example.com", PasswordHash = "x" });
+            }
+
+            HttpResponseMessage shared = await ShareAsync(owner, dataset.Id,
+                new ShareDatasetRequest("pat@example.com", DatasetAccessLevel.Write) { UserId = named });
+
+            shared.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await shared.Content.ReadFromJsonAsync<DatasetShareDto>())!.UserId.Should().Be(named);
+            List<DatasetShareDto>? shares = await owner.GetFromJsonAsync<List<DatasetShareDto>>($"/api/datasets/{dataset.Id}/shares");
+            shares.Should().ContainSingle().Which.UserId.Should().Be(named);
+        }
+
         [Fact]
         public async Task Share_RejectsUnknownAccountsOwnerSelfAndPastDates()
         {

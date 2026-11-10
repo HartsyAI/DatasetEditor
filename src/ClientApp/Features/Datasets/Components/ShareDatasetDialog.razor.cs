@@ -37,6 +37,8 @@ public partial class ShareDatasetDialog : ComponentBase
     private string? _formError;
     private Guid? _revoking;
 
+    private readonly ShareFormState _form = new();
+
     private bool CanSubmit => !_isSaving && !string.IsNullOrWhiteSpace(_who);
 
     /// <summary>Loads the current shares.</summary>
@@ -66,9 +68,7 @@ public partial class ShareDatasetDialog : ComponentBase
         }
         _isSaving = true;
         _formError = null;
-        // The picker gives a local date; the share runs to the end of that day.
-        DateTime? expiresAt = _expiresOn?.Date.AddDays(1).ToUniversalTime();
-        ShareDatasetRequest request = new(_who.Trim(), _accessLevel, _canDelete, _canShare, expiresAt);
+        ShareDatasetRequest request = _form.ToRequest(_who, _accessLevel, _canDelete, _canShare, _expiresOn);
         try
         {
             (DatasetShareDto? share, string? error) = await Api.ShareDatasetAsync(DatasetId, request);
@@ -99,7 +99,7 @@ public partial class ShareDatasetDialog : ComponentBase
         _accessLevel = share.AccessLevel;
         _canDelete = share.CanDelete;
         _canShare = share.CanShare;
-        _expiresOn = share.ExpiresAt?.ToLocalTime().Date.AddDays(-1);
+        _expiresOn = _form.BeginEdit(share);
         _formError = null;
     }
 
@@ -155,6 +155,7 @@ public partial class ShareDatasetDialog : ComponentBase
         _canDelete = false;
         _canShare = false;
         _expiresOn = null;
+        _form.Clear();
     }
 
     private void Close() => Dialog.Close();

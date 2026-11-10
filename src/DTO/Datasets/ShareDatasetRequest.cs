@@ -14,4 +14,12 @@ public sealed record ShareDatasetRequest(
     DatasetAccessLevel AccessLevel = DatasetAccessLevel.Read,
     bool CanDelete = false,
     bool CanShare = false,
-    DateTime? ExpiresAt = null);
+    DateTime? ExpiresAt = null)
+{
+    /// <summary>
+    /// The account to share with, by id, when changing an existing share. Takes precedence over
+    /// <see cref="UsernameOrEmail"/>: a username can equal another account's email, so resolving
+    /// the name again could reach the wrong account.
+    /// </summary>
+    public Guid? UserId { get; init; }
+}

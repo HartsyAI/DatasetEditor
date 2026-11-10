@@ -86,7 +86,7 @@ internal static class DatasetShareEndpoints
         }
 
         string who = request.UsernameOrEmail?.Trim() ?? string.Empty;
-        if (who.Length == 0)
+        if (who.Length == 0 && request.UserId is null)
         {
             return Error("Enter the username or email of the account to share with.");
         }
@@ -99,10 +99,14 @@ internal static class DatasetShareEndpoints
             return Error("The end date has to be in the future.");
         }
 
-        // Like login: an '@' means an email first, but older usernames can contain '@' too.
-        UserDto? target = who.Contains('@')
-            ? await users.GetByEmailAsync(who, cancellationToken) ?? await users.GetByUsernameAsync(who, cancellationToken)
-            : await users.GetByUsernameAsync(who, cancellationToken);
+        // An edit names the account by id: a username can equal another account's email, so
+        // resolving the name again could reach the wrong account. Otherwise, like login, an '@'
+        // means an email first, but older usernames can contain '@' too.
+        UserDto? target = request.UserId is Guid targetId
+            ? await users.GetByIdAsync(targetId, cancellationToken)
+            : who.Contains('@')
+                ? await users.GetByEmailAsync(who, cancellationToken) ?? await users.GetByUsernameAsync(who, cancellationToken)
+                : await users.GetByUsernameAsync(who, cancellationToken);
         if (target is null || !target.IsActive)
         {
             return Results.Json(new { error = "No active account has that username or email." }, statusCode: StatusCodes.Status404NotFound);
