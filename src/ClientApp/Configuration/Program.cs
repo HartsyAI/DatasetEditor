@@ -112,7 +112,7 @@ builder.Services.AddScoped<ApiKeyState>();
 
 WebAssemblyHost host = builder.Build();
 
-// Routes Core.Utilities.Logging.Logs (used across ~25 ClientApp/Core call sites that predate
+// Routes Core.Utilities.Logging.Logs (107 ClientApp call sites in 24 files that predate
 // real DI-based logging) through WASM's built-in browser-console logging provider instead of
 // its Console.WriteLine fallback -- Console output doesn't reach the browser devtools console
 // in a WASM app the way it does in a normal .NET process. See Logs.cs for why this project
