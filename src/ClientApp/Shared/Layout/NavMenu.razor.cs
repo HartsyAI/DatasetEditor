@@ -24,11 +24,17 @@ public partial class NavMenu : IDisposable
 
     private IReadOnlyList<RecentDataset> _recentDatasets = Array.Empty<RecentDataset>();
     private string? _lastRecordedId;
+    private bool _registrationOpen = true;
 
-    /// <summary>Loads the stored recent list and starts following dataset changes.</summary>
+    /// <summary>
+    /// Loads the stored recent list, starts following dataset changes, and hides "Register" when
+    /// the server doesn't accept registrations (audit A-1).
+    /// </summary>
     protected override async Task OnInitializedAsync()
     {
         DatasetState.OnChange += HandleDatasetStateChanged;
+        DTO.Auth.AuthSettingsDto? settings = await AuthApiClient.GetSettingsAsync();
+        _registrationOpen = settings is not { AllowRegistration: false };
         try
         {
             _recentDatasets = await LocalStorage.GetItemAsync<List<RecentDataset>>(StorageKeys.RecentDatasets) ?? new List<RecentDataset>();

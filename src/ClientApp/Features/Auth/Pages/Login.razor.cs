@@ -24,6 +24,14 @@ public partial class Login : ComponentBase
     private string _password = string.Empty;
     private string? _errorMessage;
     private bool _isSubmitting;
+    private bool _registrationOpen = true;
+
+    /// <summary>Hides the "Register" link when the server doesn't accept registrations (audit A-1).</summary>
+    protected override async Task OnInitializedAsync()
+    {
+        DTO.Auth.AuthSettingsDto? settings = await AuthApiClient.GetSettingsAsync();
+        _registrationOpen = settings is not { AllowRegistration: false };
+    }
 
     private bool CanSubmit => !_isSubmitting && !string.IsNullOrWhiteSpace(_usernameOrEmail) && !string.IsNullOrWhiteSpace(_password);
 

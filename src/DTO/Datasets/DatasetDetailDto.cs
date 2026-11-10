@@ -24,6 +24,6 @@ public sealed record DatasetDetailDto
     public string Format { get; init; } = "Unknown";
     public string Modality { get; init; } = "Image";
     public long TotalSizeBytes { get; init; }
-    public bool IsPublic { get; init; } = true;
+    public bool IsPublic { get; init; }
     public Guid? CreatedByUserId { get; init; }
 }

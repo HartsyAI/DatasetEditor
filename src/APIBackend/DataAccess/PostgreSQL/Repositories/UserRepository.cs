@@ -33,11 +33,22 @@ public sealed class UserRepository : IUserRepository
             IsActive = user.IsActive,
             EmailVerified = user.EmailVerified,
             CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
+            UpdatedAt = DateTime.UtcNow,
+            SecurityStamp = string.IsNullOrEmpty(user.SecurityStamp) ? NewSecurityStamp() : user.SecurityStamp
         };
 
         _dbContext.Users.Add(entity);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException { SqlState: "23505" })
+        {
+            // The case-insensitive unique indexes on username and email: another registration
+            // with the same name got there first (audit A-4).
+            _dbContext.Entry(entity).State = EntityState.Detached;
+            throw new DuplicateUserException(ex);
+        }
 
         return entity.Id;
     }
@@ -97,6 +108,7 @@ public sealed class UserRepository : IUserRepository
         entity.IsActive = user.IsActive;
         entity.EmailVerified = user.EmailVerified;
         entity.LastLoginAt = user.LastLoginAt;
+        entity.SecurityStamp = user.SecurityStamp;
         entity.UpdatedAt = DateTime.UtcNow;
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -114,6 +126,10 @@ public sealed class UserRepository : IUserRepository
         EmailVerified = entity.EmailVerified,
         CreatedAt = entity.CreatedAt,
         LastLoginAt = entity.LastLoginAt,
-        UpdatedAt = entity.UpdatedAt
+        UpdatedAt = entity.UpdatedAt,
+        SecurityStamp = entity.SecurityStamp
     };
+
+    /// <summary>A fresh random security stamp.</summary>
+    public static string NewSecurityStamp() => Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16));
 }
