@@ -171,6 +171,11 @@ SDK with `Private="false" ExcludeAssets="runtime"`, as `CoreViewer.Api.csproj` d
 out of the extension's output. Any failure is logged and skips that extension; it never
 stops the API starting. Extensions are never unloaded.
 
+**Trust model (audit X-3).** An extension runs in the API process with the API's privileges and
+full access to `IServiceCollection`. Nothing is sandboxed or signature-checked; any
+`{Id}.Api.dll` placed in an extensions folder runs. Install only trusted extensions and keep the
+folders admin-writable (docs/DEPLOYMENT.md, "Extensions").
+
 **CoreViewer** (`src/Extensions/BuiltIn/CoreViewer`) is the only built-in extension. It is a
 reference: it registers nothing and maps nothing. Its two old routes returned placeholder data
 without authentication and were removed. There is no client-side extension loading; a WASM

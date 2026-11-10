@@ -140,7 +140,7 @@ refer to [docs/refactor-audit.md](docs/refactor-audit.md).
 | 4.11 | Filtering and search | Working (local); search only (HF streaming) |
 | 4.12 | Settings, theme, language | Partial (theme, viewer preferences, HuggingFace token; no i18n) |
 | 4.13 | AI tools | Placeholder |
-| 4.14 | Extensions | Partial (one example) |
+| 4.14 | Extensions | Working (API only; reference extension only) |
 | 4.15 | Production deployment | Working |
 
 ### 4.1 Accounts, sessions, roles — Working
@@ -470,12 +470,34 @@ browser keeps preferences per device without an account round-trip.
 
 Nav entry and page explicitly say "Coming soon". Needs a model-serving decision first.
 
-### 4.14 Extensions — Partial
+### 4.14 Extensions — Working (API only, reference extension only)
 
-Manifest-discovered API plugins (`src/Extensions`). An extension implements `IApiExtension`:
-it registers services before the host is built and maps endpoints into an authenticated route
-group at `/api/extensions/{id}`. The one built-in extension, `CoreViewer`, is a reference that
-registers and maps nothing. No client-side loading. See `docs/architecture.md` §6.
+**What.** Drop a compiled API plugin into an extensions folder and the API loads it at startup.
+The one built-in extension, `CoreViewer`, is a reference that registers and maps nothing.
+
+**How.** Each extension folder holds an `extension.manifest.json` (id, name, version,
+`deploymentTarget`, `dependencies`) and an `{Id}.Api.dll` implementing `IApiExtension`
+(`src/Extensions/SDK`). `ApiExtensionLoader` scans `Extensions:BuiltInPath` and
+`Extensions:CommunityPath`, orders extensions by dependency, and loads each into its own
+`AssemblyLoadContext` with a dependency resolver; the API's own assemblies always win. Before
+the host is built it calls `ConfigureServices(IServiceCollection, IConfiguration)`; after, it
+calls `MapEndpoints` with a route group at `/api/extensions/{id}` that requires a signed-in user.
+It finds both a flat `dotnet publish` copy (the Docker image) and the project's
+`bin/{Configuration}/{tfm}` output (`dotnet run`). Details: `docs/architecture.md` §6.
+
+**Why.** Plan item 6.3 cut the old scaffolding (client extensions, lifecycle and health hooks,
+manifest-only Creator/Editor/AdvancedTools/AITools) down to the three pieces that work: the
+manifest, `IApiExtension` and the loader (audit X-1…X-5, C-5).
+
+**Trust model.** An extension is fully trusted code: it runs in the API process with the API's
+privileges (database, dataset files, S3 credentials, cookie keys, every DI service). Nothing is
+sandboxed or signature-checked, and `requiredPermissions` in older manifests is ignored; it never
+restricted anything. Only install extensions you trust as much as the API itself, and keep the
+extensions folders writable by administrators only. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+**Gaps.** No client-side extension loading. Extension routes get no dataset permission check
+(`IDatasetPermissionService` is not in the SDK), so an extension must not serve dataset data.
+Dependency version ranges are recorded but not checked. Extensions are never unloaded.
 
 ### 4.15 Production deployment — Working
 
@@ -513,7 +535,7 @@ then environment variables (`ConnectionStrings__DatasetStudio`, `Cors__AllowedOr
 - `Ingestion:MaxDownloadBytes` — largest file HuggingFace download mode fetches (default 5 GB).
 - `Thumbnails:MaxCacheBytes|MaxSourceBytes|MaxSourcePixels|SweepEveryWrites` — thumbnail cache cap and original limits (defaults 2 GB, 64 MB, 100,000,000 px, 500).
 - `Ingestion:MaxConcurrentJobs|MaxQueuedJobs|MaxAttempts|PollInterval` — background import limits (defaults 2, 50, 3, `00:01:00`).
-- `Extensions:BuiltInPath|CommunityPath|DisabledExtensions`.
+- `Extensions:BuiltInPath|CommunityPath|DisabledExtensions` — extension folders (defaults `../Extensions/BuiltIn` and `../Extensions/Community` from the content root) and ids to skip. Anything in these folders runs with full privileges (§4.14).
 
 Client: `src/ClientApp/wwwroot/appsettings.json` (`DatasetApi:BaseAddress`, blank = same
 origin) with a Development overlay pointing at `http://localhost:5000`.

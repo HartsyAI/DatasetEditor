@@ -106,6 +106,26 @@ MinIO/R2/Backblaze), `AccessKey`, `SecretKey`, `ForcePathStyle`, and
 reach (see `S3StorageProfileConfig`'s own doc comment for why this isn't just "whatever bucket
 the request names").
 
+## Extensions (trust model)
+
+The API loads extensions from two folders next to `/app`: `/Extensions/BuiltIn` (baked into the
+image; only the CoreViewer reference extension, which does nothing) and `/Extensions/Community`
+(empty unless you mount one). To install an extension, mount a folder there with one subfolder
+per extension holding its `extension.manifest.json` and its `dotnet publish` output, for example
+`- ./extensions:/Extensions/Community:ro` under the `api` service, and restart the API. Set
+`Extensions__DisabledExtensions__0=<id>` to skip one without removing it.
+
+**An extension is fully trusted code.** Any `{Id}.Api.dll` the API finds in those folders runs
+inside the API process with the API's privileges: it can read and change the database, every
+dataset file, the S3 credentials and the cookie-signing keys, and it can register or replace any
+service. Nothing is sandboxed, assemblies are not signed or verified, and a manifest's
+`requiredPermissions` (from older manifests) is ignored; it never restricted anything. Only
+install extensions whose source you have read or whose author you trust as much as this API, and
+keep the extensions folder writable by administrators only (mount it read-only as above).
+
+Extension routes live under `/api/extensions/{id}` and require a signed-in user, but they get no
+dataset permission check, so any signed-in user can call them.
+
 ## Known landmines (found during Phase 6's own real-run verification)
 
 - **`Directory.Build.props` must be in the Docker build context.** It supplies
