@@ -48,6 +48,13 @@ public class DatasetState
     /// </summary>
     public int ResultSetVersion { get; private set; }
 
+    /// <summary>
+    /// Bumped each time <see cref="UpdateItem"/> replaces a loaded item. The grid re-renders only
+    /// when the item count or result set changes, so without this an edited card kept showing its
+    /// old values (and handed its old copy, with the old version, to the detail panel).
+    /// </summary>
+    public int ItemEditVersion { get; private set; }
+
     /// <summary>Loads a new dataset and its items, replacing any existing dataset.</summary>
     /// <param name="dataset">Dataset metadata to load.</param>
     /// <param name="items">List of dataset items.</param>
@@ -104,9 +111,14 @@ public class DatasetState
     
     /// <summary>Selects a single item for detail view, replacing any previous selection.</summary>
     /// <param name="item">Item to select.</param>
+    /// <remarks>
+    /// Takes the loaded copy with the same id when there is one. A card can hand over the copy it
+    /// was last rendered with, from before an edit; the panel then showed the old values, and its
+    /// next edit sent the old version and was refused as stale (audit E-4).
+    /// </remarks>
     public void SelectItem(DatasetItemDto item)
     {
-        SelectedItem = item;
+        SelectedItem = Items.FirstOrDefault(i => i.Id == item.Id) ?? item;
         NotifyStateChanged();
         Logs.Info($"Item selected: {item.Id}");
     }
@@ -160,6 +172,7 @@ public class DatasetState
             {
                 SelectedItem = item;
             }
+            ItemEditVersion++;
             NotifyStateChanged();
             Logs.Info($"Item updated: {item.Id}");
         }

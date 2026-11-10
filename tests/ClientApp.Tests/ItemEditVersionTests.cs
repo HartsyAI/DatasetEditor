@@ -143,6 +143,27 @@ namespace DatasetStudio.Tests.ClientApp
             Assert.Equal(new[] { "t" }, sent.CurrentTags![a.Id]);
         }
 
+        /// <summary>
+        /// Found in the browser check: a card hands over the copy it was rendered with, so after an
+        /// edit the detail panel showed the old values and its next edit sent the old version (412).
+        /// Selecting takes the loaded copy, and an edit tells the grid to re-render.
+        /// </summary>
+        [Fact]
+        public void SelectingAStaleCopy_SelectsTheEditedItem()
+        {
+            DatasetItemDto loaded = new() { Id = Guid.NewGuid(), Title = "before", Version = "0" };
+            DatasetState state = new();
+            state.LoadDataset(new Dataset { Id = "ds", Name = "test" }, new List<DatasetItemDto> { loaded });
+            int editsBefore = state.ItemEditVersion;
+
+            state.UpdateItem(loaded with { Title = "after", Version = "1" });
+            state.SelectItem(loaded);
+
+            Assert.Equal("after", state.SelectedItem!.Title);
+            Assert.Equal("1", state.SelectedItem.Version);
+            Assert.NotEqual(editsBefore, state.ItemEditVersion);
+        }
+
         [Fact]
         public void BulkSummary_WithNothingSkipped_IsJustTheCount()
         {
