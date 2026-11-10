@@ -148,17 +148,33 @@ namespace DatasetStudio.Tests.APIBackend
                 .Which.Should().Be("https://huggingface.co/datasets/org/a%23b/resolve/main/data/f.csv");
         }
 
-        /// <summary>A dot segment must not be collapsed into a different Hub path by URI normalisation.</summary>
+        /// <summary>
+        /// A dot segment would be collapsed by URI normalisation into a different Hub path (the
+        /// unescaped "../../models/x" requested /models/x), even percent-encoded, so it is refused
+        /// and nothing is requested.
+        /// </summary>
         [Fact]
-        public async Task GetDatasetInfo_DotSegmentRepository_StaysUnderTheDatasetsPath()
+        public async Task GetDatasetInfo_DotSegmentRepository_IsRefusedWithoutARequest()
         {
             StubHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
             HuggingFaceClient client = new(new HttpClient(handler), NullLogger<HuggingFaceClient>.Instance);
 
-            await client.GetDatasetInfoAsync("../../models/x");
+            HuggingFaceDatasetInfo? info = await client.GetDatasetInfoAsync("../../models/x");
 
-            handler.Requests.Should().ContainSingle()
-                .Which.Should().StartWith("https://huggingface.co/api/datasets/%2E%2E/%2E%2E/models/x");
+            info.Should().BeNull();
+            handler.Requests.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task DownloadFile_DotSegmentInFileName_IsRefusedWithoutARequest()
+        {
+            StubHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(new byte[10]) });
+            HuggingFaceClient client = new(new HttpClient(handler), NullLogger<HuggingFaceClient>.Instance);
+
+            Func<Task> act = () => client.DownloadFileAsync("org/ds", "../../../models/x/file.bin", Path.Combine(_folder, "f.bin"));
+
+            await act.Should().ThrowAsync<ArgumentException>();
+            handler.Requests.Should().BeEmpty();
         }
 
         [Fact]

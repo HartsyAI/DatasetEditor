@@ -194,8 +194,8 @@ internal sealed class HuggingFaceClient : IHuggingFaceClient
     /// Escapes each <c>/</c>-separated segment of a repository id (<c>owner/name</c>) or file path
     /// and keeps the slashes. The repository used to be interpolated raw, so a value containing
     /// <c>?</c>, <c>#</c> or <c>%</c> changed which URL was requested (audit H-3). A <c>.</c> or
-    /// <c>..</c> segment is escaped too, so it can't be collapsed into a different path by URI
-    /// normalisation.
+    /// <c>..</c> segment is refused: System.Uri collapses it, even percent-encoded, into a
+    /// different Hub path (<c>../../models/x</c> requested <c>/models/x</c>).
     /// </summary>
     internal static string EscapePath(string path)
     {
@@ -204,13 +204,11 @@ internal sealed class HuggingFaceClient : IHuggingFaceClient
 
     private static string EscapeSegment(string segment)
     {
-        // EscapeDataString leaves dots alone, and System.Uri removes "." and ".." segments.
-        return segment switch
+        if (segment is "." or "..")
         {
-            "." => "%2E",
-            ".." => "%2E%2E",
-            _ => Uri.EscapeDataString(segment),
-        };
+            throw new ArgumentException($"'{segment}' is not allowed as a path segment in a HuggingFace repository or file path.");
+        }
+        return Uri.EscapeDataString(segment);
     }
 
     /// <summary>Most tree pages followed for one repository (the Hub returns 1,000 entries per page).</summary>
