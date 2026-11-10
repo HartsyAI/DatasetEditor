@@ -18,6 +18,7 @@ using DatasetStudio.Tests.APIBackend.Fixtures;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SkiaSharp;
 using Xunit;
 
@@ -43,6 +44,7 @@ namespace DatasetStudio.Tests.APIBackend
         private DatasetStudioApiFactory _factory = default!;
         private HttpClient _client = default!;
         private AmazonS3Client _s3SeedClient = default!;
+        private readonly CapturingLoggerProvider _logs = new();
 
         public S3EndpointsTests(PostgresContainerFixture postgres, S3ContainerFixture s3)
         {
@@ -68,6 +70,7 @@ namespace DatasetStudio.Tests.APIBackend
                     AllowedBuckets = new() { Bucket },
                 };
                 services.AddSingleton<IS3StorageProfileResolver>(new S3StorageProfileResolver(new[] { profile }));
+                services.AddSingleton<ILoggerProvider>(_logs);
             };
 
             await _factory.InitializeDatabaseAsync();
@@ -206,6 +209,43 @@ namespace DatasetStudio.Tests.APIBackend
             page.Items.Should().OnlyContain(i => i.ImageUrl != null && i.ImageUrl.Contains("/s3-file?key="));
         }
 
+        /// <summary>
+        /// Audit S-3: a prefix stored without a trailing slash used to be listed as a raw string
+        /// prefix, so <c>sib-x</c> also listed <c>sib-xEXTRA/…</c>, keys GetS3File then refused.
+        /// The listing treats the prefix as a folder, like the key check does.
+        /// </summary>
+        [Fact]
+        public async Task GetDatasetItems_S3PrefixWithoutTrailingSlash_DoesNotListSiblingPrefixes()
+        {
+            string prefix = $"sib-{Guid.NewGuid():N}";
+            await PutObjectAsync($"{prefix}/mine.png", MakeTestPng(5, 5, SKColors.Red));
+            await PutObjectAsync($"{prefix}EXTRA/theirs.png", MakeTestPng(5, 5, SKColors.Blue));
+
+            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+
+            HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{dataset.Id}/items?pageSize=100");
+            PageResponse<DatasetItemDto>? page = await response.Content.ReadFromJsonAsync<PageResponse<DatasetItemDto>>();
+
+            page!.Items.Select(i => i.ExternalId).Should().Equal($"{prefix}/mine.png");
+        }
+
+        /// <summary>Audit S-3: an object whose name merely contains ".." is served, not refused.</summary>
+        [Fact]
+        public async Task GetS3File_KeyWithDoubleDotInName_IsServed()
+        {
+            string prefix = $"dots-{Guid.NewGuid():N}/";
+            byte[] original = MakeTestPng(8, 8, SKColors.Purple);
+            await PutObjectAsync($"{prefix}photo..final.png", original);
+
+            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+
+            HttpResponseMessage response = await _client.GetAsync(
+                $"/api/datasets/{dataset.Id}/s3-file?key={Uri.EscapeDataString($"{prefix}photo..final.png")}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await response.Content.ReadAsByteArrayAsync()).Should().Equal(original);
+        }
+
         [Fact]
         public async Task GetDatasetItems_S3Dataset_PaginatesViaContinuationTokenNotNumericOffset()
         {
@@ -279,6 +319,27 @@ namespace DatasetStudio.Tests.APIBackend
                 $"/api/datasets/{dataset.Id}/s3-file?key={Uri.EscapeDataString("outside-prefix/secret.png")}");
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            // Audit F-4: the refusal is a security event and must be logged, not just 404'd.
+            _logs.WarningsContaining(dataset.Id.ToString(), "outside-prefix/secret.png").Should().NotBeEmpty();
+        }
+
+        /// <summary>
+        /// Audit F-1, applied to S3 as well: a non-image object inside the dataset's own prefix (a
+        /// manifest, a credentials file) is not served, even though the key check passes.
+        /// </summary>
+        [Fact]
+        public async Task GetS3File_NonImageKeyInsidePrefix_ReturnsNotFound()
+        {
+            string prefix = $"nonimage-{Guid.NewGuid():N}/";
+            await PutObjectAsync($"{prefix}.env", System.Text.Encoding.UTF8.GetBytes("SECRET=1"));
+
+            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+
+            HttpResponseMessage response = await _client.GetAsync(
+                $"/api/datasets/{dataset.Id}/s3-file?key={Uri.EscapeDataString($"{prefix}.env")}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            _logs.WarningsContaining(dataset.Id.ToString(), $"{prefix}.env").Should().NotBeEmpty();
         }
 
         [Fact]
@@ -308,6 +369,28 @@ namespace DatasetStudio.Tests.APIBackend
                 $"/api/datasets/{dataset.Id}/s3-file?key={Uri.EscapeDataString("images/does-not-exist.png")}");
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        /// <summary>
+        /// Audit S-4: a failed listing used to be swallowed into an empty 200 page with no log, so a
+        /// broken bucket looked like an empty dataset. It is logged and reported as 502.
+        /// </summary>
+        [Fact]
+        public async Task GetDatasetItems_S3ListingFails_Returns502AndLogs()
+        {
+            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: "images/");
+            using (IServiceScope scope = _factory.Services.CreateScope())
+            {
+                DatasetStudioDbContext db = scope.ServiceProvider.GetRequiredService<DatasetStudioDbContext>();
+                DatasetEntity entity = await db.Datasets.AsTracking().FirstAsync(d => d.Id == dataset.Id);
+                entity.S3Bucket = $"no-such-bucket-{Guid.NewGuid():N}"[..30];
+                await db.SaveChangesAsync();
+            }
+
+            HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{dataset.Id}/items?pageSize=10");
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+            _logs.WarningsContaining(dataset.Id.ToString()).Should().NotBeEmpty();
         }
     }
 }

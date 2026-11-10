@@ -287,7 +287,8 @@ viewer pages rows straight from the HuggingFace datasets-server with real thumbn
 is downloaded. Gated repos work with a personal access token (sent per request, stored only in
 the browser).
 
-**How.** `POST /api/datasets/huggingface/discover` → `HuggingFaceDiscoveryService` (Hub
+**How.** `POST /api/datasets/huggingface/discover` (signed-in users only, rate limited by
+`RateLimiting:HuggingFaceDiscoverPermitsPerMinute`, 10 a minute) → `HuggingFaceDiscoveryService` (Hub
 `/api/datasets/{repo}` + datasets-server `/size`, `/rows` probe fallback). Import stores
 repo/config/split on the dataset and marks it Completed. `GetDatasetItems` maps
 `/rows?offset=&length=` responses to `DatasetItemDto` (image URL sniffed from common column
@@ -307,8 +308,10 @@ count from `num_rows_total` when they differ. `/size` reports the selected split
 the sum over all splits. Upstream failures return `403` for an auth refusal (401/403) and
 `502` for anything else, with the reason in `error`; they are no longer an empty `200`.
 
-**Gaps.** Thumbnails fetched with one user's token are cached for everyone who can read the
-dataset (H-5).
+Cached rows and thumbnails are keyed by the caller's access scope (a SHA-256 prefix of their
+token, or anonymous), so an image fetched with one user's token for a gated repository is never
+served from the cache to someone without that token (H-5). A user with a token therefore doesn't
+share cache entries with anonymous viewers, even for a public repository.
 
 ### 4.5 HuggingFace download/import — Partial
 
@@ -333,33 +336,56 @@ and the API proxies images and thumbnails. Works with AWS S3, MinIO, R2, Backbla
 
 **How.** `Services/Storage/{S3StorageProfileResolver,S3StorageService,S3KeySafety}.cs`;
 `DatasetEndpoints.ImportFromS3/GetS3File`; items page = `ListObjectsV2` with the continuation
-token as cursor, filtered to image extensions.
+token as cursor, filtered to image extensions. The dataset prefix is treated as a folder: it is
+listed with a trailing `/` (so `images` doesn't also list `images-other/…`), and `S3KeySafety`
+accepts a key only under that folder and without a `.` or `..` path segment (a name such as
+`photo..final.jpg` is fine).
 
 **Why.** Proxying rather than presigned URLs makes the dataset permission check and the
 thumbnail cache the single enforcement point. Bucket allow-lists exist because registration
 is open.
 
-**Gaps.** A public S3 dataset is an anonymous, unmetered egress proxy for the bucket (S-1);
-thumbnail generation buffers whole objects (S-2); list failures are swallowed silently (S-4).
+A failed listing is logged and answered `502` (it used to be an empty page). A profile's
+`ForcePathStyle` defaults to path style when `ServiceUrl` is set (MinIO, R2, Backblaze) and to
+virtual-hosted style for real AWS S3; set it explicitly to override.
+
+Egress is bounded (S-1): `GetS3File` does not proxy an original larger than
+`Storage:S3MaxServeBytes` (64 MB; answered 404 and logged, its `?w=` thumbnail is still served),
+and the route is rate limited per caller (`RateLimiting:S3FilePermitsPerMinute`, 600 a minute per
+signed-in user or client IP; over it, `429` with `Retry-After`). Range requests are not supported.
+
+**Gaps.** Behind a reverse proxy, anonymous callers share the proxy's address for the rate limit
+unless forwarded headers are honoured (see docs/DEPLOYMENT.md). No presigned URLs or range
+requests.
 
 ### 4.7 Server folder import — Working, admin-only
 
 **What.** Point a dataset at a directory already on the server; images are catalogued in
 place and served from there.
 
-**How.** `POST /{id}/import-folder` (`RequireRole("Admin")`) → `IngestFromFolderAsync`:
+**How.** `POST /{id}/import-folder` (`RequireRole("Admin")`) checks the folder against
+`Storage:FolderImportRoots` (by real path, so a symlink inside a root can't lead out of it; empty,
+the default, means folder import is refused with a 400 saying so) → `IngestFromFolderAsync`:
 `Directory.EnumerateFiles` lazily, items get `/api/datasets/{id}/files/{relative}` URLs,
 `StoragePath` is set so `ServeDatasetFile` serves from the folder with containment checks.
+Containment compares real paths with every symlink in the path resolved (`RealPath`), so a
+symlinked directory inside the folder can't reach outside it, while a folder that is itself
+reached through a symlink still works. `ServeDatasetFile` (and `GetS3File`) serve only image files (`.jpg`, `.jpeg`, `.png`, `.webp`,
+`.gif`, `.bmp`, see `ServableImageTypes`); any other file is answered 404. Refusals (wrong type,
+path or symlink outside the folder, S3 key outside the prefix) are logged as warnings with the
+dataset id and requested path.
 
-**Why.** Admin-only because it reads arbitrary server paths; copying was rejected because
-"point at a folder" is the whole point for huge local collections.
+**Why.** Admin-only because it reads server paths, and limited to configured roots so even an
+admin can't point a dataset at `/etc` or the session key ring (F-1); copying was rejected because
+"point at a folder" is the whole point for huge local collections. Refusing by default (rather than
+defaulting to a data directory) is deliberate: `./data` also holds the DataProtection keys.
 
 The dataset's `SourceType` becomes `LocalFolder`; each item's width and height are read from
 the image header; item metadata holds only the path relative to the folder. TIFF files are
 skipped: nothing else in the app serves or thumbnails them as images.
 
-**Gaps.** No path allow-list and `ServeDatasetFile` has no extension allow-list, so an admin
-can expose non-image files (F-1); directory symlinks escape containment (F-2).
+**Gaps.** Datasets imported before the root allow-list existed keep serving from wherever they
+point (images only).
 
 ### 4.8 Thumbnails — Working
 

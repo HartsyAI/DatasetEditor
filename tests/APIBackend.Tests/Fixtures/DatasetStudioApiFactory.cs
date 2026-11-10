@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
@@ -70,9 +72,34 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
         /// </summary>
         public Action<IServiceCollection>? ConfigureTestServices { get; set; }
 
+        /// <summary>
+        /// Server folders this host may import from (Storage:FolderImportRoots). Defaults to the
+        /// shared test temp tree, where the folder-import tests create their source folders; set
+        /// it to an empty array to test the "folder import disabled" default. Same timing
+        /// constraint as <see cref="ConfigureTestServices"/>.
+        /// </summary>
+        public string[] FolderImportRoots { get; set; } = { Path.Combine(Path.GetTempPath(), "DatasetStudioTests") };
+
+        /// <summary>
+        /// Extra configuration values for settings the API reads after startup (per request or
+        /// when a service is first resolved), e.g. <c>RateLimiting:S3FilePermitsPerMinute</c>.
+        /// Added after every other source, so they win. Same timing constraint as
+        /// <see cref="ConfigureTestServices"/>.
+        /// </summary>
+        public Dictionary<string, string?> ConfigOverrides { get; } = new();
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             base.ConfigureWebHost(builder);
+            builder.ConfigureAppConfiguration((_, configurationBuilder) =>
+            {
+                Dictionary<string, string?> values = new(ConfigOverrides);
+                for (int i = 0; i < FolderImportRoots.Length; i++)
+                {
+                    values[$"Storage:FolderImportRoots:{i}"] = FolderImportRoots[i];
+                }
+                configurationBuilder.AddInMemoryCollection(values);
+            });
 
             // Test classes register and log in many users from one (in-process) client address,
             // which the production per-IP limits would reject. Registered before the test's own

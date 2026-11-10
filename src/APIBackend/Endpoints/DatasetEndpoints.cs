@@ -28,10 +28,16 @@ internal static class DatasetEndpoints
     {
         RouteGroupBuilder group = app.MapGroup("/api/datasets").WithTags("Datasets");
 
+        // Signed-in and rate limited: each call makes several upstream Hub requests (with any
+        // token the caller supplies) on long timeouts, and was anonymous and unthrottled (audit
+        // H-2). Discovery only ever precedes creating a dataset, which needs an account anyway.
         group.MapPost("/huggingface/discover", DiscoverHuggingFaceDataset)
             .WithName("DiscoverHuggingFaceDataset")
             .Produces<HuggingFaceDiscoveryResponse>()
-            .Produces(StatusCodes.Status400BadRequest);
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status429TooManyRequests)
+            .RequireAuthorization()
+            .RequireRateLimiting(Configuration.RateLimitPolicies.HuggingFaceDiscover);
 
         // Anonymous-reachable, but each handler below scopes its own results/checks to what
         // the caller may actually see (IDatasetPermissionService / DatasetVisibilityFilter) --
@@ -111,10 +117,13 @@ internal static class DatasetEndpoints
             .Produces(StatusCodes.Status400BadRequest)
             .RequireAuthorization();
 
+        // Rate limited per caller: every request spends the server's S3 egress (audit S-1).
         group.MapGet("/{datasetId:guid}/s3-file", GetS3File)
             .WithName("GetS3File")
             .Produces<FileStreamResult>(StatusCodes.Status200OK, "image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp")
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status429TooManyRequests)
+            .RequireRateLimiting(Configuration.RateLimitPolicies.S3File);
     }
 
     /// <summary>Gets all datasets with pagination, scoped to what the caller may see.</summary>
@@ -402,6 +411,7 @@ internal static class DatasetEndpoints
         Services.Storage.IS3StorageService s3StorageService,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
+        ILogger<Program> logger,
         CancellationToken cancellationToken)
     {
         DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
@@ -431,7 +441,7 @@ internal static class DatasetEndpoints
             {
                 return Results.BadRequest(new { error = "Filters aren't available for S3 datasets." });
             }
-            return await GetS3DatasetItemsPage(datasetId, dataset, cursor, size, s3StorageService, cancellationToken);
+            return await GetS3DatasetItemsPage(datasetId, dataset, cursor, size, s3StorageService, logger, cancellationToken);
         }
 
         // Handle HuggingFace streaming datasets
@@ -624,6 +634,7 @@ internal static class DatasetEndpoints
         string? cursor,
         int size,
         Services.Storage.IS3StorageService s3StorageService,
+        ILogger logger,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(dataset.S3StorageProfileName) || string.IsNullOrWhiteSpace(dataset.S3Bucket))
@@ -632,28 +643,34 @@ internal static class DatasetEndpoints
         }
 
         // S3's ListObjectsV2 pages via an opaque continuation token, not a numeric offset like
-        // HF's -- the cursor is passed through as-is, never parsed.
+        // HF's -- the cursor is passed through as-is, never parsed. The prefix is listed as a
+        // folder: a bare "images" also matched "images-other/…", keys GetS3File refuses (audit S-3).
         Services.Storage.S3ListPage page;
         try
         {
             page = await s3StorageService.ListObjectsAsync(
-                dataset.S3StorageProfileName, dataset.S3Bucket, dataset.S3Prefix, cursor, size, cancellationToken);
+                dataset.S3StorageProfileName, dataset.S3Bucket, Services.Storage.S3KeySafety.NormalizeFolderPrefix(dataset.S3Prefix),
+                cursor, size, cancellationToken);
         }
-        catch (Exception)
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
-            return Results.Ok(new PageResponse<DatasetItemDto>
-            {
-                Items = Array.Empty<DatasetItemDto>(),
-                NextCursor = null,
-                TotalCount = 0
-            });
+            // This used to answer an empty 200 page with no log, so a broken profile or bucket
+            // looked exactly like an empty dataset (audit S-4). Same 502 shape as an HF failure;
+            // the SDK's message stays in the log, since anonymous readers of a public dataset get
+            // this response too.
+            logger.LogWarning(ex,
+                "Listing S3 objects failed for dataset {DatasetId} (profile {Profile}, bucket {Bucket})",
+                datasetId, dataset.S3StorageProfileName, dataset.S3Bucket);
+            return Results.Json(
+                new { error = $"Could not list the dataset's S3 bucket '{dataset.S3Bucket}'. The server log has the cause." },
+                statusCode: StatusCodes.Status502BadGateway);
         }
 
         List<DatasetItemDto> items = new(page.Keys.Count);
         DateTime now = DateTime.UtcNow;
         foreach (string key in page.Keys)
         {
-            if (!HasImageExtension(key))
+            if (!Services.Storage.ServableImageTypes.TryGetContentType(key, out _))
             {
                 continue;
             }
@@ -679,18 +696,6 @@ internal static class DatasetEndpoints
             NextCursor = page.NextContinuationToken,
             TotalCount = null
         });
-    }
-
-    /// <summary>File-extension check for a raw S3 key (IsLikelyImageUrl expects a URL-shaped string with "http" in it, which a bare key never has).</summary>
-    private static bool HasImageExtension(string key)
-    {
-        string lower = key.ToLowerInvariant();
-        return lower.EndsWith(".jpg", StringComparison.Ordinal) ||
-               lower.EndsWith(".jpeg", StringComparison.Ordinal) ||
-               lower.EndsWith(".png", StringComparison.Ordinal) ||
-               lower.EndsWith(".webp", StringComparison.Ordinal) ||
-               lower.EndsWith(".gif", StringComparison.Ordinal) ||
-               lower.EndsWith(".bmp", StringComparison.Ordinal);
     }
 
     /// <summary>Maps a streaming HuggingFace row to DatasetItemDto</summary>
@@ -758,6 +763,8 @@ internal static class DatasetEndpoints
         return new DatasetItemDto
         {
             Id = Guid.NewGuid(),
+            // Every other source sets it; streamed items left it empty (audit H-8).
+            DatasetId = datasetId,
             ExternalId = externalId,
             Title = string.IsNullOrWhiteSpace(title) ? externalId : title,
             Description = description,
@@ -1022,11 +1029,12 @@ internal static class DatasetEndpoints
     /// IngestFromFolderAsync has existed since before this endpoint did — it just had no route
     /// mapped to it, which is why the client's "Local folder" creation option was permanently
     /// labeled "(coming soon)".
-    /// Still no path allow-listing at the ingestion layer -- this reads arbitrary server
-    /// filesystem paths, so the route itself is gated to the site-wide Admin role (see
-    /// MapDatasetEndpoints), not merely "authenticated". Requiring only authentication would
-    /// let any self-registered account (registration is open) use the server as a proxy to
-    /// read/enumerate any folder the API process can see.
+    /// This reads server filesystem paths, so the route itself is gated to the site-wide Admin
+    /// role (see MapDatasetEndpoints), not merely "authenticated". Requiring only authentication
+    /// would let any self-registered account (registration is open) use the server as a proxy to
+    /// read/enumerate any folder the API process can see. On top of that, the folder must lie
+    /// under one of the operator's <c>Storage:FolderImportRoots</c>; with none configured, folder
+    /// import is refused.
     /// </summary>
     public static async Task<IResult> ImportFromFolder(
         Guid datasetId,
@@ -1034,6 +1042,8 @@ internal static class DatasetEndpoints
         Core.Abstractions.Repositories.IDatasetRepository repository,
         IIngestionJobQueue ingestionQueue,
         HttpContext httpContext,
+        IConfiguration configuration,
+        ILogger<Program> logger,
         CancellationToken cancellationToken)
     {
         DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
@@ -1047,9 +1057,33 @@ internal static class DatasetEndpoints
             return Results.BadRequest(new { error = "FolderPath is required" });
         }
 
+        // Admin-only was the whole guard, so an admin could point a dataset at /etc or the
+        // DataProtection key ring (audit F-1). Folders must now sit under a configured root,
+        // compared by real path so a symlink inside a root can't lead back out of it.
+        string[] importRoots = (configuration.GetSection("Storage:FolderImportRoots").Get<string[]>() ?? [])
+            .Where(root => !string.IsNullOrWhiteSpace(root))
+            .ToArray();
+        if (importRoots.Length == 0)
+        {
+            return Results.BadRequest(new
+            {
+                error = "Server folder import is disabled: no Storage:FolderImportRoots are configured. " +
+                        "Add the folders admins may import from (see docs/DEPLOYMENT.md)."
+            });
+        }
+
         if (!Directory.Exists(request.FolderPath))
         {
             return Results.BadRequest(new { error = $"Folder not found: {request.FolderPath}" });
+        }
+
+        bool insideARoot = importRoots.Any(root => Services.Storage.RealPath.IsSameOrContainedIn(root, request.FolderPath));
+        if (!insideARoot)
+        {
+            logger.LogWarning(
+                "Refused folder import for dataset {DatasetId}: {FolderPath} is outside Storage:FolderImportRoots",
+                datasetId, request.FolderPath.ReplaceLineEndings(" "));
+            return Results.BadRequest(new { error = $"Folder {request.FolderPath} is outside the allowed import roots (Storage:FolderImportRoots)." });
         }
 
         // Absolute for the same reason as an upload's staged path: a later process reads it.
@@ -1123,7 +1157,8 @@ internal static class DatasetEndpoints
         try
         {
             await s3StorageService.ListObjectsAsync(
-                request.StorageProfileName, request.Bucket, request.Prefix, continuationToken: null, maxKeys: 1, cancellationToken);
+                request.StorageProfileName, request.Bucket, Services.Storage.S3KeySafety.NormalizeFolderPrefix(request.Prefix),
+                continuationToken: null, maxKeys: 1, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -1173,6 +1208,7 @@ internal static class DatasetEndpoints
         Services.Storage.IThumbnailService thumbnailService,
         HttpContext httpContext,
         IConfiguration configuration,
+        ILogger<Program> logger,
         [FromQuery] int? w,
         CancellationToken cancellationToken)
     {
@@ -1213,7 +1249,14 @@ internal static class DatasetEndpoints
             : normalizedDatasetFolder + Path.DirectorySeparatorChar;
         if (!normalizedFullPath.StartsWith(containmentPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            return Results.NotFound();
+            return RefuseFileRequest(logger, datasetId, filePath, "path escapes the dataset folder");
+        }
+
+        // Images only (audit F-1). Checked before File.Exists so a refused name is answered the
+        // same way whether or not the file is there.
+        if (!Services.Storage.ServableImageTypes.TryGetContentType(normalizedFullPath, out string? contentType))
+        {
+            return RefuseFileRequest(logger, datasetId, filePath, "not an image file type");
         }
 
         if (!File.Exists(normalizedFullPath))
@@ -1224,28 +1267,26 @@ internal static class DatasetEndpoints
         // GetFullPath resolves ".." segments but not symlinks — a symlink placed inside the
         // dataset folder (e.g. by a malicious ZIP import; see the extraction-time guard in
         // DatasetIngestionService) could still point outside it and pass the check above.
-        // Resolve the link chain and re-check containment against its real target.
-        FileSystemInfo? linkTarget = new FileInfo(normalizedFullPath).ResolveLinkTarget(returnFinalTarget: true);
-        if (linkTarget is not null)
+        // Resolving only the final file missed a symlinked directory earlier in the path
+        // (audit F-2), so compare real paths with every component resolved. The real target's
+        // own extension must be an image too, or a link named photo.jpg could serve a key ring.
+        string realFilePath;
+        try
         {
-            string resolvedTargetPath = Path.GetFullPath(linkTarget.FullName);
-            if (!resolvedTargetPath.StartsWith(containmentPrefix, StringComparison.OrdinalIgnoreCase))
-            {
-                return Results.NotFound();
-            }
+            realFilePath = Services.Storage.RealPath.Resolve(normalizedFullPath);
         }
-
-        // Determine content type based on file extension
-        string extension = Path.GetExtension(normalizedFullPath).ToLowerInvariant();
-        string contentType = extension switch
+        catch (IOException)
         {
-            ".jpg" or ".jpeg" => "image/jpeg",
-            ".png" => "image/png",
-            ".webp" => "image/webp",
-            ".gif" => "image/gif",
-            ".bmp" => "image/bmp",
-            _ => "application/octet-stream"
-        };
+            return RefuseFileRequest(logger, datasetId, filePath, "symlink loop");
+        }
+        if (!Services.Storage.RealPath.IsContainedIn(normalizedDatasetFolder, realFilePath))
+        {
+            return RefuseFileRequest(logger, datasetId, filePath, "symlink resolves outside the dataset folder");
+        }
+        if (!Services.Storage.ServableImageTypes.TryGetContentType(realFilePath, out _))
+        {
+            return RefuseFileRequest(logger, datasetId, filePath, "symlink target is not an image file type");
+        }
 
         if (w.HasValue && w.Value > 0)
         {
@@ -1300,6 +1341,8 @@ internal static class DatasetEndpoints
         Services.Storage.IS3StorageService s3StorageService,
         Services.Storage.IThumbnailService thumbnailService,
         HttpContext httpContext,
+        IConfiguration configuration,
+        ILogger<Program> logger,
         CancellationToken cancellationToken)
     {
         DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
@@ -1315,21 +1358,22 @@ internal static class DatasetEndpoints
             return Results.NotFound();
         }
 
-        if (string.IsNullOrWhiteSpace(key) || !Services.Storage.S3KeySafety.IsKeyWithinPrefix(dataset.S3Prefix, key))
+        if (string.IsNullOrWhiteSpace(key))
         {
             return Results.NotFound();
         }
 
-        string extension = Path.GetExtension(key).ToLowerInvariant();
-        string contentType = extension switch
+        if (!Services.Storage.S3KeySafety.IsKeyWithinPrefix(dataset.S3Prefix, key))
         {
-            ".jpg" or ".jpeg" => "image/jpeg",
-            ".png" => "image/png",
-            ".webp" => "image/webp",
-            ".gif" => "image/gif",
-            ".bmp" => "image/bmp",
-            _ => "application/octet-stream"
-        };
+            return RefuseFileRequest(logger, datasetId, key, "S3 key is outside the dataset prefix");
+        }
+
+        // Same image allow-list as ServeDatasetFile (audit F-1): the item listing only ever links
+        // image keys, so anything else in the prefix is not the dataset's to serve.
+        if (!Services.Storage.ServableImageTypes.TryGetContentType(key, out string? contentType))
+        {
+            return RefuseFileRequest(logger, datasetId, key, "not an image file type");
+        }
 
         string profileName = dataset.S3StorageProfileName;
         string bucket = dataset.S3Bucket;
@@ -1345,13 +1389,13 @@ internal static class DatasetEndpoints
                 w.Value,
                 async ct =>
                 {
-                    await using Stream? objectStream = await s3StorageService.GetObjectStreamAsync(profileName, bucket, key, ct);
-                    if (objectStream is null)
+                    await using Services.Storage.S3ObjectContent? s3Object = await s3StorageService.GetObjectAsync(profileName, bucket, key, ct);
+                    if (s3Object is null)
                     {
                         return null;
                     }
                     // Bounded: the whole object used to be buffered whatever its size (audit S-2).
-                    return await Services.Storage.ThumbnailSource.ReadLimitedAsync(objectStream, thumbnailService.MaxSourceBytes, ct);
+                    return await Services.Storage.ThumbnailSource.ReadLimitedAsync(s3Object.Content, thumbnailService.MaxSourceBytes, ct);
                 },
                 cancellationToken);
             httpContext.Response.Headers["X-Thumbnail-Width"] = thumbnail.Width.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -1367,13 +1411,34 @@ internal static class DatasetEndpoints
             // Undecodable: fall through to proxy the original below.
         }
 
-        Stream? stream = await s3StorageService.GetObjectStreamAsync(profileName, bucket, key, cancellationToken);
-        if (stream is null)
+        Services.Storage.S3ObjectContent? s3Object = await s3StorageService.GetObjectAsync(profileName, bucket, key, cancellationToken);
+        if (s3Object is null)
         {
             return Results.NotFound();
         }
-        return Results.Stream(stream, contentType);
+
+        // A public S3 dataset made this route an anonymous, unmetered proxy for the whole prefix,
+        // paid for with the server's credentials and bandwidth (audit S-1). Originals over the cap
+        // are not proxied (their ?w= thumbnails still are, from a bounded read); the route also
+        // has a per-caller rate limit (RateLimitPolicies.S3File).
+        long maxServeBytes = configuration.GetValue("Storage:S3MaxServeBytes", DefaultS3MaxServeBytes);
+        if (maxServeBytes > 0 && s3Object.ContentLength > maxServeBytes)
+        {
+            await s3Object.DisposeAsync();
+            logger.LogWarning(
+                "Refused to proxy S3 object for dataset {DatasetId}: {Size} bytes is over Storage:S3MaxServeBytes ({Limit}). Requested key: {RequestedPath}",
+                datasetId, s3Object.ContentLength, maxServeBytes, key.ReplaceLineEndings(" "));
+            return Results.NotFound();
+        }
+
+        // Disposed with the request, however it ends: the SDK response used to be left
+        // undisposed once its stream was handed to the result (audit S-4).
+        httpContext.Response.RegisterForDisposeAsync(s3Object);
+        return Results.Stream(s3Object.Content, contentType);
     }
+
+    /// <summary>Largest S3 original GetS3File proxies when Storage:S3MaxServeBytes is not set (64 MB, the thumbnail source limit).</summary>
+    private const long DefaultS3MaxServeBytes = 64L * 1024 * 1024;
 
     /// <summary>How long a HuggingFace thumbnail's upstream fetch may take, headers and body together.</summary>
     internal static TimeSpan HuggingFaceThumbnailFetchTimeout { get; set; } = TimeSpan.FromSeconds(10);
@@ -1413,7 +1478,10 @@ internal static class DatasetEndpoints
             return Results.NotFound();
         }
 
-        if (dataset.SourceType != DatasetSourceType.HuggingFaceStreaming && !dataset.IsStreaming)
+        // HuggingFace streaming only. IsStreaming alone also admitted S3 datasets, which can still
+        // carry HuggingFace fields from an earlier import (audit H-8); only this source type ever
+        // hands out hf-thumbnail URLs (GetDatasetItems).
+        if (dataset.SourceType != DatasetSourceType.HuggingFaceStreaming)
         {
             return Results.NotFound();
         }
@@ -1451,8 +1519,13 @@ internal static class DatasetEndpoints
         // Cache key folds in repository/config/split, not just datasetId+offset -- an existing
         // dataset row's HF repository/config can change on re-import (see
         // ImportFromHuggingFace), which would otherwise leave a stale cached thumbnail (the
-        // old repository's image at this offset) permanently served under the new one.
-        string cacheKey = $"hf|{repository}|{config}|{split}|{offset.Value}";
+        // old repository's image at this offset) permanently served under the new one. The
+        // access scope (a hash of the caller's HF token, or "anon") is folded in too: a thumbnail
+        // fetched with one user's token was otherwise served from the cache to anyone who could
+        // read the dataset, making a gated repository's images public (audit H-5). Keying on the
+        // token (rather than not caching token-fetched thumbnails) keeps gated datasets fast for
+        // their token holder while only ever serving an entry to the same token upstream served.
+        string cacheKey = $"hf|{HuggingFaceAccessScope.For(accessToken)}|{repository}|{config}|{split}|{offset.Value}";
 
         Services.Storage.ThumbnailResult thumbnail = await thumbnailService.GetOrCreateJpegAsync(
             cacheKey,
@@ -1516,6 +1589,22 @@ internal static class DatasetEndpoints
             cancellationToken);
 
         return Results.Ok(response);
+    }
+
+    /// <summary>
+    /// Answers a refused file request with 404, the same answer a missing file gets, and logs it
+    /// as a warning. These refusals used to be silent, so a probe for files outside a dataset was
+    /// invisible to the operator (audit F-4). Only the dataset id and the requested path are
+    /// logged, never file contents; line breaks in the path are flattened so a crafted path can't
+    /// forge extra log lines.
+    /// </summary>
+    private static IResult RefuseFileRequest(ILogger logger, Guid datasetId, string requestedPath, string reason)
+    {
+        string loggedPath = requestedPath.ReplaceLineEndings(" ");
+        logger.LogWarning(
+            "Refused file request for dataset {DatasetId}: {Reason}. Requested path: {RequestedPath}",
+            datasetId, reason, loggedPath);
+        return Results.NotFound();
     }
 
     /// <summary>Derives a listing/count visibility scope from the current request's principal (anonymous, regular user, or admin).</summary>

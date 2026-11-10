@@ -186,6 +186,9 @@ builder.Services.AddRateLimiter(options =>
             }));
 });
 
+// Per-caller limits for routes that spend S3 egress or HuggingFace quota (audit S-1, H-2).
+builder.Services.AddDatasetStudioRateLimits(builder.Configuration);
+
 // Extension discovery/ConfigureServices has to run before builder.Build(), so it needs a
 // service provider before one otherwise exists, and DiscoverAndLoadAsync's result is used
 // again further down (after app = builder.Build()), so both are declared here and assigned
@@ -316,6 +319,8 @@ app.UseAuthentication();
 // their 401/403/429 answers are logged too (audit E-5).
 DatasetStudio.APIBackend.Configuration.RequestLogging.UseRequestLogging(app);
 app.UseAuthorization();
+// After authentication so the limiter can partition by signed-in user; after routing so it sees
+// each endpoint's policy.
 app.UseRateLimiter();
 
 // Configure and initialize extensions

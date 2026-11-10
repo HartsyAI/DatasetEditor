@@ -221,6 +221,87 @@ namespace DatasetStudio.Tests.APIBackend
                 .ReturnsAsync(page);
         }
 
+        private const string GatedToken = "hf_gated_token";
+
+        /// <summary>Upstream serves the row only to <see cref="GatedToken"/>, like a gated repository.</summary>
+        private void SetupGatedHfRow(long rowIndex, string imageUrl)
+        {
+            JsonElement urlElement = JsonSerializer.SerializeToElement(imageUrl);
+            HuggingFaceRowsPage page = new()
+            {
+                Dataset = "fake/dataset",
+                Config = null,
+                Split = "train",
+                NumRowsTotal = 1,
+                Rows = new List<HuggingFaceRow>
+                {
+                    new()
+                    {
+                        RowIndex = rowIndex,
+                        Columns = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase) { ["image_url"] = urlElement },
+                    },
+                },
+            };
+
+            _hfServerClientMock
+                .Setup(c => c.GetRowsAsync(
+                    It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(),
+                    It.IsAny<int>(), It.IsAny<int>(), GatedToken, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(page);
+            _hfServerClientMock
+                .Setup(c => c.GetRowsAsync(
+                    It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(),
+                    It.IsAny<int>(), It.IsAny<int>(), It.Is<string?>(t => t != GatedToken), It.IsAny<CancellationToken>()))
+                .ThrowsAsync(new HuggingFaceUpstreamException("gated", HttpStatusCode.Unauthorized));
+        }
+
+        private async Task<HttpResponseMessage> GetThumbnailAsync(Guid datasetId, int width, string? token)
+        {
+            using HttpRequestMessage request = new(HttpMethod.Get, $"/api/datasets/{datasetId}/hf-thumbnail?offset=0&w={width}");
+            if (token is not null)
+            {
+                request.Headers.Add("X-HF-Access-Token", token);
+            }
+            return await _client.SendAsync(request);
+        }
+
+        /// <summary>
+        /// Audit H-5: a thumbnail generated with one user's token was cached under a key without
+        /// it, so anyone who could read the (public) dataset got the gated image from the cache.
+        /// </summary>
+        [Fact]
+        public async Task GetHuggingFaceThumbnail_CachedForATokenHolder_IsNotServedWithoutTheToken()
+        {
+            (DatasetDetailDto dataset, _) = await CreateStreamingDatasetAsync();
+            SetupGatedHfRow(0, "https://fake-hf-asset.example.test/gated.png");
+
+            HttpResponseMessage withToken = await GetThumbnailAsync(dataset.Id, 120, GatedToken);
+            withToken.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            HttpResponseMessage withoutToken = await GetThumbnailAsync(dataset.Id, 120, token: null);
+            withoutToken.StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+            HttpResponseMessage otherToken = await GetThumbnailAsync(dataset.Id, 120, "hf_someone_else");
+            otherToken.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        /// <summary>
+        /// Audit H-5, the row-page half: a different width misses the thumbnail cache, but the row
+        /// page (with its signed image URL) fetched with the token must not be reused without it.
+        /// </summary>
+        [Fact]
+        public async Task GetHuggingFaceThumbnail_RowPageFetchedWithAToken_IsNotReusedWithoutTheToken()
+        {
+            (DatasetDetailDto dataset, _) = await CreateStreamingDatasetAsync();
+            SetupGatedHfRow(0, "https://fake-hf-asset.example.test/gated.png");
+
+            HttpResponseMessage withToken = await GetThumbnailAsync(dataset.Id, 120, GatedToken);
+            withToken.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            HttpResponseMessage withoutToken = await GetThumbnailAsync(dataset.Id, 200, token: null);
+            withoutToken.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
         [Fact]
         public async Task GetHuggingFaceThumbnail_ForStreamingDataset_ReturnsResizedJpeg()
         {
@@ -268,6 +349,29 @@ namespace DatasetStudio.Tests.APIBackend
             DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
 
             HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{created.Id}/hf-thumbnail?offset=0&w=120");
+
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        /// <summary>
+        /// Audit H-8: the endpoint accepted any dataset with IsStreaming set, which S3 datasets also
+        /// have. An S3 dataset left with HuggingFace fields from an earlier import must not be served
+        /// HuggingFace rows.
+        /// </summary>
+        [Fact]
+        public async Task GetHuggingFaceThumbnail_S3StreamingDataset_ReturnsNotFound()
+        {
+            (DatasetDetailDto dataset, _) = await CreateStreamingDatasetAsync();
+            using (IServiceScope scope = _factory.Services.CreateScope())
+            {
+                DatasetStudioDbContext db = scope.ServiceProvider.GetRequiredService<DatasetStudioDbContext>();
+                DatasetEntity entity = await db.Datasets.AsTracking().FirstAsync(d => d.Id == dataset.Id);
+                entity.SourceType = DatasetSourceType.ExternalS3Streaming;
+                await db.SaveChangesAsync();
+            }
+            SetupHfRow(0, "https://fake-hf-asset.example.test/image.png");
+
+            HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{dataset.Id}/hf-thumbnail?offset=0&w=120");
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         }

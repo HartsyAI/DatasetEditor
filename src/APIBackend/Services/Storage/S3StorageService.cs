@@ -16,7 +16,7 @@ public sealed class S3StorageService : IS3StorageService, IDisposable
         _profileResolver = profileResolver;
     }
 
-    public async Task<Stream?> GetObjectStreamAsync(
+    public async Task<S3ObjectContent?> GetObjectAsync(
         string profileName, string bucket, string key, CancellationToken cancellationToken)
     {
         AmazonS3Client client = GetOrCreateClient(profileName);
@@ -24,7 +24,8 @@ public sealed class S3StorageService : IS3StorageService, IDisposable
         {
             GetObjectResponse response = await client.GetObjectAsync(
                 new GetObjectRequest { BucketName = bucket, Key = key }, cancellationToken);
-            return response.ResponseStream;
+            // The caller disposes the response through S3ObjectContent (audit S-4).
+            return new S3ObjectContent(response.ResponseStream, response.ContentLength, response);
         }
         catch (AmazonS3Exception ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
@@ -61,7 +62,7 @@ public sealed class S3StorageService : IS3StorageService, IDisposable
 
             AmazonS3Config config = new()
             {
-                ForcePathStyle = profile.ForcePathStyle,
+                ForcePathStyle = profile.UsePathStyle,
                 AuthenticationRegion = profile.Region,
                 // AWS SDK v4 defaults to always computing/sending a flexible-checksum header
                 // (x-amz-content-sha256 etc.). Real AWS S3 handles this fine, but MinIO's SigV4
