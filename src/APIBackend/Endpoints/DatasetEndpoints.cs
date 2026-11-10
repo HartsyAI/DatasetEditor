@@ -1176,15 +1176,25 @@ internal static class DatasetEndpoints
         // GetFullPath resolves ".." segments but not symlinks — a symlink placed inside the
         // dataset folder (e.g. by a malicious ZIP import; see the extraction-time guard in
         // DatasetIngestionService) could still point outside it and pass the check above.
-        // Resolve the link chain and re-check containment against its real target.
-        FileSystemInfo? linkTarget = new FileInfo(normalizedFullPath).ResolveLinkTarget(returnFinalTarget: true);
-        if (linkTarget is not null)
+        // Resolving only the final file missed a symlinked directory earlier in the path
+        // (audit F-2), so compare real paths with every component resolved. The real target's
+        // own extension must be an image too, or a link named photo.jpg could serve a key ring.
+        string realFilePath;
+        try
         {
-            string resolvedTargetPath = Path.GetFullPath(linkTarget.FullName);
-            if (!resolvedTargetPath.StartsWith(containmentPrefix, StringComparison.OrdinalIgnoreCase))
-            {
-                return RefuseFileRequest(logger, datasetId, filePath, "symlink resolves outside the dataset folder");
-            }
+            realFilePath = Services.Storage.RealPath.Resolve(normalizedFullPath);
+        }
+        catch (IOException)
+        {
+            return RefuseFileRequest(logger, datasetId, filePath, "symlink loop");
+        }
+        if (!Services.Storage.RealPath.IsContainedIn(normalizedDatasetFolder, realFilePath))
+        {
+            return RefuseFileRequest(logger, datasetId, filePath, "symlink resolves outside the dataset folder");
+        }
+        if (!Services.Storage.ServableImageTypes.TryGetContentType(realFilePath, out _))
+        {
+            return RefuseFileRequest(logger, datasetId, filePath, "symlink target is not an image file type");
         }
 
         if (w.HasValue && w.Value > 0)
