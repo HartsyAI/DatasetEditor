@@ -48,6 +48,41 @@ public sealed class ViewerComponentTests : IAsyncLifetime
     /// An item with no dimensions and no recognisable extension has two "Unknown" facts. Keying the
     /// chips by their text gave duplicate sibling keys, and Blazor threw while rendering the list.
     /// </summary>
+    /// <summary>
+    /// PR 4.4 review: after two pages (200 items) had loaded, a filter that replaced them with 100
+    /// matches left the "already fired at 100" mark from the first page, so the sentinel never asked
+    /// for the matches' second page. A new result set now resets the tracking, even at the same count.
+    /// </summary>
+    [Fact]
+    public async Task VirtualizedView_AsksForMoreAgain_AfterTheResultSetIsReplaced()
+    {
+        int nearEnd = 0;
+        static List<DatasetItemDto> Items(int count) =>
+            Enumerable.Range(0, count).Select(i => new DatasetItemDto { Id = Guid.NewGuid(), Title = $"i{i}" }).ToList();
+        RenderFragment<DatasetItemDto> template = item => builder => builder.AddContent(0, item.Title);
+
+        IRenderedComponent<VirtualizedItemView> view = _context.Render<VirtualizedItemView>(p => p
+            .Add(v => v.Items, Items(100))
+            .Add(v => v.ResultSet, 1)
+            .Add(v => v.ItemTemplate, template)
+            .Add(v => v.OnNearEnd, () => nearEnd++));
+
+        await view.InvokeAsync(view.Instance.OnSentinelVisible);
+        await view.InvokeAsync(view.Instance.OnSentinelVisible);
+        Assert.Equal(1, nearEnd);
+
+        // Same count, new result set (a filter's first page of matches).
+        view.Render(p => p.Add(v => v.Items, Items(100)).Add(v => v.ResultSet, 2));
+        await view.InvokeAsync(view.Instance.OnSentinelVisible);
+        Assert.Equal(2, nearEnd);
+
+        // An appended page within the same result set still fires once per count.
+        view.Render(p => p.Add(v => v.Items, Items(200)).Add(v => v.ResultSet, 2));
+        await view.InvokeAsync(view.Instance.OnSentinelVisible);
+        await view.InvokeAsync(view.Instance.OnSentinelVisible);
+        Assert.Equal(3, nearEnd);
+    }
+
     [Fact]
     public void ListRow_RendersItemsWhoseFactsRepeat()
     {

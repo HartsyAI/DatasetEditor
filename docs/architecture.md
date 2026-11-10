@@ -170,9 +170,8 @@ as SDK surface/compile-checked scaffolding today.
 
 ## 7. Roadmap / known gaps
 
-- **Client filtering:** filter UI exists, but nothing applies it — `DatasetViewer.ApplyFiltersQuiet`
-  passes the unfiltered window through, and the items endpoint accepts no filter parameters
-  (`docs/refactor-audit.md` U-6, G-2). Real filtering needs server-side query support.
+- **Filtering:** server-side on the items endpoint (README §4.11). Local text search is a
+  substring scan, not an index; HuggingFace streaming supports search only; S3 has no filters.
 - **Full defect list and refactor sequencing:** `docs/refactor-audit.md`. UI target: `DESIGN.md`.
 - **Extensions:** only 1 of 5 built-in manifests (CoreViewer) has real, working code; endpoint
   auto-registration, permission enforcement for extension routes, and any client-side extension
