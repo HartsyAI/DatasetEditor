@@ -3,7 +3,6 @@ using DatasetStudio.APIBackend.Services.Auth;
 using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.DTO.Items;
-using DatasetStudio.Core.Utilities;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DatasetStudio.APIBackend.Endpoints;

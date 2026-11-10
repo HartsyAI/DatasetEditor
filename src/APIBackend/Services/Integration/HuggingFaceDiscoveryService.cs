@@ -5,7 +5,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using DatasetStudio.APIBackend.Models;
 using DatasetStudio.DTO.Datasets;
-using DatasetStudio.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace DatasetStudio.APIBackend.Services.Integration;

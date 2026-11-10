@@ -12,7 +12,6 @@ using DatasetStudio.ClientApp.Services.Interop;
 using DatasetStudio.ClientApp.Services.StateManagement;
 using DatasetStudio.ClientApp.Shared.Services;
 using DatasetStudio.ClientApp.Features.Datasets.Services;
-using DatasetStudio.Core.Utilities;
 using DatasetStudio.Core.Utilities.Logging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
