@@ -185,15 +185,22 @@ public class ItemEditService(DatasetApiClient datasetApiClient, DatasetState dat
             }
 
             HashSet<Guid> skipped = response.Skipped.Select(s => s.ItemId).ToHashSet();
+            Dictionary<Guid, ItemEditResponse> serverItems = response.Items
+                .GroupBy(i => i.ItemId).ToDictionary(g => g.Key, g => g.First());
             foreach (DatasetItemDto item in items.Where(i => !skipped.Contains(i.Id)))
             {
-                DatasetItemDto edited = item with
-                {
-                    Tags = changesTags ? EditTags(item.Tags, tagsToAdd, tagsToRemove) : item.Tags,
-                    IsFavorite = setFavorite ?? item.IsFavorite,
-                    // The new version, so the next single edit of this item isn't refused as stale.
-                    Version = response.Versions.TryGetValue(item.Id, out string? version) ? version : item.Version
-                };
+                // The server's values with its new version. Recomputing the result from this copy
+                // while adopting the new version dropped any change another user had made to the
+                // item first (their tag would then be lost on this client's next single edit).
+                DatasetItemDto edited = serverItems.TryGetValue(item.Id, out ItemEditResponse? server)
+                    ? ApplyServerView(item, server)
+                    : item with
+                    {
+                        // An older server without per-item values: show the change, but keep the
+                        // old version so the next single edit is refused as stale and reloads.
+                        Tags = changesTags ? EditTags(item.Tags, tagsToAdd, tagsToRemove) : item.Tags,
+                        IsFavorite = setFavorite ?? item.IsFavorite
+                    };
                 datasetState.UpdateItem(edited);
                 DirtyItemIds.Remove(item.Id.ToString());
             }

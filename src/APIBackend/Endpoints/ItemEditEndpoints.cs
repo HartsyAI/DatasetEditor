@@ -187,8 +187,9 @@ public static class ItemEditEndpoints
             }
         }
 
-        // The new version of each edited item, and the datasets edited (for the audit line).
+        // The new version and values of each edited item, and the datasets edited (for the audit line).
         Dictionary<Guid, string> versions = new();
+        List<ItemEditResponse> editedItems = new();
         List<Guid> editedDatasets = new();
         foreach ((Guid datasetId, List<Guid> ids) in idsByDataset)
         {
@@ -225,6 +226,7 @@ public static class ItemEditEndpoints
                 foreach ((Guid itemId, ItemOverlay overlay) in written)
                 {
                     versions[itemId] = ItemVersions.ForOverlay(overlay.Version);
+                    editedItems.Add(ToResponse(itemId, datasetId, overlay));
                 }
                 skipped.AddRange(tagsUnknown.Select(id => new BulkSkippedItem { ItemId = id, Reason = BulkSkipReasons.TagsUnknown }));
             }
@@ -236,6 +238,7 @@ public static class ItemEditEndpoints
                 foreach (DatasetItemDto item in edited)
                 {
                     versions[item.Id] = item.Version ?? ItemVersions.ForLocal(item.UpdatedAt);
+                    editedItems.Add(ToResponse(item));
                 }
                 HashSet<Guid> editedIds = edited.Select(i => i.Id).ToHashSet();
                 skipped.AddRange(ids.Where(id => !editedIds.Contains(id))
@@ -254,7 +257,8 @@ public static class ItemEditEndpoints
         {
             UpdatedCount = versions.Count,
             Skipped = skipped,
-            Versions = versions
+            Versions = versions,
+            Items = editedItems
         });
     }
 

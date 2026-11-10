@@ -125,6 +125,10 @@ namespace DatasetStudio.Tests.ClientApp
                         new() { ItemId = c.Id, Reason = BulkSkipReasons.NotFound },
                     },
                     Versions = new Dictionary<Guid, string> { [a.Id] = "2" },
+                    Items = new List<ItemEditResponse>
+                    {
+                        new() { ItemId = a.Id, DatasetId = datasetId, Version = "2", Tags = new List<string> { "t", "new" } },
+                    },
                 }),
                 a, b, c);
 
@@ -141,6 +145,51 @@ namespace DatasetStudio.Tests.ClientApp
             BulkUpdateItemsRequest sent = System.Text.Json.JsonSerializer.Deserialize<BulkUpdateItemsRequest>(handler.Bodies[0], new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!;
             Assert.Equal(datasetId, sent.DatasetId);
             Assert.Equal(new[] { "t" }, sent.CurrentTags![a.Id]);
+        }
+
+        /// <summary>
+        /// PR 6.1 review: another user added "b" to [a]; this client, still showing [a], bulk-adds
+        /// "c". The server holds [a, b, c]. The client used to compute [a, c] from its own copy and
+        /// adopt the new version, so its next single edit sent [a, c] with a valid If-Match and
+        /// deleted "b". It now takes the server's values with the version.
+        /// </summary>
+        [Fact]
+        public async Task BulkUpdate_TakesTheServersValues_NotARecomputedCopy()
+        {
+            Guid datasetId = Guid.NewGuid();
+            DatasetItemDto item = new() { Id = Guid.NewGuid(), DatasetId = datasetId, Tags = new List<string> { "a" }, Version = "1" };
+            (ItemEditService service, DatasetState state, _) = Build(
+                _ => Json(HttpStatusCode.OK, new BulkUpdateItemsResponse
+                {
+                    UpdatedCount = 1,
+                    Versions = new Dictionary<Guid, string> { [item.Id] = "3" },
+                    Items = new List<ItemEditResponse>
+                    {
+                        new() { ItemId = item.Id, DatasetId = datasetId, Version = "3", Tags = new List<string> { "a", "b", "c" } },
+                    },
+                }),
+                item);
+
+            await service.BulkUpdateAsync(new[] { item }, tagsToAdd: new List<string> { "c" });
+
+            DatasetItemDto stored = state.Items.Single();
+            Assert.Equal(new[] { "a", "b", "c" }, stored.Tags);
+            Assert.Equal("3", stored.Version);
+        }
+
+        /// <summary>Without per-item values the change shows, but the old version is kept, so a later edit reloads instead of overwriting.</summary>
+        [Fact]
+        public async Task BulkUpdate_WithoutServerValues_KeepsTheOldVersion()
+        {
+            DatasetItemDto item = new() { Id = Guid.NewGuid(), DatasetId = Guid.NewGuid(), Tags = new List<string> { "a" }, Version = "1" };
+            (ItemEditService service, DatasetState state, _) = Build(
+                _ => Json(HttpStatusCode.OK, new BulkUpdateItemsResponse { UpdatedCount = 1, Versions = new Dictionary<Guid, string> { [item.Id] = "3" } }),
+                item);
+
+            await service.BulkUpdateAsync(new[] { item }, tagsToAdd: new List<string> { "c" });
+
+            Assert.Equal(new[] { "a", "c" }, state.Items.Single().Tags);
+            Assert.Equal("1", state.Items.Single().Version);
         }
 
         /// <summary>

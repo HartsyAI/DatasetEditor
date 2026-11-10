@@ -18,4 +18,12 @@ public sealed record BulkUpdateItemsResponse
     /// without its next single edit being refused as stale (audit E-4).
     /// </summary>
     public Dictionary<Guid, string> Versions { get; init; } = new();
+
+    /// <summary>
+    /// Each edited item's fields as the server now holds them, with its version. A client takes
+    /// these rather than recomputing the result: a bulk edit applies to the server's current values,
+    /// which may include another user's change the client hasn't seen, and recomputing from the
+    /// client's copy while adopting the new version let a later edit overwrite that change.
+    /// </summary>
+    public List<ItemEditResponse> Items { get; init; } = new();
 }

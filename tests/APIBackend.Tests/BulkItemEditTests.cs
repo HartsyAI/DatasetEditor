@@ -98,6 +98,33 @@ namespace DatasetStudio.Tests.APIBackend
             page.Items.Select(i => i.Version).Should().BeEquivalentTo(new[] { body.Versions[mine1], body.Versions[mine2] });
         }
 
+        /// <summary>
+        /// PR 6.1 review: the response carries each edited item's values as stored, including a
+        /// change another user made first, so the client can take them instead of recomputing.
+        /// </summary>
+        [Fact]
+        public async Task BulkEdit_ReturnsEachEditedItemsStoredValues()
+        {
+            HttpClient owner = await SignUpAsync("bulk-values");
+            Guid itemId = Guid.NewGuid();
+            Guid dataset = await CreateDatasetAsync(owner, isPublic: false, itemId);
+            (await owner.PatchAsJsonAsync($"/api/items/{itemId}", new UpdateItemRequest { DatasetId = dataset, Tags = new List<string> { "a", "b" } }))
+                .StatusCode.Should().Be(HttpStatusCode.OK);
+
+            HttpResponseMessage response = await owner.PatchAsJsonAsync("/api/items/bulk", new BulkUpdateItemsRequest
+            {
+                ItemIds = new List<Guid> { itemId },
+                DatasetId = dataset,
+                TagsToAdd = new List<string> { "c" },
+            });
+
+            BulkUpdateItemsResponse body = (await response.Content.ReadFromJsonAsync<BulkUpdateItemsResponse>())!;
+            ItemEditResponse stored = body.Items.Should().ContainSingle().Subject;
+            stored.ItemId.Should().Be(itemId);
+            stored.Tags.Should().Equal("a", "b", "c");
+            stored.Version.Should().Be(body.Versions[itemId]);
+        }
+
         [Fact]
         public async Task BulkEdit_WithDatasetId_ReportsIdsNotInThatDatasetAsNotFound()
         {
