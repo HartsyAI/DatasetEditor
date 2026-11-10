@@ -111,10 +111,13 @@ internal static class DatasetEndpoints
             .Produces(StatusCodes.Status400BadRequest)
             .RequireAuthorization();
 
+        // Rate limited per caller: every request spends the server's S3 egress (audit S-1).
         group.MapGet("/{datasetId:guid}/s3-file", GetS3File)
             .WithName("GetS3File")
             .Produces<FileStreamResult>(StatusCodes.Status200OK, "image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp")
-            .Produces(StatusCodes.Status404NotFound);
+            .Produces(StatusCodes.Status404NotFound)
+            .Produces(StatusCodes.Status429TooManyRequests)
+            .RequireRateLimiting(Configuration.RateLimitPolicies.S3File);
     }
 
     /// <summary>Gets all datasets with pagination, scoped to what the caller may see.</summary>
@@ -1286,6 +1289,7 @@ internal static class DatasetEndpoints
         Services.Storage.IS3StorageService s3StorageService,
         Services.Storage.IThumbnailService thumbnailService,
         HttpContext httpContext,
+        IConfiguration configuration,
         ILogger<Program> logger,
         CancellationToken cancellationToken)
     {
@@ -1360,11 +1364,29 @@ internal static class DatasetEndpoints
         {
             return Results.NotFound();
         }
+
+        // A public S3 dataset made this route an anonymous, unmetered proxy for the whole prefix,
+        // paid for with the server's credentials and bandwidth (audit S-1). Originals over the cap
+        // are not proxied (their ?w= thumbnails still are, from a bounded read); the route also
+        // has a per-caller rate limit (RateLimitPolicies.S3File).
+        long maxServeBytes = configuration.GetValue("Storage:S3MaxServeBytes", DefaultS3MaxServeBytes);
+        if (maxServeBytes > 0 && s3Object.ContentLength > maxServeBytes)
+        {
+            await s3Object.DisposeAsync();
+            logger.LogWarning(
+                "Refused to proxy S3 object for dataset {DatasetId}: {Size} bytes is over Storage:S3MaxServeBytes ({Limit}). Requested key: {RequestedPath}",
+                datasetId, s3Object.ContentLength, maxServeBytes, key.ReplaceLineEndings(" "));
+            return Results.NotFound();
+        }
+
         // Disposed with the request, however it ends: the SDK response used to be left
         // undisposed once its stream was handed to the result (audit S-4).
         httpContext.Response.RegisterForDisposeAsync(s3Object);
         return Results.Stream(s3Object.Content, contentType);
     }
+
+    /// <summary>Largest S3 original GetS3File proxies when Storage:S3MaxServeBytes is not set (64 MB, the thumbnail source limit).</summary>
+    private const long DefaultS3MaxServeBytes = 64L * 1024 * 1024;
 
     /// <summary>How long a HuggingFace thumbnail's upstream fetch may take, headers and body together.</summary>
     internal static TimeSpan HuggingFaceThumbnailFetchTimeout { get; set; } = TimeSpan.FromSeconds(10);

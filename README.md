@@ -308,8 +308,14 @@ A failed listing is logged and answered `502` (it used to be an empty page). A p
 `ForcePathStyle` defaults to path style when `ServiceUrl` is set (MinIO, R2, Backblaze) and to
 virtual-hosted style for real AWS S3; set it explicitly to override.
 
-**Gaps.** A public S3 dataset is an anonymous, unmetered egress proxy for the bucket (S-1);
-thumbnail generation buffers whole objects (S-2).
+Egress is bounded (S-1): `GetS3File` does not proxy an original larger than
+`Storage:S3MaxServeBytes` (64 MB; answered 404 and logged, its `?w=` thumbnail is still served),
+and the route is rate limited per caller (`RateLimiting:S3FilePermitsPerMinute`, 600 a minute per
+signed-in user or client IP; over it, `429` with `Retry-After`). Range requests are not supported.
+
+**Gaps.** Behind a reverse proxy, anonymous callers share the proxy's address for the rate limit
+unless forwarded headers are honoured (see docs/DEPLOYMENT.md). No presigned URLs or range
+requests.
 
 ### 4.7 Server folder import — Working, admin-only
 

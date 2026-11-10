@@ -89,6 +89,33 @@ the request names").
 AWS profile (no `ServiceUrl`) uses virtual-hosted style, which AWS requires for buckets that don't
 accept path-style requests. Set `true` or `false` to override either default.
 
+Every image an S3 dataset shows is proxied through the API with the profile's credentials, so a
+public S3 dataset spends your egress. Two settings bound that:
+
+- `Storage:S3MaxServeBytes` (default `67108864`, 64 MB): originals larger than this are not
+  proxied (404, logged as a warning); their `?w=` thumbnails still are. `0` or less turns the cap off.
+- `RateLimiting:S3FilePermitsPerMinute` (default `600`): requests to the S3 file route per caller
+  per minute; see "Rate limits".
+
+## Rate limits
+
+Two routes have a fixed one-minute window per caller, where the caller is the signed-in user, or
+the client IP address for anonymous requests. Over the limit the API answers `429` with
+`Retry-After`.
+
+| Setting | Default | Route |
+|---|---|---|
+| `RateLimiting:S3FilePermitsPerMinute` | 600 | `GET /api/datasets/{id}/s3-file` |
+| `RateLimiting:HuggingFaceDiscoverPermitsPerMinute` | 10 | `POST /api/datasets/huggingface/discover` |
+
+A grid page requests one thumbnail per visible card, so keep the S3 limit well above the number of
+cards a user scrolls past in a minute. Behind Caddy (or any reverse proxy) the API sees the proxy's
+address, so all anonymous callers share one budget unless forwarded headers are honoured.
+ASP.NET Core's standard switch for that is `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` (not
+exercised by this repo's tests or compose files). It trusts `X-Forwarded-For` from whoever
+connects, so only set it when the proxy is the API's only way in, as in `docker-compose.prod.yml`.
+Signed-in users always get their own budget.
+
 ## Server folder import (opt-in)
 
 Admins can point a dataset at a folder already on the server ("Server folder" on the create

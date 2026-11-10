@@ -139,6 +139,8 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
         };
     });
 builder.Services.AddAuthorization();
+// Per-caller limits for routes that spend S3 egress or HuggingFace quota (audit S-1, H-2).
+builder.Services.AddDatasetStudioRateLimits(builder.Configuration);
 
 // Extension discovery/ConfigureServices has to run before builder.Build(), so it needs a
 // service provider before one otherwise exists, and DiscoverAndLoadAsync's result is used
@@ -264,6 +266,9 @@ app.UseRouting();
 app.UseCors(corsPolicyName);
 app.UseAuthentication();
 app.UseAuthorization();
+// After authentication so the limiter can partition by signed-in user; after routing so it sees
+// each endpoint's policy.
+app.UseRateLimiter();
 
 // Configure and initialize extensions
 var logger = app.Services.GetRequiredService<ILogger<Program>>();
