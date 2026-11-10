@@ -588,12 +588,14 @@ internal static class DatasetEndpoints
         }
 
         // S3's ListObjectsV2 pages via an opaque continuation token, not a numeric offset like
-        // HF's -- the cursor is passed through as-is, never parsed.
+        // HF's -- the cursor is passed through as-is, never parsed. The prefix is listed as a
+        // folder: a bare "images" also matched "images-other/…", keys GetS3File refuses (audit S-3).
         Services.Storage.S3ListPage page;
         try
         {
             page = await s3StorageService.ListObjectsAsync(
-                dataset.S3StorageProfileName, dataset.S3Bucket, dataset.S3Prefix, cursor, size, cancellationToken);
+                dataset.S3StorageProfileName, dataset.S3Bucket, Services.Storage.S3KeySafety.NormalizeFolderPrefix(dataset.S3Prefix),
+                cursor, size, cancellationToken);
         }
         catch (Exception)
         {
@@ -1067,7 +1069,8 @@ internal static class DatasetEndpoints
         try
         {
             await s3StorageService.ListObjectsAsync(
-                request.StorageProfileName, request.Bucket, request.Prefix, continuationToken: null, maxKeys: 1, cancellationToken);
+                request.StorageProfileName, request.Bucket, Services.Storage.S3KeySafety.NormalizeFolderPrefix(request.Prefix),
+                continuationToken: null, maxKeys: 1, cancellationToken);
         }
         catch (Exception ex)
         {

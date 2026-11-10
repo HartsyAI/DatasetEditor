@@ -295,7 +295,10 @@ and the API proxies images and thumbnails. Works with AWS S3, MinIO, R2, Backbla
 
 **How.** `Services/Storage/{S3StorageProfileResolver,S3StorageService,S3KeySafety}.cs`;
 `DatasetEndpoints.ImportFromS3/GetS3File`; items page = `ListObjectsV2` with the continuation
-token as cursor, filtered to image extensions.
+token as cursor, filtered to image extensions. The dataset prefix is treated as a folder: it is
+listed with a trailing `/` (so `images` doesn't also list `images-other/…`), and `S3KeySafety`
+accepts a key only under that folder and without a `.` or `..` path segment (a name such as
+`photo..final.jpg` is fine).
 
 **Why.** Proxying rather than presigned URLs makes the dataset permission check and the
 thumbnail cache the single enforcement point. Bucket allow-lists exist because registration

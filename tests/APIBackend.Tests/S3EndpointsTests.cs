@@ -209,6 +209,43 @@ namespace DatasetStudio.Tests.APIBackend
             page.Items.Should().OnlyContain(i => i.ImageUrl != null && i.ImageUrl.Contains("/s3-file?key="));
         }
 
+        /// <summary>
+        /// Audit S-3: a prefix stored without a trailing slash used to be listed as a raw string
+        /// prefix, so <c>sib-x</c> also listed <c>sib-xEXTRA/…</c>, keys GetS3File then refused.
+        /// The listing treats the prefix as a folder, like the key check does.
+        /// </summary>
+        [Fact]
+        public async Task GetDatasetItems_S3PrefixWithoutTrailingSlash_DoesNotListSiblingPrefixes()
+        {
+            string prefix = $"sib-{Guid.NewGuid():N}";
+            await PutObjectAsync($"{prefix}/mine.png", MakeTestPng(5, 5, SKColors.Red));
+            await PutObjectAsync($"{prefix}EXTRA/theirs.png", MakeTestPng(5, 5, SKColors.Blue));
+
+            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+
+            HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{dataset.Id}/items?pageSize=100");
+            PageResponse<DatasetItemDto>? page = await response.Content.ReadFromJsonAsync<PageResponse<DatasetItemDto>>();
+
+            page!.Items.Select(i => i.ExternalId).Should().Equal($"{prefix}/mine.png");
+        }
+
+        /// <summary>Audit S-3: an object whose name merely contains ".." is served, not refused.</summary>
+        [Fact]
+        public async Task GetS3File_KeyWithDoubleDotInName_IsServed()
+        {
+            string prefix = $"dots-{Guid.NewGuid():N}/";
+            byte[] original = MakeTestPng(8, 8, SKColors.Purple);
+            await PutObjectAsync($"{prefix}photo..final.png", original);
+
+            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+
+            HttpResponseMessage response = await _client.GetAsync(
+                $"/api/datasets/{dataset.Id}/s3-file?key={Uri.EscapeDataString($"{prefix}photo..final.png")}");
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await response.Content.ReadAsByteArrayAsync()).Should().Equal(original);
+        }
+
         [Fact]
         public async Task GetDatasetItems_S3Dataset_PaginatesViaContinuationTokenNotNumericOffset()
         {
