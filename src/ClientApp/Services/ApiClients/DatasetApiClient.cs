@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
@@ -94,16 +95,34 @@ public sealed class DatasetApiClient
 
     /// <summary>
     /// Patches one item. Goes through this client so the cookie handler is attached; a raw
-    /// HttpClient hits the client origin and every edit fails (audit U-2).
+    /// HttpClient hits the client origin and every edit fails (audit U-2). With
+    /// <paramref name="ifMatchVersion"/> (the item's <see cref="DatasetItemDto.Version"/>) the
+    /// server refuses the edit with 412 if the item changed since it was loaded (audit E-4).
     /// </summary>
-    public async Task<bool> UpdateItemAsync(Guid itemId, UpdateItemRequest request, CancellationToken cancellationToken = default)
+    public async Task<ItemUpdateResult> UpdateItemAsync(Guid itemId, UpdateItemRequest request, string? ifMatchVersion = null, CancellationToken cancellationToken = default)
     {
-        using HttpResponseMessage response = await _httpClient.PatchAsJsonAsync($"api/items/{itemId}", request, SerializerOptions, cancellationToken);
-        return response.IsSuccessStatusCode;
+        using HttpRequestMessage message = new(HttpMethod.Patch, $"api/items/{itemId}")
+        {
+            Content = JsonContent.Create(request, options: SerializerOptions)
+        };
+        if (!string.IsNullOrEmpty(ifMatchVersion))
+        {
+            message.Headers.TryAddWithoutValidation("If-Match", $"\"{ifMatchVersion}\"");
+        }
+
+        using HttpResponseMessage response = await _httpClient.SendAsync(message, cancellationToken);
+        ItemUpdateOutcome outcome = response.IsSuccessStatusCode ? ItemUpdateOutcome.Saved
+            : response.StatusCode == HttpStatusCode.PreconditionFailed ? ItemUpdateOutcome.Conflict
+            : ItemUpdateOutcome.Failed;
+        ItemEditResponse? body = outcome == ItemUpdateOutcome.Failed ? null : await TryReadAsync<ItemEditResponse>(response, cancellationToken);
+        return new ItemUpdateResult(outcome, body);
     }
 
-    /// <summary>Patches many items. Returns the server's updated count, or null when the request failed.</summary>
-    public async Task<int?> BulkUpdateItemsAsync(BulkUpdateItemsRequest request, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Patches many items. Returns the server's report (how many were edited, which were skipped
+    /// and why, audit E-1), or null when the request failed.
+    /// </summary>
+    public async Task<BulkUpdateItemsResponse?> BulkUpdateItemsAsync(BulkUpdateItemsRequest request, CancellationToken cancellationToken = default)
     {
         using HttpResponseMessage response = await _httpClient.PatchAsJsonAsync("api/items/bulk", request, SerializerOptions, cancellationToken);
         if (!response.IsSuccessStatusCode)
@@ -111,8 +130,25 @@ public sealed class DatasetApiClient
             return null;
         }
 
-        BulkUpdateItemsResponse? body = await response.Content.ReadFromJsonAsync<BulkUpdateItemsResponse>(SerializerOptions, cancellationToken);
-        return body?.UpdatedCount ?? 0;
+        return await TryReadAsync<BulkUpdateItemsResponse>(response, cancellationToken) ?? new BulkUpdateItemsResponse();
+    }
+
+    /// <summary>Reads a JSON body, or null when there is none or it isn't the expected shape.</summary>
+    private static async Task<T?> TryReadAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken) where T : class
+    {
+        try
+        {
+            return await response.Content.ReadFromJsonAsync<T>(SerializerOptions, cancellationToken);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+        catch (NotSupportedException)
+        {
+            // No content type (an empty body).
+            return null;
+        }
     }
 
     public async Task UploadDatasetAsync(Guid datasetId, Stream fileStream, string fileName, string? contentType = null, CancellationToken cancellationToken = default)

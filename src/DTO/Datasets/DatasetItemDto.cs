@@ -17,4 +17,11 @@ public sealed record DatasetItemDto
     public Dictionary<string, string> Metadata { get; init; } = new();
     public DateTime CreatedAt { get; init; }
     public DateTime UpdatedAt { get; init; }
+
+    /// <summary>
+    /// Opaque version of the item's editable fields. Send it as <c>If-Match</c> on
+    /// <c>PATCH /api/items/{id}</c> so an edit made from a stale copy is refused with 412 instead of
+    /// overwriting someone else's change (audit E-4). Null on items cached before versions existed.
+    /// </summary>
+    public string? Version { get; init; }
 }

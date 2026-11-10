@@ -60,6 +60,9 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<Core.Abstractions.Repositories.IDatasetRepository, DatasetRepository>();
 
+        // Edits of streamed (HuggingFace, S3) items, which can't be written back (audit E-3).
+        services.AddScoped<IItemOverlayRepository, ItemOverlayRepository>();
+
         // ========================================
         // Dataset Management Services
         // ========================================

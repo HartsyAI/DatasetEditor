@@ -40,6 +40,7 @@ public sealed class ViewerComponentTests : IAsyncLifetime
         _context.Services.AddSingleton<DatasetState>();
         _context.Services.AddSingleton<ViewState>();
         _context.Services.AddSingleton<ItemEditService>();
+        _context.Services.AddScoped<DatasetStudio.ClientApp.Shared.Services.NotificationService>();
         // Tooltips need a rendered popover provider, as MainLayout supplies in the app.
         _context.Render<MudBlazor.MudPopoverProvider>();
     }

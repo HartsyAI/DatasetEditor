@@ -24,6 +24,7 @@ public partial class ViewerContainer : IDisposable
     private Modality _modality = Modality.Image;
     private ViewMode _viewMode = ViewMode.Grid;
     private int _lastItemCount = -1;
+    private int _lastItemEditVersion;
 
     /// <summary>Fixed row height (px) used for the virtualized list view.</summary>
     private const double ListRowHeight = 168;
@@ -39,6 +40,7 @@ public partial class ViewerContainer : IDisposable
         DetermineModality();
         _viewMode = ViewState.ViewMode;
         _lastItemCount = DatasetState.Items.Count;
+        _lastItemEditVersion = DatasetState.ItemEditVersion;
         Logs.Info("ViewerContainer initialized");
     }
 
@@ -92,10 +94,12 @@ public partial class ViewerContainer : IDisposable
         // Re-render when the modality changes (new dataset) OR when the item count
         // changes (page appended / filter applied) so <Virtualize> sees the new window.
         // Virtualization keeps this cheap: only the visible rows actually re-render.
+        // An edited item (same count) needs a re-render too, or its card keeps the old values.
         int currentCount = DatasetState.Items.Count;
-        if (_modality != previousModality || currentCount != _lastItemCount)
+        if (_modality != previousModality || currentCount != _lastItemCount || DatasetState.ItemEditVersion != _lastItemEditVersion)
         {
             _lastItemCount = currentCount;
+            _lastItemEditVersion = DatasetState.ItemEditVersion;
             StateHasChanged();
         }
     }

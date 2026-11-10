@@ -242,6 +242,49 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
                     b.ToTable("ingestion_jobs");
                 });
 
+            modelBuilder.Entity("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.ItemOverlayEntity", b =>
+                {
+                    b.Property<Guid>("DatasetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("dataset_id");
+
+                    b.Property<Guid>("ItemId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("item_id");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<bool?>("IsFavorite")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_favorite");
+
+                    b.Property<string>("MetadataJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("metadata");
+
+                    b.Property<string>("TagsJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("tags");
+
+                    b.Property<string>("Title")
+                        .HasColumnType("text")
+                        .HasColumnName("title");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("DatasetId", "ItemId");
+
+                    b.ToTable("item_overlays");
+                });
+
             modelBuilder.Entity("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.PermissionEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -413,6 +456,17 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
                 });
 
             modelBuilder.Entity("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.IngestionJobEntity", b =>
+                {
+                    b.HasOne("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.DatasetEntity", "Dataset")
+                        .WithMany()
+                        .HasForeignKey("DatasetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Dataset");
+                });
+
+            modelBuilder.Entity("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.ItemOverlayEntity", b =>
                 {
                     b.HasOne("DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities.DatasetEntity", "Dataset")
                         .WithMany()

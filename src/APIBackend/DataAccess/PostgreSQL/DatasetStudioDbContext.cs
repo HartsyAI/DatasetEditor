@@ -34,6 +34,9 @@ public class DatasetStudioDbContext : DbContext
     /// <summary>Queued, running and finished ingestion jobs (audit I-1).</summary>
     public DbSet<IngestionJobEntity> IngestionJobs { get; set; } = null!;
 
+    /// <summary>Edits of streamed (HuggingFace, S3) items, applied over their pages (audit E-3).</summary>
+    public DbSet<ItemOverlayEntity> ItemOverlays { get; set; } = null!;
+
     /// <summary>
     /// Configure model relationships and constraints
     /// </summary>
@@ -132,6 +135,17 @@ public class DatasetStudioDbContext : DbContext
             entity.HasOne(j => j.Dataset)
                 .WithMany()
                 .HasForeignKey(j => j.DatasetId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ItemOverlayEntity>(entity =>
+        {
+            // One overlay per item; a page's overlays are read by (dataset_id, item_id = ANY(...)).
+            entity.HasKey(e => new { e.DatasetId, e.ItemId });
+
+            entity.HasOne(o => o.Dataset)
+                .WithMany()
+                .HasForeignKey(o => o.DatasetId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

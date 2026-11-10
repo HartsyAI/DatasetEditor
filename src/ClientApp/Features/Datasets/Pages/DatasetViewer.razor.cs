@@ -53,6 +53,8 @@ public partial class DatasetViewer : IDisposable
     // The requested dataset id (route or ?id=), kept so the error state can retry the same load.
     private Guid? _requestedDatasetId;
     private bool _parametersApplied;
+    // The selected item the detail panel was last rendered with.
+    private DatasetItemDto? _renderedSelection;
 
     /// <summary>Subscribes to state changes.</summary>
     protected override void OnInitialized()
@@ -133,9 +135,13 @@ public partial class DatasetViewer : IDisposable
             ApplyFiltersQuiet();
         }
         
-        // Only re-render if we're in a loading/error state that needs UI updates
+        // Only re-render if we're in a loading/error state that needs UI updates, or the selected
+        // item changed (selected, edited, or reloaded after a 412): the detail panel takes it from
+        // here, and kept showing the old copy, whose old version made its next edit fail as stale.
         // When items are appended, Virtualize with Items parameter handles rendering automatically
-        if (_isLoading || !string.IsNullOrEmpty(_errorMessage))
+        bool selectionChanged = !ReferenceEquals(_datasetState.SelectedItem, _renderedSelection);
+        _renderedSelection = _datasetState.SelectedItem;
+        if (_isLoading || !string.IsNullOrEmpty(_errorMessage) || selectionChanged)
         {
             Logs.Info("[DATASET STATE CHANGE] Triggering StateHasChanged due to loading/error state");
             StateHasChanged();

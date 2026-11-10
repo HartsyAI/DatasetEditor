@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Primitives;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 using DatasetStudio.APIBackend.Extensions;
 using DatasetStudio.APIBackend.Models;
 using DatasetStudio.APIBackend.Services.Auth;
@@ -409,6 +410,7 @@ internal static class DatasetEndpoints
         IDatasetItemRepository itemRepository,
         IHuggingFaceDatasetServerClient huggingFaceDatasetServerClient,
         Services.Storage.IS3StorageService s3StorageService,
+        IItemOverlayRepository overlayRepository,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
         ILogger<Program> logger,
@@ -441,7 +443,7 @@ internal static class DatasetEndpoints
             {
                 return Results.BadRequest(new { error = "Filters aren't available for S3 datasets." });
             }
-            return await GetS3DatasetItemsPage(datasetId, dataset, cursor, size, s3StorageService, logger, cancellationToken);
+            return await GetS3DatasetItemsPage(datasetId, dataset, cursor, size, s3StorageService, overlayRepository, logger, cancellationToken);
         }
 
         // Handle HuggingFace streaming datasets
@@ -577,6 +579,7 @@ internal static class DatasetEndpoints
                 DatasetItemDto item = MapStreamingRowToDatasetItem(datasetId, row, repository, config, split);
                 mappedItems.Add(item);
             }
+            mappedItems = await ApplyOverlaysAsync(overlayRepository, datasetId, mappedItems, cancellationToken);
 
             long totalRows = page.NumRowsTotal;
             string? nextCursor = null;
@@ -634,6 +637,7 @@ internal static class DatasetEndpoints
         string? cursor,
         int size,
         Services.Storage.IS3StorageService s3StorageService,
+        IItemOverlayRepository overlayRepository,
         ILogger logger,
         CancellationToken cancellationToken)
     {
@@ -679,7 +683,9 @@ internal static class DatasetEndpoints
             string fileUrl = $"/api/datasets/{datasetId}/s3-file?key={encodedKey}";
             items.Add(new DatasetItemDto
             {
-                Id = Guid.NewGuid(),
+                // Derived from profile, bucket and key, so the item keeps its id across page
+                // requests and can be edited (audit E-3); it was a fresh Guid per request.
+                Id = StreamingItemIds.ForS3Object(datasetId, dataset.S3StorageProfileName, dataset.S3Bucket, key),
                 DatasetId = datasetId,
                 ExternalId = key,
                 Title = Path.GetFileNameWithoutExtension(key),
@@ -692,10 +698,26 @@ internal static class DatasetEndpoints
 
         return Results.Ok(new PageResponse<DatasetItemDto>
         {
-            Items = items,
+            Items = await ApplyOverlaysAsync(overlayRepository, datasetId, items, cancellationToken),
             NextCursor = page.NextContinuationToken,
             TotalCount = null
         });
+    }
+
+    /// <summary>
+    /// Applies the stored edits of a page of streamed items (audit E-3), read in one query for the
+    /// page's ids. Every item gets its version: its overlay's, or 0 when it was never edited.
+    /// </summary>
+    private static async Task<List<DatasetItemDto>> ApplyOverlaysAsync(
+        IItemOverlayRepository overlayRepository,
+        Guid datasetId,
+        List<DatasetItemDto> items,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyDictionary<Guid, ItemOverlay> overlays = await overlayRepository.GetAsync(datasetId, items.Select(i => i.Id).ToList(), cancellationToken);
+        return items
+            .Select(item => (overlays.TryGetValue(item.Id, out ItemOverlay? overlay) ? overlay : ItemOverlay.Empty).ApplyTo(item))
+            .ToList();
     }
 
     /// <summary>Maps a streaming HuggingFace row to DatasetItemDto</summary>
@@ -754,15 +776,16 @@ internal static class DatasetEndpoints
         // row from HF's own trusted datasets-server rather than trusting a client-supplied
         // URL -- see hf-thumbnail's doc comment) instead of the raw HF asset URL, so ImageCard
         // gets a cached, width-bounded thumbnail instead of pulling the original every time.
-        // Streaming items have no stable id across requests (Id above is a fresh Guid on every
-        // single mapping call), so RowIndex is what makes the thumbnail cacheable/re-fetchable.
+        // The item id is a one-way hash, so RowIndex is what lets the thumbnail endpoint re-fetch the row.
         string? thumbnailUrl = string.IsNullOrWhiteSpace(imageUrl)
             ? null
             : $"/api/datasets/{datasetId}/hf-thumbnail?offset={row.RowIndex}";
 
         return new DatasetItemDto
         {
-            Id = Guid.NewGuid(),
+            // Derived from where the row lives, so it is the same on every page request and in
+            // search results (audit E-3); it was a fresh Guid per mapping, so edits always 404'd.
+            Id = StreamingItemIds.ForHuggingFaceRow(datasetId, repository, config, split, row.RowIndex),
             // Every other source sets it; streamed items left it empty (audit H-8).
             DatasetId = datasetId,
             ExternalId = externalId,
