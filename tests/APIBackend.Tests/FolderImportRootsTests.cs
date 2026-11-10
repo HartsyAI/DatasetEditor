@@ -46,8 +46,10 @@ namespace DatasetStudio.Tests.APIBackend
         {
             foreach (DatasetStudioApiFactory factory in _factories)
             {
-                await factory.DropDatabaseAsync();
+                // Stop the host first: an accepted import leaves the ingestion worker using the
+                // database, and dropping it underneath fails with "being accessed by other users".
                 await factory.DisposeAsync();
+                await factory.DropDatabaseAsync();
             }
             foreach (string folder in _folders)
             {
