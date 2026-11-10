@@ -1,5 +1,4 @@
 using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities;
-using DatasetStudio.Core.Abstractions.Repositories;
 using DatasetStudio.DTO.Datasets;
 using Microsoft.EntityFrameworkCore;
 

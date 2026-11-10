@@ -583,7 +583,7 @@ via `docker-compose.prod.yml`; secrets via `.env`. See [docs/DEPLOYMENT.md](docs
 
 | Path | Target | Role |
 |---|---|---|
-| `src/Core` | net10.0 | Client domain models and enums (`Dataset`, `FilterCriteria`, `ViewSettings`), storage keys, the `Logs` wrapper, repository interfaces |
+| `src/Core` | net10.0 | Client-side domain models and enums (`Dataset`, `FilterCriteria`, `ViewSettings`), storage keys, the `Logs` wrapper. Only the client uses it; the API's repository interfaces live next to their implementations in `APIBackend/DataAccess` |
 | `src/DTO` | net10.0 | Wire contracts shared by API and client |
 | `src/APIBackend` | net10.0 | Minimal API, EF Core 10/Npgsql, Parquet storage, ingestion, HF/S3 integration |
 | `src/ClientApp` | net10.0 | Blazor WASM UI (MudBlazor 7.8) |

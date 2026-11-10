@@ -11,8 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
-using IPermissionRepository = DatasetStudio.Core.Abstractions.Repositories.IPermissionRepository;
-using IUserRepository = DatasetStudio.Core.Abstractions.Repositories.IUserRepository;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 namespace DatasetStudio.Tests.APIBackend
 {

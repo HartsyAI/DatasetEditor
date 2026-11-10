@@ -16,6 +16,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Xunit;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 namespace DatasetStudio.Tests.APIBackend
 {
@@ -243,8 +244,8 @@ namespace DatasetStudio.Tests.APIBackend
             await ShareAsync(owner, dataset.Id, new ShareDatasetRequest("sh-target9", DatasetAccessLevel.Write));
 
             using IServiceScope scope = _factory.Services.CreateScope();
-            Core.Abstractions.Repositories.IPermissionRepository grants =
-                scope.ServiceProvider.GetRequiredService<Core.Abstractions.Repositories.IPermissionRepository>();
+            IPermissionRepository grants =
+                scope.ServiceProvider.GetRequiredService<IPermissionRepository>();
 
             bool replaced = await grants.UpsertAsync(new PermissionDto
             {
@@ -279,8 +280,8 @@ namespace DatasetStudio.Tests.APIBackend
             DatasetDetailDto dataset = await CreatePrivateDatasetAsync(owner, "at-username");
             using (IServiceScope scope = _factory.Services.CreateScope())
             {
-                Core.Abstractions.Repositories.IUserRepository users =
-                    scope.ServiceProvider.GetRequiredService<Core.Abstractions.Repositories.IUserRepository>();
+                IUserRepository users =
+                    scope.ServiceProvider.GetRequiredService<IUserRepository>();
                 await users.CreateAsync(new UserDto { Id = Guid.NewGuid(), Username = "old@name", Email = "different@example.com", PasswordHash = "x" });
             }
 
@@ -304,8 +305,8 @@ namespace DatasetStudio.Tests.APIBackend
             Guid emailed = Guid.NewGuid();
             using (IServiceScope scope = _factory.Services.CreateScope())
             {
-                Core.Abstractions.Repositories.IUserRepository users =
-                    scope.ServiceProvider.GetRequiredService<Core.Abstractions.Repositories.IUserRepository>();
+                IUserRepository users =
+                    scope.ServiceProvider.GetRequiredService<IUserRepository>();
                 await users.CreateAsync(new UserDto { Id = named, Username = "pat@example.com", Email = "pat-real@example.com", PasswordHash = "x" });
                 await users.CreateAsync(new UserDto { Id = emailed, Username = "someone", Email = "pat@example.com", PasswordHash = "x" });
             }

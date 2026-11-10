@@ -10,6 +10,7 @@ using DatasetStudio.APIBackend.Services.Integration;
 using DatasetStudio.DTO.Datasets;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 namespace DatasetStudio.APIBackend.Services.DatasetManagement;
 
@@ -30,7 +31,7 @@ public class DatasetIngestionService : IDatasetIngestionService
     // only, never image bytes, so 10,000 of them is a few megabytes.
     private const int ChunkSize = DataAccess.Parquet.ParquetSchemaDefinition.DefaultBatchSize;
 
-    private readonly Core.Abstractions.Repositories.IDatasetRepository _datasetRepository;
+    private readonly IDatasetRepository _datasetRepository;
     private readonly IDatasetItemRepository _itemRepository;
     private readonly IHuggingFaceClient _huggingFaceClient;
     private readonly IHuggingFaceDatasetServerClient _huggingFaceDatasetServerClient;
@@ -40,7 +41,7 @@ public class DatasetIngestionService : IDatasetIngestionService
     private readonly ILogger<DatasetIngestionService> _logger;
 
     public DatasetIngestionService(
-        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        IDatasetRepository datasetRepository,
         IDatasetItemRepository itemRepository,
         IHuggingFaceClient huggingFaceClient,
         IHuggingFaceDatasetServerClient huggingFaceDatasetServerClient,

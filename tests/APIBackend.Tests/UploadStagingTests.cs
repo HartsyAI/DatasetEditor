@@ -17,9 +17,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Xunit;
-// Same convention as the other endpoint-level tests: the Core repository interface is referenced by
-// alias, because the API layer has its own, unrelated IDatasetItemRepository in the same namespace.
-using IDatasetRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetRepository;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 namespace DatasetStudio.Tests.APIBackend
 {

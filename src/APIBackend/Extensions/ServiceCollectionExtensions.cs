@@ -58,7 +58,7 @@ public static class ServiceCollectionExtensions
         // Repositories
         // ========================================
 
-        services.AddScoped<Core.Abstractions.Repositories.IDatasetRepository, DatasetRepository>();
+        services.AddScoped<IDatasetRepository, DatasetRepository>();
 
         // Edits of streamed (HuggingFace, S3) items, which can't be written back (audit E-3).
         services.AddScoped<IItemOverlayRepository, ItemOverlayRepository>();

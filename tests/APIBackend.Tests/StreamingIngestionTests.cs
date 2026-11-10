@@ -9,11 +9,7 @@ using System.Threading.Tasks;
 using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.APIBackend.Services.Integration;
 using DatasetStudio.DTO.Datasets;
-// DatasetIngestionService depends on the Core repository interfaces specifically -- there's a
-// second, unrelated IDatasetItemRepository in Services.DatasetManagement (the ParquetItemRepository-
-// backed one used by ItemEditEndpoints), which the DatasetManagement using above would otherwise
-// collide with.
-using IDatasetRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetRepository;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;

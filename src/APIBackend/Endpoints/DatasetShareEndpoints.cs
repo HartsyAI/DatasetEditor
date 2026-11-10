@@ -1,8 +1,7 @@
 using DatasetStudio.APIBackend.Services.Auth;
 using DatasetStudio.DTO.Auth;
 using DatasetStudio.DTO.Datasets;
-using IPermissionRepository = DatasetStudio.Core.Abstractions.Repositories.IPermissionRepository;
-using IUserRepository = DatasetStudio.Core.Abstractions.Repositories.IUserRepository;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 namespace DatasetStudio.APIBackend.Endpoints;
 
@@ -43,7 +42,7 @@ internal static class DatasetShareEndpoints
     /// <summary>Lists everyone the dataset is shared with. Needs the share right.</summary>
     public static async Task<IResult> ListShares(
         Guid datasetId,
-        Core.Abstractions.Repositories.IDatasetRepository datasets,
+        IDatasetRepository datasets,
         IDatasetPermissionService permissions,
         IPermissionRepository grants,
         HttpContext httpContext,
@@ -68,7 +67,7 @@ internal static class DatasetShareEndpoints
     public static async Task<IResult> ShareDataset(
         Guid datasetId,
         ShareDatasetRequest request,
-        Core.Abstractions.Repositories.IDatasetRepository datasets,
+        IDatasetRepository datasets,
         IDatasetPermissionService permissions,
         IPermissionRepository grants,
         IUserRepository users,
@@ -169,7 +168,7 @@ internal static class DatasetShareEndpoints
     public static async Task<IResult> RevokeShare(
         Guid datasetId,
         Guid userId,
-        Core.Abstractions.Repositories.IDatasetRepository datasets,
+        IDatasetRepository datasets,
         IDatasetPermissionService permissions,
         IPermissionRepository grants,
         HttpContext httpContext,
@@ -210,7 +209,7 @@ internal static class DatasetShareEndpoints
     /// </summary>
     private static async Task<(DatasetDto? Dataset, DatasetAccess Access)> LoadAsync(
         Guid datasetId,
-        Core.Abstractions.Repositories.IDatasetRepository datasets,
+        IDatasetRepository datasets,
         IDatasetPermissionService permissions,
         HttpContext httpContext,
         CancellationToken cancellationToken)

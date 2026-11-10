@@ -3,7 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using DatasetRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetRepository;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 namespace DatasetStudio.APIBackend.Services.DatasetManagement;
 
@@ -79,7 +79,7 @@ public sealed class IngestionBackgroundService : BackgroundService
     {
         using IServiceScope scope = _scopeFactory.CreateScope();
         IIngestionJobStore store = scope.ServiceProvider.GetRequiredService<IIngestionJobStore>();
-        DatasetRepository datasets = scope.ServiceProvider.GetRequiredService<DatasetRepository>();
+        IDatasetRepository datasets = scope.ServiceProvider.GetRequiredService<IDatasetRepository>();
         IDatasetItemRepository items = scope.ServiceProvider.GetRequiredService<IDatasetItemRepository>();
 
         IReadOnlyList<ClaimedIngestionJob> interrupted = await store.GetInterruptedJobsAsync(cancellationToken);
@@ -193,7 +193,7 @@ public sealed class IngestionBackgroundService : BackgroundService
     private async Task RunClaimedJobAsync(IServiceScope scope, IIngestionJobStore store, ClaimedIngestionJob claimed, CancellationToken stoppingToken)
     {
         IngestionJob job = claimed.Job;
-        DatasetRepository datasets = scope.ServiceProvider.GetRequiredService<DatasetRepository>();
+        IDatasetRepository datasets = scope.ServiceProvider.GetRequiredService<IDatasetRepository>();
 
         if (claimed.PayloadError is not null)
         {
@@ -239,7 +239,7 @@ public sealed class IngestionBackgroundService : BackgroundService
         }
     }
 
-    private async Task FailJobAsync(IIngestionJobStore store, DatasetRepository datasets, ClaimedIngestionJob claimed, string message)
+    private async Task FailJobAsync(IIngestionJobStore store, IDatasetRepository datasets, ClaimedIngestionJob claimed, string message)
     {
         try
         {

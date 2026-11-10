@@ -10,14 +10,6 @@ using DatasetStudio.APIBackend.Services.DatasetManagement.Dtos;
 using DatasetStudio.APIBackend.Services.Integration;
 using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
-using DatasetVisibilityFilter = DatasetStudio.Core.Abstractions.Repositories.DatasetVisibilityFilter;
-using DatasetUpdateConflictException = DatasetStudio.Core.Abstractions.Repositories.DatasetUpdateConflictException;
-
-// IDatasetRepository is referenced fully-qualified (Core.Abstractions.Repositories.IDatasetRepository)
-// rather than via `using`, because this file also uses the unrelated, same-named
-// Services.DatasetManagement.IDatasetItemRepository — a `using` for both namespaces would make
-// IDatasetItemRepository ambiguous. DatasetIngestionService follows the same convention.
-// DatasetVisibilityFilter is aliased individually instead for the same reason.
 
 namespace DatasetStudio.APIBackend.Endpoints;
 
@@ -129,7 +121,7 @@ internal static class DatasetEndpoints
 
     /// <summary>Gets all datasets with pagination, scoped to what the caller may see.</summary>
     public static async Task<IResult> GetAllDatasets(
-        [FromServices] Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        [FromServices] IDatasetRepository datasetRepository,
         HttpContext httpContext,
         [FromQuery] int page = 0,
         [FromQuery] int pageSize = 50,
@@ -158,7 +150,7 @@ internal static class DatasetEndpoints
     /// <summary>Gets a single dataset by ID. 404s (not 403) if the caller can't see it -- existence of a private dataset isn't revealed to non-owners.</summary>
     public static async Task<IResult> GetDataset(
         Guid datasetId,
-        Core.Abstractions.Repositories.IDatasetRepository repository,
+        IDatasetRepository repository,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
         CancellationToken cancellationToken)
@@ -182,7 +174,7 @@ internal static class DatasetEndpoints
     /// <summary>Creates a new dataset, owned by the authenticated caller.</summary>
     public static async Task<IResult> CreateDataset(
         CreateDatasetRequest request,
-        Core.Abstractions.Repositories.IDatasetRepository repository,
+        IDatasetRepository repository,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
@@ -221,7 +213,7 @@ internal static class DatasetEndpoints
     /// <summary>Deletes a dataset and all of its items. Requires delete permission (owner, admin, or a granted CanDelete permission).</summary>
     public static async Task<IResult> DeleteDataset(
         Guid datasetId,
-        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        IDatasetRepository datasetRepository,
         IDatasetItemRepository itemRepository,
         IIngestionJobQueue ingestionQueue,
         IDatasetPermissionService permissionService,
@@ -259,7 +251,7 @@ internal static class DatasetEndpoints
     public static async Task<IResult> UploadDatasetFile(
         Guid datasetId,
         IFormFile file,
-        Core.Abstractions.Repositories.IDatasetRepository repository,
+        IDatasetRepository repository,
         IIngestionJobQueue ingestionQueue,
         IConfiguration configuration,
         IDatasetPermissionService permissionService,
@@ -406,7 +398,7 @@ internal static class DatasetEndpoints
         Guid datasetId,
         int? pageSize,
         string? cursor,
-        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        IDatasetRepository datasetRepository,
         IDatasetItemRepository itemRepository,
         IHuggingFaceDatasetServerClient huggingFaceDatasetServerClient,
         Services.Storage.IS3StorageService s3StorageService,
@@ -961,7 +953,7 @@ internal static class DatasetEndpoints
     public static async Task<IResult> ImportFromHuggingFace(
         Guid datasetId,
         ImportHuggingFaceDatasetRequest request,
-        Core.Abstractions.Repositories.IDatasetRepository repository,
+        IDatasetRepository repository,
         IIngestionJobQueue ingestionQueue,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
@@ -1062,7 +1054,7 @@ internal static class DatasetEndpoints
     public static async Task<IResult> ImportFromFolder(
         Guid datasetId,
         ImportFolderRequest request,
-        Core.Abstractions.Repositories.IDatasetRepository repository,
+        IDatasetRepository repository,
         IIngestionJobQueue ingestionQueue,
         HttpContext httpContext,
         IConfiguration configuration,
@@ -1138,7 +1130,7 @@ internal static class DatasetEndpoints
     public static async Task<IResult> ImportFromS3(
         Guid datasetId,
         ImportS3DatasetRequest request,
-        Core.Abstractions.Repositories.IDatasetRepository repository,
+        IDatasetRepository repository,
         IDatasetPermissionService permissionService,
         Services.Storage.IS3StorageProfileResolver profileResolver,
         Services.Storage.IS3StorageService s3StorageService,
@@ -1226,7 +1218,7 @@ internal static class DatasetEndpoints
     public static async Task<IResult> ServeDatasetFile(
         Guid datasetId,
         string filePath,
-        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        IDatasetRepository datasetRepository,
         IDatasetPermissionService permissionService,
         Services.Storage.IThumbnailService thumbnailService,
         HttpContext httpContext,
@@ -1359,7 +1351,7 @@ internal static class DatasetEndpoints
         Guid datasetId,
         [FromQuery] string? key,
         [FromQuery] int? w,
-        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        IDatasetRepository datasetRepository,
         IDatasetPermissionService permissionService,
         Services.Storage.IS3StorageService s3StorageService,
         Services.Storage.IThumbnailService thumbnailService,
@@ -1481,7 +1473,7 @@ internal static class DatasetEndpoints
         Guid datasetId,
         [FromQuery] long? offset,
         [FromQuery] int? w,
-        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        IDatasetRepository datasetRepository,
         IDatasetPermissionService permissionService,
         IHuggingFaceDatasetServerClient huggingFaceDatasetServerClient,
         IHuggingFaceRowPageCache rowPageCache,

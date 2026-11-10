@@ -5,7 +5,7 @@ namespace DatasetStudio.Core.Utilities.Logging;
 /// <summary>
 /// Thin static wrapper around a real <see cref="ILogger"/>, used by the call sites across
 /// Core/ClientApp that predate this project's real logging pipeline. Call <see cref="Initialize"/>
-/// once at startup (both APIBackend's and ClientApp's Program.cs do) so these calls route
+/// once at startup (ClientApp's Program.cs does) so these calls route
 /// through the app's actual configured logging (respects Logging:LogLevel, and in WASM goes to
 /// the browser console via the built-in provider) instead of a hardcoded Console.WriteLine.
 /// Converting every call site to constructor-injected ILogger&lt;T&gt; instead of this wrapper

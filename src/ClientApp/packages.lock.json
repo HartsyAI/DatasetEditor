@@ -323,7 +323,6 @@
       "core": {
         "type": "Project",
         "dependencies": {
-          "DTO": "[0.2.0-alpha, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.14, )"
         }
       },

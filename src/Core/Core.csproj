@@ -6,14 +6,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- For Logs' ILogger wrapper (see Core/Utilities/Logging/Logs.cs). Pinned to 8.0.x, not
-         the newer major the API project uses, since this project is also in the WASM client's
-         reference graph and the repo already pins EF/WASM there at 8.x. -->
+    <!-- For Logs' ILogger wrapper (see Core/Utilities/Logging/Logs.cs). -->
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\DTO\DTO.csproj" />
-  </ItemGroup>
+  <!-- No reference to DTO: Core used to need one only because the repository interfaces it
+       declared took DTOs. Those moved into APIBackend, their only user (audit K-3). -->
 
 </Project>

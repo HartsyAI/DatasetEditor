@@ -1,4 +1,4 @@
-namespace DatasetStudio.Core.Abstractions.Repositories;
+namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 /// <summary>
 /// A user could not be created because the username or email is already taken, compared

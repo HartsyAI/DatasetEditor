@@ -1,4 +1,4 @@
-using DatasetStudio.Core.Abstractions.Repositories;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 using DatasetStudio.DTO.Auth;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;

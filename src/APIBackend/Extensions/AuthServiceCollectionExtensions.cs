@@ -12,8 +12,8 @@ public static class AuthServiceCollectionExtensions
 {
     public static IServiceCollection AddAuthServices(this IServiceCollection services)
     {
-        services.AddScoped<Core.Abstractions.Repositories.IUserRepository, UserRepository>();
-        services.AddScoped<Core.Abstractions.Repositories.IPermissionRepository, PermissionRepository>();
+        services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IPermissionRepository, PermissionRepository>();
         services.AddScoped<IPasswordHasher, BCryptPasswordHasher>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IDatasetPermissionService, DatasetPermissionService>();

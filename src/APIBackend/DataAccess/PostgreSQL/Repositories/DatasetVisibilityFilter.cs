@@ -1,4 +1,4 @@
-namespace DatasetStudio.Core.Abstractions.Repositories;
+namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 /// <summary>
 /// Row-visibility scope for GetAllAsync/SearchAsync/GetCountAsync, applied at the SQL level via

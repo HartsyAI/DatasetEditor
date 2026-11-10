@@ -19,7 +19,7 @@ Details: README §"How it works".
 ## 2. Repository map
 
 ```
-src/Core/          Client domain models and enums, storage keys, the Logs wrapper, repository interfaces (net10.0)
+src/Core/          Client-only domain models and enums, storage keys, the Logs wrapper (net10.0; no DTO reference)
 src/DTO/           Wire contracts shared by API and client (net10.0)
 src/APIBackend/    ASP.NET Core minimal API: Endpoints/, Services/, DataAccess/{PostgreSQL,Parquet}, Configuration/
 src/ClientApp/     Blazor WASM: Features/<Feature>/{Pages,Components,Services}, Shared/{Layout,Components,Services}, Services/{ApiClients,Caching,Interop,StateManagement}, wwwroot/

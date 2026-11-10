@@ -394,10 +394,7 @@
         }
       },
       "core": {
-        "type": "Project",
-        "dependencies": {
-          "DTO": "[0.2.0-alpha, )"
-        }
+        "type": "Project"
       },
       "dto": {
         "type": "Project"

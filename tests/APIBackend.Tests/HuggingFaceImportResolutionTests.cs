@@ -5,9 +5,7 @@ using System.Threading.Tasks;
 using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.APIBackend.Services.Integration;
 using DatasetStudio.DTO.Datasets;
-// Same alias convention as StreamingIngestionTests: DatasetIngestionService uses the Core repository
-// interfaces, not the unrelated Services.DatasetManagement item repository.
-using IDatasetRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetRepository;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;

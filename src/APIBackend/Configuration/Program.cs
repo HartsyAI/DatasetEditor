@@ -224,12 +224,6 @@ WebApplication app = builder.Build();
 // First, so everything after (rate limits, HTTPS detection for the cookie) sees the real client.
 app.UseForwardedHeaders();
 
-// Routes Core.Utilities.Logging.Logs (used by the shared Core project's ingestion/parsing code,
-// which predates real DI-based logging there) through this app's actual configured logging
-// instead of its Console.WriteLine fallback. See Logs.cs for why that project isn't fully
-// converted to injected ILogger<T> instead.
-DatasetStudio.Core.Utilities.Logging.Logs.Initialize(app.Services.GetRequiredService<ILoggerFactory>());
-
 // Apply EF Core migrations on startup so the PostgreSQL schema exists. Requires the
 // database to be reachable (run `docker compose up -d` first).
 using (IServiceScope migrationScope = app.Services.CreateScope())

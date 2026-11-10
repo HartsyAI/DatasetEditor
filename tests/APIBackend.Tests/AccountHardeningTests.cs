@@ -7,7 +7,7 @@ using System.Net.Http.Json;
 using System.Threading.Tasks;
 using DatasetStudio.APIBackend.DataAccess.PostgreSQL;
 using DatasetStudio.APIBackend.Services.Auth;
-using DatasetStudio.Core.Abstractions.Repositories;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 using DatasetStudio.DTO.Auth;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.Tests.APIBackend.Fixtures;

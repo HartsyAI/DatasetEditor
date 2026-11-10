@@ -1,6 +1,6 @@
 using DatasetStudio.DTO.Datasets;
 
-namespace DatasetStudio.Core.Abstractions.Repositories;
+namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 /// <summary>Repository interface for dataset CRUD operations with PostgreSQL</summary>
 public interface IDatasetRepository
