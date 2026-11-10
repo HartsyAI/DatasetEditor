@@ -968,11 +968,12 @@ internal static class DatasetEndpoints
     /// IngestFromFolderAsync has existed since before this endpoint did — it just had no route
     /// mapped to it, which is why the client's "Local folder" creation option was permanently
     /// labeled "(coming soon)".
-    /// Still no path allow-listing at the ingestion layer -- this reads arbitrary server
-    /// filesystem paths, so the route itself is gated to the site-wide Admin role (see
-    /// MapDatasetEndpoints), not merely "authenticated". Requiring only authentication would
-    /// let any self-registered account (registration is open) use the server as a proxy to
-    /// read/enumerate any folder the API process can see.
+    /// This reads server filesystem paths, so the route itself is gated to the site-wide Admin
+    /// role (see MapDatasetEndpoints), not merely "authenticated". Requiring only authentication
+    /// would let any self-registered account (registration is open) use the server as a proxy to
+    /// read/enumerate any folder the API process can see. On top of that, the folder must lie
+    /// under one of the operator's <c>Storage:FolderImportRoots</c>; with none configured, folder
+    /// import is refused.
     /// </summary>
     public static async Task<IResult> ImportFromFolder(
         Guid datasetId,
@@ -980,6 +981,8 @@ internal static class DatasetEndpoints
         Core.Abstractions.Repositories.IDatasetRepository repository,
         IIngestionJobQueue ingestionQueue,
         HttpContext httpContext,
+        IConfiguration configuration,
+        ILogger<Program> logger,
         CancellationToken cancellationToken)
     {
         DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
@@ -993,9 +996,33 @@ internal static class DatasetEndpoints
             return Results.BadRequest(new { error = "FolderPath is required" });
         }
 
+        // Admin-only was the whole guard, so an admin could point a dataset at /etc or the
+        // DataProtection key ring (audit F-1). Folders must now sit under a configured root,
+        // compared by real path so a symlink inside a root can't lead back out of it.
+        string[] importRoots = (configuration.GetSection("Storage:FolderImportRoots").Get<string[]>() ?? [])
+            .Where(root => !string.IsNullOrWhiteSpace(root))
+            .ToArray();
+        if (importRoots.Length == 0)
+        {
+            return Results.BadRequest(new
+            {
+                error = "Server folder import is disabled: no Storage:FolderImportRoots are configured. " +
+                        "Add the folders admins may import from (see docs/DEPLOYMENT.md)."
+            });
+        }
+
         if (!Directory.Exists(request.FolderPath))
         {
             return Results.BadRequest(new { error = $"Folder not found: {request.FolderPath}" });
+        }
+
+        bool insideARoot = importRoots.Any(root => Services.Storage.RealPath.IsSameOrContainedIn(root, request.FolderPath));
+        if (!insideARoot)
+        {
+            logger.LogWarning(
+                "Refused folder import for dataset {DatasetId}: {FolderPath} is outside Storage:FolderImportRoots",
+                datasetId, request.FolderPath.ReplaceLineEndings(" "));
+            return Results.BadRequest(new { error = $"Folder {request.FolderPath} is outside the allowed import roots (Storage:FolderImportRoots)." });
         }
 
         // Absolute for the same reason as an upload's staged path: a later process reads it.

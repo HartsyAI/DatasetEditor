@@ -312,7 +312,9 @@ thumbnail generation buffers whole objects (S-2); list failures are swallowed si
 **What.** Point a dataset at a directory already on the server; images are catalogued in
 place and served from there.
 
-**How.** `POST /{id}/import-folder` (`RequireRole("Admin")`) → `IngestFromFolderAsync`:
+**How.** `POST /{id}/import-folder` (`RequireRole("Admin")`) checks the folder against
+`Storage:FolderImportRoots` (by real path, so a symlink inside a root can't lead out of it; empty,
+the default, means folder import is refused with a 400 saying so) → `IngestFromFolderAsync`:
 `Directory.EnumerateFiles` lazily, items get `/api/datasets/{id}/files/{relative}` URLs,
 `StoragePath` is set so `ServeDatasetFile` serves from the folder with containment checks.
 Containment compares real paths with every symlink in the path resolved (`RealPath`), so a
@@ -322,14 +324,17 @@ reached through a symlink still works. `ServeDatasetFile` (and `GetS3File`) serv
 path or symlink outside the folder, S3 key outside the prefix) are logged as warnings with the
 dataset id and requested path.
 
-**Why.** Admin-only because it reads arbitrary server paths; copying was rejected because
-"point at a folder" is the whole point for huge local collections.
+**Why.** Admin-only because it reads server paths, and limited to configured roots so even an
+admin can't point a dataset at `/etc` or the session key ring (F-1); copying was rejected because
+"point at a folder" is the whole point for huge local collections. Refusing by default (rather than
+defaulting to a data directory) is deliberate: `./data` also holds the DataProtection keys.
 
 The dataset's `SourceType` becomes `LocalFolder`; each item's width and height are read from
 the image header; item metadata holds only the path relative to the folder. TIFF files are
 skipped: nothing else in the app serves or thumbnails them as images.
 
-**Gaps.** No path allow-list, so an admin can point a dataset at any directory (F-1).
+**Gaps.** Datasets imported before the root allow-list existed keep serving from wherever they
+point (images only).
 
 ### 4.8 Thumbnails — Working
 

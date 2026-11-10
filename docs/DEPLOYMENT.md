@@ -84,6 +84,25 @@ MinIO/R2/Backblaze), `AccessKey`, `SecretKey`, `ForcePathStyle`, and
 reach (see `S3StorageProfileConfig`'s own doc comment for why this isn't just "whatever bucket
 the request names").
 
+## Server folder import (opt-in)
+
+Admins can point a dataset at a folder already on the server ("Server folder" on the create
+page). It is off until you list the folders it may read in `Storage:FolderImportRoots`: with the
+default empty list, the import is refused with a 400 that says so. A folder is accepted when it is
+one of the roots or inside one, compared by real path (a symlink inside a root that leads
+elsewhere is refused). In Docker the roots are container paths, so mount the image folder and list
+the mount point, for example in the `api` service of `docker-compose.prod.yml`:
+
+```yaml
+    volumes:
+      - /srv/photos:/imports/photos:ro
+    environment:
+      Storage__FolderImportRoots__0: "/imports"
+```
+
+Don't list `/app/data` or anything above it: it holds the DataProtection key ring. Only image files
+(`.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`) are ever served from an imported folder.
+
 ## Known landmines (found during Phase 6's own real-run verification)
 
 - **`Directory.Build.props` must be in the Docker build context.** It supplies

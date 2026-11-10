@@ -31,7 +31,7 @@ public partial class FolderSourceForm
             if (!accepted)
             {
                 await Workflow.DeleteAsync(dataset.Id, CancellationToken.None);
-                throw new InvalidOperationException("The server didn't accept the folder. Check the path, and that you are an admin.");
+                throw new InvalidOperationException("The server didn't accept the folder. Check the path, that it is inside one of the server's allowed import folders (Storage:FolderImportRoots), and that you are an admin.");
             }
             return dataset.Id;
         });

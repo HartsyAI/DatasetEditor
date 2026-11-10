@@ -91,6 +91,16 @@ public static class RealPath
     }
 
     /// <summary>
+    /// True when <paramref name="candidate"/> is <paramref name="root"/> itself or lies inside it,
+    /// both compared by their real paths. Used for folder-import roots, where the root folder is
+    /// itself a valid import.
+    /// </summary>
+    public static bool IsSameOrContainedIn(string root, string candidate)
+    {
+        return string.Equals(Resolve(root), Resolve(candidate), PathComparison) || IsContainedIn(root, candidate);
+    }
+
+    /// <summary>
     /// Case-insensitive only where the file system is: on Linux "<c>/data/Foo</c>" and
     /// "<c>/data/foo</c>" are different folders, so an ignore-case match would accept a sibling.
     /// </summary>
