@@ -315,6 +315,9 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseCors(corsPolicyName);
 app.UseAuthentication();
+// After authentication so the caller is known, and before authorization and the rate limiter so
+// their 401/403/429 answers are logged too (audit E-5).
+DatasetStudio.APIBackend.Configuration.RequestLogging.UseRequestLogging(app);
 app.UseAuthorization();
 // After authentication so the limiter can partition by signed-in user; after routing so it sees
 // each endpoint's policy.

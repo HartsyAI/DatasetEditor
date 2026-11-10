@@ -108,7 +108,11 @@ public static class ItemEditEndpoints
         // Save to database
         await itemRepository.UpdateItemAsync(item, cancellationToken);
 
-        logger.LogInformation("Updated item {ItemId}: Title={Title}, Tags={TagCount}", itemId, request.Title, request.Tags?.Count ?? 0);
+        // Who changed which item and which fields, never the values: titles, captions and tags are
+        // user content and used to be written to the log (audit E-5), while the editor wasn't.
+        logger.LogInformation(
+            "[Audit] User {UserId} edited item {ItemId} in dataset {DatasetId} (fields: {Fields})",
+            httpContext.User.GetUserId(), itemId, item.DatasetId, ChangedFields(request));
 
         return Results.Ok(item);
     }
@@ -208,9 +212,40 @@ public static class ItemEditEndpoints
         // Bulk update in database
         await itemRepository.UpdateItemsAsync(itemsToUpdate, cancellationToken);
 
-        logger.LogInformation("Bulk updated {ItemCount} items", itemsToUpdate.Count);
+        // Who changed how many items in which datasets (audit E-5); skipped items aren't counted.
+        logger.LogInformation(
+            "[Audit] User {UserId} bulk-edited {ItemCount} of {RequestedCount} items in datasets {DatasetIds}",
+            httpContext.User.GetUserId(), itemsToUpdate.Count, request.ItemIds.Count(),
+            string.Join(",", itemsToUpdate.Select(i => i.DatasetId).Distinct()));
 
         return Results.Ok(new { updatedCount = itemsToUpdate.Count });
+    }
+
+    /// <summary>The names of the fields an edit request sets, for the audit log (never their values).</summary>
+    internal static string ChangedFields(UpdateItemRequest request)
+    {
+        List<string> fields = new();
+        if (request.Title != null)
+        {
+            fields.Add("title");
+        }
+        if (request.Description != null)
+        {
+            fields.Add("description");
+        }
+        if (request.Tags != null)
+        {
+            fields.Add("tags");
+        }
+        if (request.IsFavorite.HasValue)
+        {
+            fields.Add("favorite");
+        }
+        if (request.Metadata != null)
+        {
+            fields.Add("metadata");
+        }
+        return fields.Count == 0 ? "none" : string.Join(",", fields);
     }
 }
 

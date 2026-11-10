@@ -62,6 +62,20 @@ boot, then `Cors__AllowedOrigins__0` in `docker-compose.prod.yml` (`https://${DO
 automatically follows it. Changing `DOMAIN` after Caddy has already issued a certificate for
 the old value: `docker compose -f docker-compose.yml -f docker-compose.prod.yml restart caddy`.
 
+## Logs
+
+The API logs to the console (`docker compose logs api`). What it records:
+
+- One line per `/api` request under the category `DatasetStudio.Requests`: method, route
+  pattern, dataset id, status, time and the caller's account id (or `anonymous`). The route
+  pattern is logged rather than the path, and the query string is left out, so file names and
+  search terms don't reach the log. Image and thumbnail fetches are logged at Debug (a grid page
+  makes about a hundred); 5xx answers at Error. Tune it with
+  `Logging__LogLevel__DatasetStudio.Requests` (e.g. `Warning` to keep only failures).
+- `[Audit]` lines for item edits: who, which dataset and items, which fields; never the values.
+- Sign-ins, registrations and failed logins by account id; usernames and emails aren't logged.
+- Imports refused because the queue is full, with the dataset and user.
+
 ## Backups
 
 Everything that matters lives in three places:

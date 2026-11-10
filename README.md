@@ -438,7 +438,8 @@ set favourite, add metadata on many.
 `ParquetItemRepository`: the item is found through its dataset's segment id indexes, then
 `UpdateItemsAsync` rewrites only the segments holding an edited item, one row group at a time,
 into a temp file renamed over the segment. Writes for one dataset are serialised; other datasets
-are unaffected.
+are unaffected. Each edit writes an `[Audit]` log line with the editor's account id, the dataset
+and item ids and the names of the changed fields, never their values (E-5).
 
 **Why.** Parquet is immutable, so updates are rewrites; limiting the rewrite to touched segments
 (10,000 rows each from ingestion, up to about 2M after merging) is the cheapest correct option
