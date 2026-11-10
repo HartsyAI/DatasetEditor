@@ -33,6 +33,24 @@ public sealed class DatasetCacheService : IDisposable
     private int _windowStartIndex = 0;
 
     public Guid? CurrentDatasetId { get; private set; }
+
+    /// <summary>
+    /// The filter every page request carries, or null. The server filters (audit U-6), so the
+    /// loaded items are the matches.
+    /// </summary>
+    public FilterRequest? ActiveFilter { get; private set; }
+
+    /// <summary>
+    /// The filter most recently asked for, which may still be loading. Equal to
+    /// <see cref="ActiveFilter"/> once its load finishes.
+    /// </summary>
+    private FilterRequest? _requestedFilter;
+
+    /// <summary>
+    /// Counts first-page loads. A load that finds a newer one was requested by the time it gets
+    /// the page lock does nothing, so the newest request always wins.
+    /// </summary>
+    private int _loadVersion;
     public string? NextCursor { get; private set; }
     public DatasetDetailDto? CurrentDatasetDetail { get; private set; }
 
@@ -85,13 +103,43 @@ public sealed class DatasetCacheService : IDisposable
     /// Loads the dataset metadata and first page of items from the API. On failure the state's
     /// error is set (the viewer renders it inline) and the exception is rethrown to the caller.
     /// </summary>
-    public async Task LoadFirstPageAsync(Guid datasetId, CancellationToken cancellationToken = default)
+    public Task LoadFirstPageAsync(Guid datasetId, CancellationToken cancellationToken = default)
     {
-        _datasetState.SetLoading(true);
+        // A filter belongs to the dataset it was set on. Carried over, a local tag or size filter
+        // made an S3 or HuggingFace dataset's first request fail with 400, and a retry sent it again.
+        // Cleared before the first await, so a FilterState reset the viewer makes next finds no
+        // active filter to reload.
+        if (CurrentDatasetId != datasetId)
+        {
+            ActiveFilter = null;
+            _requestedFilter = null;
+        }
+        return LoadFirstPageAsync(datasetId, showLoading: true, _requestedFilter, ++_loadVersion, cancellationToken);
+    }
 
+    /// <param name="datasetId">The dataset to load.</param>
+    /// <param name="showLoading">
+    /// False for a filter change: the viewer keeps showing the grid (and the filter panel the user
+    /// is typing in) while the matches load, instead of swapping to its loading state.
+    /// </param>
+    /// <param name="filter">The filter this load applies; it becomes <see cref="ActiveFilter"/> on success.</param>
+    /// <param name="version">This load's number; it is skipped if a newer load was requested meanwhile.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    private async Task LoadFirstPageAsync(Guid datasetId, bool showLoading, FilterRequest? filter, int version, CancellationToken cancellationToken)
+    {
+        if (showLoading)
+        {
+            _datasetState.SetLoading(true);
+        }
+
+        await _pageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await _pageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (version != _loadVersion)
+            {
+                // A newer filter or reload was requested while this one waited; it will run next.
+                return;
+            }
 
             if (_isIndexedDbEnabled)
             {
@@ -104,7 +152,7 @@ public sealed class DatasetCacheService : IDisposable
                 throw new InvalidOperationException("Dataset not found on server.");
             }
 
-            PageResponse<DatasetItemDto>? page = await FetchPageAsync(datasetId, pageSize: 100, cursor: null, dataset, cancellationToken).ConfigureAwait(false);
+            PageResponse<DatasetItemDto>? page = await FetchMatchingPageAsync(datasetId, pageSize: 100, cursor: null, dataset, filter, cancellationToken).ConfigureAwait(false);
             dataset = WithPageTotal(dataset, page);
 
             DatasetStudio.Core.DomainModels.Datasets.Dataset mappedDataset = MapDataset(dataset);
@@ -112,6 +160,7 @@ public sealed class DatasetCacheService : IDisposable
 
             _datasetState.LoadDataset(mappedDataset, items);
             _windowStartIndex = 0;
+            ActiveFilter = filter;
             CurrentDatasetId = datasetId;
             NextCursor = page?.NextCursor;
             CurrentDatasetDetail = dataset;
@@ -120,7 +169,15 @@ public sealed class DatasetCacheService : IDisposable
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to load dataset {DatasetId} from API", datasetId);
-            _datasetState.SetError(DescribeLoadFailure(ex));
+            // A failed filter change leaves the loaded results and the filter panel in place (the
+            // caller reports it). Setting the dataset-wide error replaced the whole viewer, panel
+            // included, so the user couldn't clear the search that failed. Still set it when the
+            // viewer is showing its loading state (an opening load this one superseded), or it
+            // would stay loading.
+            if (showLoading || _datasetState.IsLoading)
+            {
+                _datasetState.SetError(DescribeLoadFailure(ex));
+            }
             throw;
         }
         finally
@@ -146,7 +203,7 @@ public sealed class DatasetCacheService : IDisposable
         await _pageLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            PageResponse<DatasetItemDto>? page = await FetchPageAsync(CurrentDatasetId.Value, 100, NextCursor, CurrentDatasetDetail, cancellationToken).ConfigureAwait(false);
+            PageResponse<DatasetItemDto>? page = await FetchMatchingPageAsync(CurrentDatasetId.Value, 100, NextCursor, CurrentDatasetDetail, ActiveFilter, cancellationToken).ConfigureAwait(false);
             if (page == null || page.Items.Count == 0)
             {
                 NextCursor = null;
@@ -187,6 +244,51 @@ public sealed class DatasetCacheService : IDisposable
                 SetBuffering(false);
             }
         }
+    }
+
+    /// <summary>
+    /// Reloads the open dataset from its first page with this filter. The filter becomes
+    /// <see cref="ActiveFilter"/> only when its load succeeds, and the newest request wins: an
+    /// older request that fails or finishes late can't change what a newer one shows. A request the
+    /// server refuses throws, and the previous filter and results stay.
+    /// </summary>
+    public async Task ApplyFilterAsync(FilterRequest? filter, CancellationToken cancellationToken = default)
+    {
+        if (SameFilter(_requestedFilter, filter))
+        {
+            return;
+        }
+
+        _requestedFilter = filter;
+        int version = ++_loadVersion;
+        if (CurrentDatasetId is not Guid datasetId)
+        {
+            ActiveFilter = filter;
+            return;
+        }
+
+        try
+        {
+            await LoadFirstPageAsync(datasetId, showLoading: false, filter, version, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Asking for the same filter again should retry it, unless a newer request replaced it.
+            if (version == _loadVersion)
+            {
+                _requestedFilter = ActiveFilter;
+            }
+            throw;
+        }
+    }
+
+    private static bool SameFilter(FilterRequest? a, FilterRequest? b)
+    {
+        if (a is null || b is null)
+        {
+            return a is null && b is null;
+        }
+        return FilterQueryString.Build(a) == FilterQueryString.Build(b);
     }
 
     public async Task<DatasetDetailDto?> RefreshDatasetStatusAsync(CancellationToken cancellationToken = default)
@@ -249,9 +351,37 @@ public sealed class DatasetCacheService : IDisposable
         return Task.CompletedTask;
     }
 
-    private async Task<PageResponse<DatasetItemDto>?> FetchPageAsync(Guid datasetId, int pageSize, string? cursor, DatasetDetailDto? datasetDetail, CancellationToken cancellationToken)
+    /// <summary>
+    /// Fetches the next page that has items, or the end. A filtered local request scans a bounded
+    /// number of rows and may return no matches with a cursor to continue from. That empty page
+    /// used to end paging (the viewer drew no load-more sentinel and an empty next page cleared the
+    /// cursor), so matches past the first scan budget were never shown. Stops if the server returns
+    /// the cursor it was given, so a misbehaving source can't loop forever.
+    /// </summary>
+    private async Task<PageResponse<DatasetItemDto>?> FetchMatchingPageAsync(Guid datasetId, int pageSize, string? cursor, DatasetDetailDto? datasetDetail, FilterRequest? filter, CancellationToken cancellationToken)
     {
-        if (_isIndexedDbEnabled)
+        PageResponse<DatasetItemDto>? page = await FetchPageAsync(datasetId, pageSize, cursor, datasetDetail, filter, cancellationToken).ConfigureAwait(false);
+        while (page is { Items.Count: 0 }
+            && !string.IsNullOrEmpty(page.NextCursor)
+            && page.NextCursor != cursor)
+        {
+            cursor = page.NextCursor;
+            PageResponse<DatasetItemDto>? next = await FetchPageAsync(datasetId, pageSize, cursor, datasetDetail, filter, cancellationToken).ConfigureAwait(false);
+            if (next is null)
+            {
+                break;
+            }
+            // Keep the first page's total: later filtered pages may not repeat it.
+            page = next with { TotalCount = next.TotalCount ?? page.TotalCount };
+        }
+        return page;
+    }
+
+    private async Task<PageResponse<DatasetItemDto>?> FetchPageAsync(Guid datasetId, int pageSize, string? cursor, DatasetDetailDto? datasetDetail, FilterRequest? filter, CancellationToken cancellationToken)
+    {
+        // The page cache is keyed by cursor only, so it holds unfiltered pages; skip it while filtering.
+        bool useIndexedDb = _isIndexedDbEnabled && filter is null;
+        if (useIndexedDb)
         {
             IReadOnlyList<DatasetItemDto>? cachedItems = await _indexedDbCache.TryLoadPageAsync(datasetId, cursor, cancellationToken).ConfigureAwait(false);
             if (cachedItems != null)
@@ -282,8 +412,8 @@ public sealed class DatasetCacheService : IDisposable
             huggingFaceToken = _apiKeyState.GetToken(ApiKeyState.ProviderHuggingFace);
         }
 
-        PageResponse<DatasetItemDto>? page = await _apiClient.GetDatasetItemsAsync(datasetId, pageSize, cursor, huggingFaceToken, cancellationToken).ConfigureAwait(false);
-        if (_isIndexedDbEnabled && page?.Items.Count > 0)
+        PageResponse<DatasetItemDto>? page = await _apiClient.GetDatasetItemsAsync(datasetId, pageSize, cursor, huggingFaceToken, cancellationToken, filter).ConfigureAwait(false);
+        if (useIndexedDb && page?.Items.Count > 0)
         {
             await _indexedDbCache.SavePageAsync(datasetId, cursor, page.Items, cancellationToken).ConfigureAwait(false);
         }

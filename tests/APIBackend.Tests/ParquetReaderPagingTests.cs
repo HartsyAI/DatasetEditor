@@ -184,5 +184,27 @@ namespace DatasetStudio.Tests.APIBackend
 
             (await _repository.GetCountAsync(_datasetId)).Should().Be(15);
         }
+        /// <summary>
+        /// A sparse filter can't make one request scan the whole dataset: after
+        /// <see cref="ParquetItemReader.FilteredScanBudget"/> rows the page comes back short with a
+        /// cursor, and the next request continues from there.
+        /// </summary>
+        [Fact]
+        public async Task SparseFilter_StopsAtTheScanBudget_AndContinuesFromItsCursor()
+        {
+            int total = (int)ParquetItemReader.FilteredScanBudget + 5_000;
+            List<DatasetItemDto> rows = Items(_datasetId, 0, total);
+            rows[^1] = rows[^1] with { Tags = new List<string> { "needle" } };
+            await _repository.AddRangeAsync(_datasetId, rows, CancellationToken.None);
+            FilterRequest filter = new() { Tags = new[] { "needle" } };
+
+            (IReadOnlyList<DatasetItemDto> first, string? cursor) = await _repository.GetPageAsync(_datasetId, filter, null, 10, CancellationToken.None);
+            (IReadOnlyList<DatasetItemDto> second, string? end) = await _repository.GetPageAsync(_datasetId, filter, cursor, 10, CancellationToken.None);
+
+            first.Should().BeEmpty("the match lies past the budget");
+            cursor.Should().NotBeNull("the scan stopped early, so there is more to read");
+            second.Select(i => i.ExternalId).Should().Equal($"row-{total - 1:D5}");
+            end.Should().BeNull();
+        }
     }
 }

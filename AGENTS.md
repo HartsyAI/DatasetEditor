@@ -167,4 +167,3 @@ Say so rather than building on them:
 - i18n: there is none (the unused `wwwroot/translations` files were deleted in PR 2.6).
 - `Core.BusinessLogic` (parsers, layout/modality registries, `FilterService`, `SearchService`)
   is no longer registered in the client; the types remain in Core until PR 6.2 deletes them.
-- Viewer filters: the filter panel collects criteria but nothing applies them (U-6, PR 4.4).

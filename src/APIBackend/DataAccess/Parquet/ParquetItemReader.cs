@@ -15,6 +15,13 @@ namespace DatasetStudio.APIBackend.DataAccess.Parquet;
 /// </summary>
 public class ParquetItemReader
 {
+    /// <summary>
+    /// Most rows a filtered page examines in one request. A sparse filter could otherwise scan a
+    /// whole dataset to fill one page; instead the page comes back short, with a cursor where the
+    /// scan stopped, and the client asks for the next one.
+    /// </summary>
+    public const long FilteredScanBudget = 200_000;
+
     /// <summary>Prefix of a cursor: an absolute row offset into the dataset.</summary>
     private const string OffsetCursorPrefix = "r";
 
@@ -90,8 +97,9 @@ public class ParquetItemReader
         List<DatasetItemDto> items = new();
         long[] starts = manifest.SegmentStarts();
         long nextOffset = manifest.TotalRows;
+        long budget = filter is null ? long.MaxValue : FilteredScanBudget;
 
-        for (int i = 0; i < manifest.Segments.Count && items.Count < pageSize; i++)
+        for (int i = 0; i < manifest.Segments.Count && items.Count < pageSize && budget > 0; i++)
         {
             ParquetSegment segment = manifest.Segments[i];
             long segmentEnd = starts[i] + segment.Rows;
@@ -101,8 +109,9 @@ public class ParquetItemReader
             }
 
             int skipRows = (int)Math.Max(0, startOffset - starts[i]);
-            ShardRead read = await ReadFromShardAsync(PathOf(segment.File), filter, skipRows, pageSize - items.Count, cancellationToken);
+            ShardRead read = await ReadFromShardAsync(PathOf(segment.File), filter, skipRows, pageSize - items.Count, budget, cancellationToken);
             items.AddRange(read.Items);
+            budget -= read.RowsExamined - skipRows;
             nextOffset = starts[i] + read.RowsExamined;
         }
 
@@ -144,7 +153,7 @@ public class ParquetItemReader
         long count = 0;
         foreach (ParquetSegment segment in manifest.Segments)
         {
-            ShardRead read = await ReadFromShardAsync(PathOf(segment.File), filter, 0, int.MaxValue, cancellationToken);
+            ShardRead read = await ReadFromShardAsync(PathOf(segment.File), filter, 0, int.MaxValue, long.MaxValue, cancellationToken);
             count += read.Items.Count;
         }
         return count;
@@ -158,7 +167,7 @@ public class ParquetItemReader
         List<DatasetItemDto> allItems = new();
         foreach (ParquetSegment segment in manifest.Segments)
         {
-            ShardRead read = await ReadFromShardAsync(PathOf(segment.File), null, 0, int.MaxValue, cancellationToken);
+            ShardRead read = await ReadFromShardAsync(PathOf(segment.File), null, 0, int.MaxValue, long.MaxValue, cancellationToken);
             allItems.AddRange(read.Items);
         }
         return allItems;
@@ -235,9 +244,11 @@ public class ParquetItemReader
         FilterRequest? filter,
         int skipRows,
         int takeRows,
+        long examineBudget,
         CancellationToken cancellationToken)
     {
         var items = new List<DatasetItemDto>();
+        long examined = 0;
 
         using var stream = File.OpenRead(filePath);
         using var reader = await ParquetReader.CreateAsync(stream, ParquetSchemaDefinition.ReaderOptions, cancellationToken: cancellationToken);
@@ -246,7 +257,7 @@ public class ParquetItemReader
         long shardRowCount = groupRowCounts.Sum();
         int rowsExamined = 0;
 
-        for (int i = 0; i < groupRowCounts.Length && items.Count < takeRows; i++)
+        for (int i = 0; i < groupRowCounts.Length && items.Count < takeRows && examined < examineBudget; i++)
         {
             int rowCount = (int)groupRowCounts[i];
             int groupStart = rowsExamined;
@@ -265,9 +276,10 @@ public class ParquetItemReader
 
             int firstRow = Math.Max(0, skipRows - groupStart);
             rowsExamined = groupStart + firstRow;
-            for (int row = firstRow; row < rowCount && items.Count < takeRows; row++)
+            for (int row = firstRow; row < rowCount && items.Count < takeRows && examined < examineBudget; row++)
             {
                 rowsExamined++;
+                examined++;
 
                 var item = CreateItemFromRow(columns, row);
                 if (filter != null && !MatchesFilter(item, filter))

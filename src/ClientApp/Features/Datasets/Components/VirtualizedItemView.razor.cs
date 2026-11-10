@@ -34,6 +34,12 @@ public partial class VirtualizedItemView : IAsyncDisposable
     /// <summary>When set (list view), use this fixed row height instead of computing square cards.</summary>
     [Parameter] public double? FixedRowHeight { get; set; }
 
+    /// <summary>
+    /// Identifies the current result set (DatasetState.ResultSetVersion). When it changes the
+    /// items were replaced, not appended, so load-more tracking starts over.
+    /// </summary>
+    [Parameter] public int ResultSet { get; set; }
+
     /// <summary>Rows rendered above/below the viewport by Virtualize.</summary>
     [Parameter] public int OverscanRows { get; set; } = 2;
 
@@ -50,10 +56,21 @@ public partial class VirtualizedItemView : IAsyncDisposable
     private int _nearEndFiredAtCount = -1;
     // Item count at which the sentinel was last (re)observed; -1 before the first observe.
     private int _observedAtCount = -1;
+    private int _resultSet = int.MinValue;
 
-    /// <summary>Recomputes columns, rows and row height for the current items and width.</summary>
+    /// <summary>
+    /// Recomputes columns, rows and row height for the current items and width, and resets
+    /// load-more tracking for a new result set. A filter that replaced two loaded pages with 100
+    /// matches left the "already fired at 100" mark from the old list, so the next page never loaded.
+    /// </summary>
     protected override void OnParametersSet()
     {
+        if (ResultSet != _resultSet)
+        {
+            _resultSet = ResultSet;
+            _nearEndFiredAtCount = -1;
+            _observedAtCount = -1;
+        }
         Relayout();
     }
 

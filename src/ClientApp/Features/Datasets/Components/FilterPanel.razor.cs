@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Components;
+using DatasetStudio.ClientApp.Features.Datasets.Services;
 using DatasetStudio.ClientApp.Services.StateManagement;
 using DatasetStudio.Core.Abstractions;
 using DatasetStudio.Core.DomainModels;
@@ -14,6 +15,12 @@ public partial class FilterPanel : IDisposable
 {
     [Inject] public DatasetState DatasetState { get; set; } = default!;
     [Inject] public FilterState FilterState { get; set; } = default!;
+    [Inject] public DatasetCacheService DatasetCache { get; set; } = default!;
+
+    /// <summary>The filters the open dataset's source can apply; the server refuses the rest.</summary>
+    private FilterSupport Support => FilterMapping.SupportFor(DatasetCache.CurrentDatasetDetail?.SourceType);
+
+    private bool _favoritesOnly;
 
     private string _searchQuery = string.Empty;
     private int? _minWidth = null;
@@ -31,6 +38,8 @@ public partial class FilterPanel : IDisposable
     {
         DatasetState.OnChange += HandleDatasetStateChanged;
         FilterState.OnChange += HandleFilterStateChanged;
+        // The panel can be re-created while a filter is active; show the filter, not empty fields.
+        SyncFromFilterState();
         LoadAvailableFilters();
         Logs.Info("FilterPanel initialized");
     }
@@ -90,7 +99,13 @@ public partial class FilterPanel : IDisposable
     /// <summary>Handles filter state changes from external sources.</summary>
     public void HandleFilterStateChanged()
     {
-        // Sync UI with filter state
+        SyncFromFilterState();
+        StateHasChanged();
+    }
+
+    /// <summary>Copies the current filter into the panel's fields.</summary>
+    private void SyncFromFilterState()
+    {
         _searchQuery = FilterState.Criteria.SearchQuery ?? string.Empty;
         _minWidth = FilterState.Criteria.MinWidth;
         _maxWidth = FilterState.Criteria.MaxWidth;
@@ -98,7 +113,14 @@ public partial class FilterPanel : IDisposable
         _maxHeight = FilterState.Criteria.MaxHeight;
         _dateFrom = FilterState.Criteria.DateFrom;
         _dateTo = FilterState.Criteria.DateTo;
-        StateHasChanged();
+        _favoritesOnly = FilterState.Criteria.FavoritesOnly == true;
+    }
+
+    /// <summary>Handles the favourites-only switch.</summary>
+    public void HandleFavoritesChanged(bool favoritesOnly)
+    {
+        _favoritesOnly = favoritesOnly;
+        FilterState.SetFavoritesOnly(favoritesOnly ? true : null);
     }
 
     /// <summary>Handles search query changes with debounce.</summary>
@@ -156,6 +178,7 @@ public partial class FilterPanel : IDisposable
         _maxHeight = null;
         _dateFrom = null;
         _dateTo = null;
+        _favoritesOnly = false;
         
         foreach (string key in _selectedTags.Keys.ToList())
         {
@@ -174,9 +197,4 @@ public partial class FilterPanel : IDisposable
         GC.SuppressFinalize(this);
     }
     
-    // TODO: Add preset filters (e.g., "High Resolution", "Recent", "Popular")
-    // TODO: Add save/load filter sets
-    // TODO: Add filter history for quick recall
-    // TODO: Add more filter types (photographer, color, orientation)
-    // TODO: Add filter count badges showing how many items match each filter
 }
