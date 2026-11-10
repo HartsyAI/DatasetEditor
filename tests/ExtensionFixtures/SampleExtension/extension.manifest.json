@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "metadata": {
+    "id": "SampleExtension",
+    "name": "Sample extension (test fixture)",
+    "version": "1.0.0",
+    "description": "Loaded by ApiExtensionLoaderTests and ExtensionEndpointTests from its own bin folder."
+  },
+  "deploymentTarget": "Api",
+  "dependencies": {}
+}

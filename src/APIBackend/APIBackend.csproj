@@ -52,6 +52,10 @@
     <ProjectReference Include="..\ClientApp\ClientApp.csproj" />
     <!-- Extension SDK (manifest model, IApiExtension) -->
     <ProjectReference Include="..\Extensions\SDK\Extensions.SDK.csproj" />
+    <!-- Build order only, never referenced or copied: makes `dotnet run` on this project
+         build the CoreViewer reference extension into its own bin folder, where the loader finds
+         it (audit X-1). Extensions are loaded at runtime, not linked. -->
+    <ProjectReference Include="..\Extensions\BuiltIn\CoreViewer\CoreViewer.Api\CoreViewer.Api.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>

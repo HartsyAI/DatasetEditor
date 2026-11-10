@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Test fixture: a minimal API extension. The tests load it from this project's own bin folder,
+       which is where the loader looks under `dotnet build` / `dotnet run` (audit X-1). Its private
+       dependency, SampleExtension.Greeting, is referenced by nothing else, so only the extension's
+       dependency resolver can find it (audit X-2). -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>DatasetStudio.Tests.ExtensionFixtures.SampleExtension</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!-- The API supplies the SDK at runtime, so no copy goes into this extension's output. -->
+    <ProjectReference Include="..\..\..\..\src\Extensions\SDK\Extensions.SDK.csproj" Private="false" ExcludeAssets="runtime" />
+    <ProjectReference Include="..\SampleExtension.Greeting\SampleExtension.Greeting.csproj" />
+  </ItemGroup>
+
+</Project>

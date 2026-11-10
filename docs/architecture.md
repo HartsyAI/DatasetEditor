@@ -156,7 +156,11 @@ enforced.
 `Extensions:BuiltInPath` and `Extensions:CommunityPath` (defaults `../Extensions/BuiltIn` and
 `../Extensions/Community` relative to the API's content root), skips ids listed in
 `Extensions:DisabledExtensions`, loads each extension's assembly and creates its instance with
-the public parameterless constructor. Any failure is logged and skips that extension; it never
+the public parameterless constructor. It looks for `{Id}.Api.dll` in two layouts: flat next to
+the manifest (what `dotnet publish -o` produces; the Dockerfile does this for CoreViewer), or in
+the project's build output `{extension}/{Id}.Api/bin/{Configuration}/{tfm}/`, where `{tfm}` is the
+API's own target framework and the newest build wins. APIBackend has a build-order-only reference
+to `CoreViewer.Api`, so `dotnet run` builds it and the loader finds it. Any failure is logged and skips that extension; it never
 stops the API starting. Extensions are never unloaded.
 
 **CoreViewer** (`src/Extensions/BuiltIn/CoreViewer`) is the only built-in extension. It is a

@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.Loader;
+using System.Runtime.Versioning;
 using DatasetStudio.Extensions.SDK;
 
 namespace DatasetStudio.APIBackend.Services.Extensions;
@@ -261,7 +262,11 @@ public sealed class ApiExtensionLoader
             string? apiAssemblyPath = FindApiAssembly(extensionDirectory, extensionId);
             if (apiAssemblyPath is null)
             {
-                _logger.LogWarning("API assembly not found for extension: {ExtensionId}", extensionId);
+                _logger.LogWarning(
+                    "API assembly not found for extension {ExtensionId}: expected {Published} or {Built}",
+                    extensionId,
+                    Path.Combine(extensionDirectory, $"{extensionId}.Api.dll"),
+                    Path.Combine(extensionDirectory, $"{extensionId}.Api", "bin", "{Configuration}", HostTargetFramework, $"{extensionId}.Api.dll"));
                 return null;
             }
 
@@ -289,30 +294,53 @@ public sealed class ApiExtensionLoader
     }
 
     /// <summary>
-    /// Finds the API assembly for an extension.
-    /// Searches in bin/Release/net10.0 and bin/Debug/net10.0 directories (the solution-wide
-    /// target, Directory.Build.props). Update this list when the target framework changes.
+    /// The API's own target framework moniker, e.g. <c>net10.0</c>, which is the folder an
+    /// extension built for this API lands in under <c>bin/{Configuration}/</c>. Read from the
+    /// API assembly rather than hard-coded: the old probe list hard-coded the TFM and went stale
+    /// when the solution moved frameworks (audit X-1).
     /// </summary>
+    internal static string HostTargetFramework { get; } = ReadHostTargetFramework();
+
+    private static string ReadHostTargetFramework()
+    {
+        string? frameworkName = typeof(ApiExtensionLoader).Assembly.GetCustomAttribute<TargetFrameworkAttribute>()?.FrameworkName;
+        Version version = frameworkName is not null ? new FrameworkName(frameworkName).Version : Environment.Version;
+        return $"net{version.Major}.{version.Minor}";
+    }
+
+    /// <summary>
+    /// Finds an extension's <c>{Id}.Api.dll</c> in one of the two layouts that actually occur.
+    /// </summary>
+    /// <remarks>
+    /// Audit X-1: the old probe list looked under <c>{extension}/src/{Id}.Api/bin/...</c> and
+    /// <c>{extension}/bin/...</c>, neither of which is where <c>dotnet build</c> writes the
+    /// assembly, so under <c>dotnet run</c> every extension logged "API assembly not found".
+    /// </remarks>
     private string? FindApiAssembly(string extensionDirectory, string extensionId)
     {
-        string[] possiblePaths =
-        [
-            Path.Combine(extensionDirectory, "src", $"{extensionId}.Api", "bin", "Release", "net10.0", $"{extensionId}.Api.dll"),
-            Path.Combine(extensionDirectory, "src", $"{extensionId}.Api", "bin", "Debug", "net10.0", $"{extensionId}.Api.dll"),
-            Path.Combine(extensionDirectory, "bin", "Release", "net10.0", $"{extensionId}.Api.dll"),
-            Path.Combine(extensionDirectory, "bin", "Debug", "net10.0", $"{extensionId}.Api.dll"),
-            Path.Combine(extensionDirectory, $"{extensionId}.Api.dll")
-        ];
+        string assemblyFileName = $"{extensionId}.Api.dll";
 
-        foreach (string path in possiblePaths)
+        // Published layout (the Dockerfile): `dotnet publish -o {extension}` puts the assembly
+        // flat next to the manifest.
+        string publishedPath = Path.Combine(extensionDirectory, assemblyFileName);
+        if (File.Exists(publishedPath))
         {
-            if (File.Exists(path))
-            {
-                _logger.LogDebug("Found API assembly: {Path}", path);
-                return path;
-            }
+            return publishedPath;
         }
 
-        return null;
+        // Build layout (`dotnet build` / `dotnet run`): {extension}/{Id}.Api/bin/{Configuration}/{tfm}/.
+        // Any configuration name counts; when several exist, the newest build wins so a stale
+        // Release build never shadows the Debug build you just made.
+        string projectBin = Path.Combine(extensionDirectory, $"{extensionId}.Api", "bin");
+        if (!Directory.Exists(projectBin))
+        {
+            return null;
+        }
+
+        return Directory.EnumerateDirectories(projectBin)
+            .Select(configurationDirectory => Path.Combine(configurationDirectory, HostTargetFramework, assemblyFileName))
+            .Where(File.Exists)
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .FirstOrDefault();
     }
 }
