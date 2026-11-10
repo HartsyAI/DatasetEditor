@@ -68,8 +68,10 @@ public class DatasetStudioDbContext : DbContext
         modelBuilder.Entity<UserEntity>(entity =>
         {
             // Indexes
-            entity.HasIndex(e => e.Username).IsUnique();
-            entity.HasIndex(e => e.Email).IsUnique();
+            // Username and email are unique case-insensitively, through unique indexes on
+            // lower(username) and lower(email) created in the AddAccountHardening migration (EF
+            // can't model expression indexes). The old case-sensitive unique indexes let "Alice"
+            // and "alice" both register (audit A-4).
             entity.HasIndex(e => e.Role);
             entity.HasIndex(e => e.IsActive);
             entity.HasIndex(e => e.CreatedAt);

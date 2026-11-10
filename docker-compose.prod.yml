@@ -32,6 +32,11 @@ services:
       ADMIN_USERNAME: ${ADMIN_USERNAME}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      # Closed unless .env says otherwise; see docs/DEPLOYMENT.md, "Accounts".
+      Auth__AllowRegistration: ${ALLOW_REGISTRATION:-false}
+      # The client address for the login/registration rate limits comes from Caddy's
+      # X-Forwarded-For, believed only from Caddy's fixed address below (ReverseProxySettings).
+      ReverseProxy__KnownProxies__0: ${CADDY_IP:-172.31.250.10}
 
   caddy:
     image: caddy:2
@@ -48,6 +53,17 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - datasetstudio_caddy_data:/data
       - datasetstudio_caddy_config:/config
+    networks:
+      default:
+        ipv4_address: ${CADDY_IP:-172.31.250.10}
+
+# A fixed subnet so Caddy has a fixed address the API can trust (see the api service). Change
+# PROXY_SUBNET and CADDY_IP in .env together if this range is already used on the host.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${PROXY_SUBNET:-172.31.250.0/24}
 
 volumes:
   datasetstudio_caddy_data:

@@ -3,12 +3,19 @@ using DatasetStudio.APIBackend.Services.Auth;
 using DatasetStudio.DTO.Auth;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.Extensions.Options;
 
 namespace DatasetStudio.APIBackend.Endpoints;
 
 /// <summary>Account endpoints: register, login, logout, and "who am I".</summary>
 internal static class AuthEndpoints
 {
+    /// <summary>Rate-limiter policy on login (per client IP, see Program.cs).</summary>
+    internal const string LoginRateLimitPolicy = "auth-login";
+
+    /// <summary>Rate-limiter policy on registration (per client IP, see Program.cs).</summary>
+    internal const string RegisterRateLimitPolicy = "auth-register";
+
     internal static void MapAuthEndpoints(this WebApplication app)
     {
         RouteGroupBuilder group = app.MapGroup("/api/auth").WithTags("Auth");
@@ -16,12 +23,21 @@ internal static class AuthEndpoints
         group.MapPost("/register", Register)
             .WithName("Register")
             .Produces<AuthUserDto>(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status400BadRequest);
+            .Produces(StatusCodes.Status400BadRequest)
+            .Produces(StatusCodes.Status403Forbidden)
+            .Produces(StatusCodes.Status429TooManyRequests)
+            .RequireRateLimiting(RegisterRateLimitPolicy);
 
         group.MapPost("/login", Login)
             .WithName("Login")
             .Produces<AuthUserDto>(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status401Unauthorized);
+            .Produces(StatusCodes.Status401Unauthorized)
+            .Produces(StatusCodes.Status429TooManyRequests)
+            .RequireRateLimiting(LoginRateLimitPolicy);
+
+        group.MapGet("/settings", Settings)
+            .WithName("AuthSettings")
+            .Produces<AuthSettingsDto>(StatusCodes.Status200OK);
 
         group.MapPost("/logout", Logout)
             .WithName("Logout")
@@ -34,9 +50,23 @@ internal static class AuthEndpoints
             .RequireAuthorization();
     }
 
-    public static async Task<IResult> Register(
-        RegisterRequest request, IAuthService authService, HttpContext httpContext, CancellationToken cancellationToken)
+    /// <summary>What the sign-in pages need to know before showing a form (public).</summary>
+    public static IResult Settings(IOptions<AuthOptions> options)
     {
+        return Results.Ok(new AuthSettingsDto { AllowRegistration = options.Value.AllowRegistration });
+    }
+
+    public static async Task<IResult> Register(
+        RegisterRequest request, IAuthService authService, IOptions<AuthOptions> options, HttpContext httpContext, CancellationToken cancellationToken)
+    {
+        // Registration used to be open to anyone on the internet (audit A-1).
+        if (!options.Value.AllowRegistration)
+        {
+            return Results.Json(
+                new { error = "Registration is closed on this server. Ask an administrator for an account." },
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
         AuthResult result = await authService.RegisterAsync(request, cancellationToken);
         if (!result.Succeeded || result.User is null)
         {
@@ -103,7 +133,8 @@ internal static class AuthEndpoints
             new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new Claim(ClaimTypes.Name, user.Username),
             new Claim(ClaimTypes.Email, user.Email),
-            new Claim(ClaimTypes.Role, user.Role)
+            new Claim(ClaimTypes.Role, user.Role),
+            new Claim(CookiePrincipalValidator.SecurityStampClaim, user.SecurityStamp)
         };
         if (!string.IsNullOrWhiteSpace(user.DisplayName))
         {
@@ -112,6 +143,10 @@ internal static class AuthEndpoints
 
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);
+
+        // The new cookie was built from the account as it is now. An older cached copy would
+        // otherwise overwrite its role on the next request until the cache entry expired.
+        CookiePrincipalValidator.Forget(httpContext.RequestServices.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>(), user.Id);
 
         await httpContext.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal, new AuthenticationProperties
         {

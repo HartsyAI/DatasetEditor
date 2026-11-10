@@ -34,6 +34,22 @@ public sealed class AuthApiClient
         response.EnsureSuccessStatusCode();
     }
 
+    /// <summary>
+    /// The server's sign-in settings. Null when the server can't be reached, so callers fall back
+    /// to showing registration and let the server refuse it.
+    /// </summary>
+    public async Task<AuthSettingsDto?> GetSettingsAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await _httpClient.GetFromJsonAsync<AuthSettingsDto>("api/auth/settings", cancellationToken);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Null if not authenticated (401) -- not an exception, since "logged out" is an expected, common state.</summary>
     public async Task<AuthUserDto?> GetMeAsync(CancellationToken cancellationToken = default)
     {

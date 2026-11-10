@@ -8,6 +8,21 @@ public sealed class AuthService : IAuthService
 {
     private const int MinPasswordLength = 8;
 
+    /// <summary>BCrypt ignores everything after the first 72 bytes, so longer passwords are refused rather than silently truncated.</summary>
+    private const int MaxPasswordBytes = 72;
+
+    /// <summary>The users.email column length.</summary>
+    private const int MaxEmailLength = 200;
+
+    private const int MaxDisplayNameLength = 100;
+
+    /// <summary>
+    /// Letters, digits, '.', '_' and '-'; 3 to 50 characters. No '@', which login uses to tell an
+    /// email from a username.
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex UsernamePattern =
+        new("^[A-Za-z0-9_.-]{3,50}$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
     private readonly IUserRepository _userRepository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly ILogger<AuthService> _logger;
@@ -25,16 +40,19 @@ public sealed class AuthService : IAuthService
         {
             return AuthResult.Fail("Username, email, and password are required.");
         }
-        if (request.Password.Length < MinPasswordLength)
+        // Over-long or malformed input used to reach the database and fail there with a 500 (audit A-5).
+        string? invalid = Validate(request);
+        if (invalid is not null)
         {
-            return AuthResult.Fail($"Password must be at least {MinPasswordLength} characters.");
+            return AuthResult.Fail(invalid);
         }
 
         if (await _userRepository.GetByUsernameAsync(request.Username, cancellationToken) is not null)
         {
             return AuthResult.Fail("That username is already taken.");
         }
-        if (await _userRepository.GetByEmailAsync(request.Email, cancellationToken) is not null)
+        string email = request.Email.Trim();
+        if (await _userRepository.GetByEmailAsync(email, cancellationToken) is not null)
         {
             return AuthResult.Fail("An account with that email already exists.");
         }
@@ -43,7 +61,10 @@ public sealed class AuthService : IAuthService
         {
             Id = Guid.NewGuid(),
             Username = request.Username,
-            Email = request.Email,
+            Email = email,
+            // Set here rather than left to the repository: the returned user goes straight into
+            // the sign-in cookie, and a session whose stamp doesn't match the account is rejected.
+            SecurityStamp = DataAccess.PostgreSQL.Repositories.UserRepository.NewSecurityStamp(),
             PasswordHash = _passwordHasher.Hash(request.Password),
             DisplayName = request.DisplayName,
             Role = "User",
@@ -52,10 +73,48 @@ public sealed class AuthService : IAuthService
             CreatedAt = DateTime.UtcNow
         };
 
-        Guid createdId = await _userRepository.CreateAsync(newUser, cancellationToken);
+        Guid createdId;
+        try
+        {
+            createdId = await _userRepository.CreateAsync(newUser, cancellationToken);
+        }
+        catch (DuplicateUserException)
+        {
+            // Lost a race with a simultaneous registration of the same name (audit A-4).
+            return AuthResult.Fail("That username or email is already taken.");
+        }
         _logger.LogInformation("[Auth] Registered new user '{Username}' ({UserId})", request.Username, createdId);
 
         return AuthResult.Ok(newUser with { Id = createdId });
+    }
+
+    /// <summary>The first problem with a registration request, or null when it is valid.</summary>
+    internal static string? Validate(RegisterRequest request)
+    {
+        if (!UsernamePattern.IsMatch(request.Username))
+        {
+            return "Usernames are 3 to 50 characters: letters, digits, '.', '_' or '-'.";
+        }
+        string email = request.Email.Trim();
+        if (email.Length > MaxEmailLength
+            || !System.Net.Mail.MailAddress.TryCreate(email, out System.Net.Mail.MailAddress? address)
+            || !string.Equals(address.Address, email, StringComparison.OrdinalIgnoreCase))
+        {
+            return "Enter a valid email address.";
+        }
+        if (request.Password.Length < MinPasswordLength)
+        {
+            return $"Password must be at least {MinPasswordLength} characters.";
+        }
+        if (System.Text.Encoding.UTF8.GetByteCount(request.Password) > MaxPasswordBytes)
+        {
+            return $"Password must be at most {MaxPasswordBytes} bytes.";
+        }
+        if (request.DisplayName is { Length: > MaxDisplayNameLength })
+        {
+            return $"Display name must be at most {MaxDisplayNameLength} characters.";
+        }
+        return null;
     }
 
     public async Task<AuthResult> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)

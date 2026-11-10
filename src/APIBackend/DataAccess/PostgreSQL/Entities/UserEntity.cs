@@ -99,6 +99,11 @@ public class UserEntity
     [Column("updated_at")]
     public DateTime? UpdatedAt { get; set; }
 
+    /// <summary>Rotated when existing sessions must end; see UserDto.SecurityStamp.</summary>
+    [MaxLength(64)]
+    [Column("security_stamp")]
+    public string SecurityStamp { get; set; } = string.Empty;
+
     // Navigation properties
 
     /// <summary>

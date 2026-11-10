@@ -19,6 +19,17 @@ public partial class Register : ComponentBase
     private string _password = string.Empty;
     private string? _errorMessage;
     private bool _isSubmitting;
+    private bool _registrationClosed;
+
+    /// <summary>
+    /// Asks the server whether registration is open. Closed servers used to show the form and
+    /// fail on submit; now the page says so up front (audit A-1).
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        DTO.Auth.AuthSettingsDto? settings = await AuthApiClient.GetSettingsAsync();
+        _registrationClosed = settings is { AllowRegistration: false };
+    }
 
     private bool CanSubmit => !_isSubmitting && !string.IsNullOrWhiteSpace(_username) && !string.IsNullOrWhiteSpace(_email) && !string.IsNullOrWhiteSpace(_password);
 
