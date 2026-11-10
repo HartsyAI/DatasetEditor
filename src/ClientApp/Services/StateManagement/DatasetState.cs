@@ -39,12 +39,21 @@ public class DatasetState
     
     /// <summary>Event fired when any state property changes.</summary>
     public event Action? OnChange;
-    
+
+    /// <summary>
+    /// Bumped each time <see cref="LoadDataset"/> replaces the items (opening a dataset, a filter
+    /// change, a reload), but not when a page is appended. The grid resets its load-more tracking
+    /// on a change: tracking by item count alone missed a new result set that happened to be as
+    /// long as the old one.
+    /// </summary>
+    public int ResultSetVersion { get; private set; }
+
     /// <summary>Loads a new dataset and its items, replacing any existing dataset.</summary>
     /// <param name="dataset">Dataset metadata to load.</param>
     /// <param name="items">List of dataset items.</param>
     public void LoadDataset(Dataset dataset, List<DatasetItemDto> items)
     {
+        ResultSetVersion++;
         CurrentDataset = dataset;
         Items = items;
         SelectedItem = null;

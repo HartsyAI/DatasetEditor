@@ -21,7 +21,8 @@ public class FilterState
                                      Criteria.MinWidth.HasValue ||
                                      Criteria.MaxWidth.HasValue ||
                                      Criteria.MinHeight.HasValue ||
-                                     Criteria.MaxHeight.HasValue;
+                                     Criteria.MaxHeight.HasValue ||
+                                     Criteria.FavoritesOnly == true;
     
     /// <summary>Event fired when filter criteria changes.</summary>
     public event Action? OnChange;
@@ -80,6 +81,13 @@ public class FilterState
     
     /// <summary>Sets the minimum width filter for images.</summary>
     /// <param name="minWidth">Minimum width in pixels.</param>
+    /// <summary>Shows only favourites when true; null shows everything.</summary>
+    public void SetFavoritesOnly(bool? favoritesOnly)
+    {
+        Criteria.FavoritesOnly = favoritesOnly;
+        NotifyStateChanged();
+    }
+
     public void SetMinWidth(int? minWidth)
     {
         Criteria.MinWidth = minWidth;

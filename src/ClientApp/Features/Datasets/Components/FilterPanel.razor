@@ -3,7 +3,13 @@
 <MudPaper Class="pa-4" Style="height: 100%;" Elevation="0">
     <MudStack Spacing="3">
         <MudText Typo="Typo.h6">Filters</MudText>
-        
+
+        @if (Support == FilterSupport.None)
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">Filters aren't available for S3 datasets.</MudText>
+        }
+        else
+        {
         @* Search Bar *@
         <MudTextField T="string" @bind-Value="@_searchQuery"
                      Label="Search"
@@ -15,6 +21,13 @@
                      DebounceInterval="500"
                      Immediate="false"
                      Clearable="true" />
+
+        @if (Support == FilterSupport.SearchOnly)
+        {
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                HuggingFace streaming datasets can be searched, but not filtered by tag, size or date.
+            </MudText>
+        }
         
         @* Clear All Filters Button *@
         @if (FilterState.HasActiveFilters)
@@ -28,8 +41,13 @@
             </MudButton>
         }
         
+        @if (Support == FilterSupport.All)
+        {
         <MudDivider />
-        
+
+        <MudSwitch T="bool" Value="@_favoritesOnly" ValueChanged="@HandleFavoritesChanged"
+                   Label="Favourites only" Color="Color.Primary" />
+
         @* Tags Filter *@
         <MudExpansionPanels MultiExpansion="true">
             <MudExpansionPanel Text="Tags" Expanded="true">
@@ -107,6 +125,8 @@
                                  OnDateRangeChanged="@HandleDateRangeChanged" />
             </MudExpansionPanel>
         </MudExpansionPanels>
+        }
+        }
     </MudStack>
 </MudPaper>
 

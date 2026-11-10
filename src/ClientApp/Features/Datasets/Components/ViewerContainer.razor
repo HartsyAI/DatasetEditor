@@ -3,6 +3,7 @@
 @if (_modality == Modality.Image)
 {
     <VirtualizedItemView Items="DatasetState.Items"
+                         ResultSet="DatasetState.ResultSetVersion"
                          Columns="@CurrentColumns"
                          FixedRowHeight="@(_viewMode == ViewMode.List ? ListRowHeight : (double?)null)"
                          OnNearEnd="OnLoadMore">
