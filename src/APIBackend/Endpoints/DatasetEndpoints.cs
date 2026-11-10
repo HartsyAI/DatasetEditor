@@ -1470,8 +1470,13 @@ internal static class DatasetEndpoints
         // Cache key folds in repository/config/split, not just datasetId+offset -- an existing
         // dataset row's HF repository/config can change on re-import (see
         // ImportFromHuggingFace), which would otherwise leave a stale cached thumbnail (the
-        // old repository's image at this offset) permanently served under the new one.
-        string cacheKey = $"hf|{repository}|{config}|{split}|{offset.Value}";
+        // old repository's image at this offset) permanently served under the new one. The
+        // access scope (a hash of the caller's HF token, or "anon") is folded in too: a thumbnail
+        // fetched with one user's token was otherwise served from the cache to anyone who could
+        // read the dataset, making a gated repository's images public (audit H-5). Keying on the
+        // token (rather than not caching token-fetched thumbnails) keeps gated datasets fast for
+        // their token holder while only ever serving an entry to the same token upstream served.
+        string cacheKey = $"hf|{HuggingFaceAccessScope.For(accessToken)}|{repository}|{config}|{split}|{offset.Value}";
 
         Services.Storage.ThumbnailResult thumbnail = await thumbnailService.GetOrCreateJpegAsync(
             cacheKey,

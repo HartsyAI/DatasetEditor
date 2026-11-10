@@ -4,7 +4,8 @@ namespace DatasetStudio.APIBackend.Services.Integration;
 /// Short-TTL in-memory cache of datasets-server row pages, so requesting thumbnails for a
 /// scrolled-into-view batch of grid cards (tens of individual offsets, one hf-thumbnail request
 /// each) collapses to roughly one upstream GetRowsAsync call per page instead of one per card.
-/// Keyed by (dataset, config, split, page-aligned offset); values expire on a short fixed TTL.
+/// Keyed by (access scope, dataset, config, split, page-aligned offset); values expire on a short
+/// fixed TTL.
 /// </summary>
 public interface IHuggingFaceRowPageCache
 {
@@ -81,7 +82,9 @@ public sealed class HuggingFaceRowPageCache : IHuggingFaceRowPageCache
         CancellationToken cancellationToken)
     {
         long pageStart = offset - (offset % PageSize);
-        string key = $"{dataset}|{config}|{split}|{pageStart}";
+        // The access scope is part of the key: a page fetched with one user's token must not be
+        // handed to a request without it (audit H-5), or its signed image URLs leak a gated repo.
+        string key = $"{HuggingFaceAccessScope.For(accessToken)}|{dataset}|{config}|{split}|{pageStart}";
 
         Task<CachedPage> pageTask;
         lock (_gate)

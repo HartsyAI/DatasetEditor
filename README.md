@@ -270,8 +270,10 @@ count from `num_rows_total` when they differ. `/size` reports the selected split
 the sum over all splits. Upstream failures return `403` for an auth refusal (401/403) and
 `502` for anything else, with the reason in `error`; they are no longer an empty `200`.
 
-**Gaps.** Thumbnails fetched with one user's token are cached for everyone who can read the
-dataset (H-5).
+Cached rows and thumbnails are keyed by the caller's access scope (a SHA-256 prefix of their
+token, or anonymous), so an image fetched with one user's token for a gated repository is never
+served from the cache to someone without that token (H-5). A user with a token therefore doesn't
+share cache entries with anonymous viewers, even for a public repository.
 
 ### 4.5 HuggingFace download/import — Partial
 
