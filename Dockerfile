@@ -31,15 +31,13 @@ RUN dotnet publish src/APIBackend/APIBackend.csproj \
     --self-contained false \
     -o /app/publish
 
-# Built-in extensions load via ApiExtensionRegistry scanning /Extensions/BuiltIn at runtime
+# Built-in extensions load via ApiExtensionLoader scanning /Extensions/BuiltIn at runtime
 # (one level above the API's own content root, /app) -- a directory APIBackend.csproj's own
 # publish never touches, since extensions are discovered out-of-band via
 # AssemblyLoadContext.LoadFromAssemblyPath, not referenced as a ProjectReference. Without this,
-# the container logs "Total API extensions to load: 0" even though 5 manifests exist in the
-# repo -- confirmed live against the Phase 6 image before this fix (found Phase 7). Only
-# CoreViewer has an actual project to publish; Editor/AdvancedTools/AITools/Creator ship
-# manifest-only (Creator has an empty stub project, still nothing to publish), so they'll
-# correctly log "API assembly not found" -- an honest reflection of their real state, not a bug.
+# the container logs "Total API extensions to load: 0" -- confirmed live against the Phase 6
+# image before this fix (found Phase 7). CoreViewer is the only built-in extension; the
+# manifest-only Creator/Editor/AdvancedTools/AITools folders were deleted (audit X-5).
 # No RID needed: CoreViewer.Api has no native dependencies.
 RUN dotnet publish src/Extensions/BuiltIn/CoreViewer/CoreViewer.Api/CoreViewer.Api.csproj \
     -c Release \
@@ -63,14 +61,10 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh && chown -R app:app /app
 
 # Extension manifests, copied individually (not the whole src/Extensions/BuiltIn tree) so no
-# .cs/.csproj source ships into the runtime image. ApiExtensionRegistry's default scan path is
+# .cs/.csproj source ships into the runtime image. ApiExtensionLoader's default scan path is
 # one level above its content root (/app here), i.e. /Extensions/BuiltIn -- see this file's
 # build-stage comment for why this step exists at all.
 COPY src/Extensions/BuiltIn/CoreViewer/extension.manifest.json /Extensions/BuiltIn/CoreViewer/extension.manifest.json
-COPY src/Extensions/BuiltIn/Editor/extension.manifest.json /Extensions/BuiltIn/Editor/extension.manifest.json
-COPY src/Extensions/BuiltIn/Creator/extension.manifest.json /Extensions/BuiltIn/Creator/extension.manifest.json
-COPY src/Extensions/BuiltIn/AdvancedTools/extension.manifest.json /Extensions/BuiltIn/AdvancedTools/extension.manifest.json
-COPY src/Extensions/BuiltIn/AITools/extension.manifest.json /Extensions/BuiltIn/AITools/extension.manifest.json
 COPY --from=build /app/extensions-publish/CoreViewer/ /Extensions/BuiltIn/CoreViewer/
 RUN chown -R app:app /Extensions
 

@@ -1,0 +1,7 @@
+# Files that run inside Linux containers must keep LF line endings on every checkout. With
+# core.autocrlf=true (the Windows default) they were checked out with CRLF; the image copies
+# docker-entrypoint.sh as it is in the working tree, and "#!/bin/sh\r" makes the container fail
+# to start with "exec docker-entrypoint.sh: no such file or directory".
+*.sh        text eol=lf
+Caddyfile   text eol=lf
+Dockerfile  text eol=lf

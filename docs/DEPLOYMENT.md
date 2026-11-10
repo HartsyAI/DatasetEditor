@@ -146,10 +146,10 @@ the client IP address for anonymous requests. Over the limit the API answers `42
 
 A grid page requests one thumbnail per visible card, so keep the S3 limit well above the number of
 cards a user scrolls past in a minute. Behind Caddy (or any reverse proxy) the API sees the proxy's
-address, so all anonymous callers share one budget unless forwarded headers are honoured.
-ASP.NET Core's standard switch for that is `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` (not
-exercised by this repo's tests or compose files). It trusts `X-Forwarded-For` from whoever
-connects, so only set it when the proxy is the API's only way in, as in `docker-compose.prod.yml`.
+address, so anonymous callers are told apart by the `X-Forwarded-For` address Caddy sends. The
+API believes that header only from the proxies in `ReverseProxy__KnownProxies__*` /
+`ReverseProxy__KnownNetworks__*`; the production compose file names Caddy's fixed address (see
+"Accounts"). With nothing configured, anonymous callers share one budget.
 Signed-in users always get their own budget.
 
 ## Server folder import (opt-in)
@@ -170,6 +170,26 @@ the mount point, for example in the `api` service of `docker-compose.prod.yml`:
 
 Don't list `/app/data` or anything above it: it holds the DataProtection key ring. Only image files
 (`.jpg`, `.jpeg`, `.png`, `.webp`, `.gif`, `.bmp`) are ever served from an imported folder.
+
+## Extensions (trust model)
+
+The API loads extensions from two folders next to `/app`: `/Extensions/BuiltIn` (baked into the
+image; only the CoreViewer reference extension, which does nothing) and `/Extensions/Community`
+(empty unless you mount one). To install an extension, mount a folder there with one subfolder
+per extension holding its `extension.manifest.json` and its `dotnet publish` output, for example
+`- ./extensions:/Extensions/Community:ro` under the `api` service, and restart the API. Set
+`Extensions__DisabledExtensions__0=<id>` to skip one without removing it.
+
+**An extension is fully trusted code.** Any `{Id}.Api.dll` the API finds in those folders runs
+inside the API process with the API's privileges: it can read and change the database, every
+dataset file, the S3 credentials and the cookie-signing keys, and it can register or replace any
+service. Nothing is sandboxed, assemblies are not signed or verified, and a manifest's
+`requiredPermissions` (from older manifests) is ignored; it never restricted anything. Only
+install extensions whose source you have read or whose author you trust as much as this API, and
+keep the extensions folder writable by administrators only (mount it read-only as above).
+
+Extension routes live under `/api/extensions/{id}` and require a signed-in user, but they get no
+dataset permission check, so any signed-in user can call them.
 
 ## Known landmines (found during Phase 6's own real-run verification)
 

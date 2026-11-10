@@ -28,6 +28,7 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
         private const string ThumbnailPathEnvVar = "Storage__ThumbnailPath";
         private const string ParquetPathEnvVar = "Storage__ParquetPath";
         private const string UploadPathEnvVar = "Storage__UploadPath";
+        private const string ExtensionsBuiltInPathEnvVar = "Extensions__BuiltInPath";
 
         private readonly string _baseConnectionString;
         private readonly string _databaseName;
@@ -36,6 +37,7 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
         private readonly string? _previousThumbnailPathEnvVar;
         private readonly string? _previousParquetPathEnvVar;
         private readonly string? _previousUploadPathEnvVar;
+        private readonly string? _previousExtensionsBuiltInPathEnvVar;
         /// <summary>The database this host uses (pass it to another factory to simulate a restart).</summary>
         public string DatabaseName => _databaseName;
 
@@ -117,7 +119,14 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
             }
         }
 
-        public DatasetStudioApiFactory(string baseConnectionString, string? databaseName = null)
+        /// <param name="baseConnectionString">Connection string of the shared Postgres container.</param>
+        /// <param name="databaseName">An existing database to reuse (restart tests); a new one otherwise.</param>
+        /// <param name="extensionsBuiltInPath">
+        /// Overrides Extensions:BuiltInPath. Extensions are discovered before Build(), so like the
+        /// connection string this must be an environment variable set before the host is built.
+        /// Null keeps the default folder (src/Extensions/BuiltIn, i.e. CoreViewer).
+        /// </param>
+        public DatasetStudioApiFactory(string baseConnectionString, string? databaseName = null, string? extensionsBuiltInPath = null)
         {
             // A caller passes an existing database name to start a second host on the same data,
             // which is how the restart tests simulate a process restart.
@@ -156,6 +165,9 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
 
             _previousUploadPathEnvVar = Environment.GetEnvironmentVariable(UploadPathEnvVar);
             Environment.SetEnvironmentVariable(UploadPathEnvVar, UploadPath);
+
+            _previousExtensionsBuiltInPathEnvVar = Environment.GetEnvironmentVariable(ExtensionsBuiltInPathEnvVar);
+            Environment.SetEnvironmentVariable(ExtensionsBuiltInPathEnvVar, extensionsBuiltInPath);
         }
 
         /// <summary>Creates this factory's throwaway database. Call once before the first request.</summary>
@@ -198,6 +210,7 @@ namespace DatasetStudio.Tests.APIBackend.Fixtures
             Environment.SetEnvironmentVariable(ThumbnailPathEnvVar, _previousThumbnailPathEnvVar);
             Environment.SetEnvironmentVariable(ParquetPathEnvVar, _previousParquetPathEnvVar);
             Environment.SetEnvironmentVariable(UploadPathEnvVar, _previousUploadPathEnvVar);
+            Environment.SetEnvironmentVariable(ExtensionsBuiltInPathEnvVar, _previousExtensionsBuiltInPathEnvVar);
             try
             {
                 if (Directory.Exists(DatasetRootPath))

@@ -406,12 +406,6 @@
       },
       "extensions.sdk": {
         "type": "Project"
-      },
-      "extensions.sdk.api": {
-        "type": "Project",
-        "dependencies": {
-          "Extensions.SDK": "[0.2.0-alpha, )"
-        }
       }
     }
   }
