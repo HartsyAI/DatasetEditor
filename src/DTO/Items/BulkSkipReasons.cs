@@ -11,4 +11,11 @@ public static class BulkSkipReasons
 
     /// <summary>The caller can see the item's dataset but may not edit it.</summary>
     public const string Forbidden = "forbidden";
+
+    /// <summary>
+    /// A tag change on a HuggingFace streaming item whose tags the server doesn't hold: they were
+    /// never edited and the request didn't send the tags the client shows for it
+    /// (<see cref="BulkUpdateItemsRequest.CurrentTags"/>).
+    /// </summary>
+    public const string TagsUnknown = "tags-unknown";
 }

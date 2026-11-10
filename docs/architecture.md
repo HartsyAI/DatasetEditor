@@ -58,6 +58,7 @@ timestamps). Rich image attributes (photographer, average color, engagement coun
 - **Metadata (Postgres):** `DatasetEntity` (name, status, counts, source type/URI, HuggingFace
   repo/config/split, error message) and related tables (users, permissions, ingestion jobs) via
   `DatasetStudioDbContext`. `permissions` holds dataset shares (one row per dataset and user).
+  `item_overlays` holds the edits of streamed (HuggingFace, S3) items, keyed by dataset and item id.
   Item data is only in Parquet; the unused `dataset_items` and `captions` tables were dropped. Dataset updates are field-level patches with `xmin` as the concurrency
   token, so request-time edits and background ingestion writes never overwrite each other. Migrations live in `APIBackend/DataAccess/PostgreSQL/Migrations` and
   are applied automatically on API startup.
@@ -96,6 +97,12 @@ indexes, within the dataset the request names. Writes are serialized **per datas
 dataset never blocks another. The edit is applied to the item as it stands inside that lock, and
 the `If-Match` check against the item's `Version` (`UpdatedAt` ticks) happens in the same lock, so
 concurrent edits of different fields both survive and an edit from a stale copy gets `412`.
+
+Streamed items can't be written back, so their edits are stored in `item_overlays` (Postgres)
+and applied over each page of the dataset as it is served, loaded in one query for the page's
+ids. An overlay edit locks the item's row (`SELECT … FOR UPDATE` in a transaction, after
+inserting an empty row if there is none), so the same concurrency and `If-Match` rules hold; the
+version is the overlay's edit counter. Overlays are deleted with their dataset (FK cascade).
 
 ### Ingestion
 Uploads are saved to a staging file under `Storage:UploadPath` (not the OS temp dir) and **queued** (`IngestionQueue`); the endpoint returns `202`

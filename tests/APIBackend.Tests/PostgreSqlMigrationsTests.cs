@@ -112,7 +112,8 @@ namespace DatasetStudio.Tests.APIBackend
                     "users",
                     "datasets",
                     "permissions",
-                    "ingestion_jobs"
+                    "ingestion_jobs",
+                    "item_overlays"
                 };
                 // dataset_items and captions were never used and are dropped (audit D-7).
 

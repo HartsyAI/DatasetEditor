@@ -15,6 +15,9 @@ public static class ItemVersions
     /// </summary>
     public static string ForLocal(DateTime updatedAt) => updatedAt.Ticks.ToString(CultureInfo.InvariantCulture);
 
+    /// <summary>A streaming item's version: its overlay's edit counter (0 when it was never edited).</summary>
+    public static string ForOverlay(int overlayVersion) => overlayVersion.ToString(CultureInfo.InvariantCulture);
+
     /// <summary>
     /// The <c>UpdatedAt</c> to stamp on an edit of an item last updated at <paramref name="previous"/>:
     /// now, to the millisecond, but always at least a millisecond after the previous value. The

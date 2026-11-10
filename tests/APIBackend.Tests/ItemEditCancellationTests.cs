@@ -52,6 +52,7 @@ namespace DatasetStudio.Tests.APIBackend
                 itemId,
                 new UpdateItemRequest { Title = "after" },
                 itemRepository.Object,
+                new Mock<DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories.IItemOverlayRepository>(MockBehavior.Strict).Object,
                 datasetRepository.Object,
                 permissionService.Object,
                 new DefaultHttpContext(),
@@ -96,6 +97,7 @@ namespace DatasetStudio.Tests.APIBackend
             await DatasetStudio.APIBackend.Endpoints.ItemEditEndpoints.BulkUpdateItems(
                 request,
                 itemRepository.Object,
+                new Mock<DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories.IItemOverlayRepository>(MockBehavior.Strict).Object,
                 datasetRepository.Object,
                 permissionService.Object,
                 new DefaultHttpContext(),

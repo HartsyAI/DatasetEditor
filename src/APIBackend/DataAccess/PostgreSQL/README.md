@@ -149,6 +149,28 @@ Stores dataset access control and sharing permissions.
 
 ---
 
+#### `item_overlays`
+Edits of streamed items (HuggingFace streaming, S3), which can't be written back to their source
+(audit E-3). Applied over each page of the dataset as it is served. A null column is not
+overridden. Migration `AddItemOverlays`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `dataset_id` | uuid | Primary key (with `item_id`); foreign key to datasets |
+| `item_id` | uuid | The item's derived id (`StreamingItemIds`) |
+| `title` | text | Edited title |
+| `description` | text | Edited description |
+| `tags` | jsonb | The whole edited tag list |
+| `is_favorite` | boolean | Favourite flag |
+| `metadata` | jsonb | Edited metadata keys, merged over the source's |
+| `version` | integer | Edit counter: the item's version for `If-Match` (0 = never edited) |
+| `updated_at` | timestamptz | Last edit |
+
+**Relationships**:
+- `dataset_id` → `datasets.id` (CASCADE on delete)
+
+---
+
 ## Setting Up PostgreSQL Locally
 
 ### Option 1: Using Docker (Recommended)

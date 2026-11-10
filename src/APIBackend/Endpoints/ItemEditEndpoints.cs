@@ -1,3 +1,4 @@
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 using DatasetStudio.APIBackend.Services.Auth;
 using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.DTO.Datasets;
@@ -39,6 +40,7 @@ public static class ItemEditEndpoints
         Guid itemId,
         [FromBody] UpdateItemRequest request,
         IDatasetItemRepository itemRepository,
+        IItemOverlayRepository overlayRepository,
         Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
@@ -46,7 +48,9 @@ public static class ItemEditEndpoints
         CancellationToken cancellationToken)
     {
         // The dataset comes from the request when sent: then the item is looked up in that
-        // dataset's id indexes only (audit P-2). Without it, every dataset is searched.
+        // dataset's id indexes only (audit P-2). Without it, every local dataset is searched. A
+        // streamed item's id is a one-way hash of its source, so without the dataset id it can't
+        // be told apart from an id that doesn't exist; the 404 says what to send.
         Guid datasetId;
         if (request.DatasetId is Guid requestedDatasetId)
         {
@@ -57,7 +61,10 @@ public static class ItemEditEndpoints
             DatasetItemDto? found = await itemRepository.GetItemAsync(itemId, cancellationToken);
             if (found is null)
             {
-                return ItemNotFound(itemId);
+                return Results.NotFound(new
+                {
+                    message = $"Item {itemId} not found. Items of HuggingFace or S3 datasets can only be edited with their datasetId in the request."
+                });
             }
             datasetId = found.DatasetId;
         }
@@ -77,6 +84,31 @@ public static class ItemEditEndpoints
         }
 
         string? ifMatch = httpContext.Request.Headers.IfMatch.Count > 0 ? httpContext.Request.Headers.IfMatch.ToString() : null;
+
+        if (IsStreamed(dataset))
+        {
+            // Streamed items can't be written back to HuggingFace or S3; the edit goes into the
+            // item's overlay, which every page of the dataset is served through (audit E-3). Same
+            // If-Match rule, against the overlay's version, in the same row lock as the write.
+            (ItemEditStatus status, ItemOverlay overlay) = await overlayRepository.EditAsync(
+                datasetId,
+                itemId,
+                current => ItemVersions.IfMatchAllows(ifMatch, ItemVersions.ForOverlay(current.Version)),
+                current => ApplyPatch(current, request),
+                cancellationToken);
+            if (status == ItemEditStatus.PreconditionFailed)
+            {
+                return StaleVersion(httpContext, ToResponse(itemId, datasetId, overlay) with { Message = StaleVersionMessage });
+            }
+
+            logger.LogInformation(
+                "[Audit] User {UserId} edited item {ItemId} in dataset {DatasetId} (fields: {Fields})",
+                httpContext.User.GetUserId(), itemId, datasetId, ChangedFields(request));
+
+            ItemEditResponse streamedResponse = ToResponse(itemId, datasetId, overlay);
+            httpContext.Response.Headers.ETag = ItemVersions.ToETag(streamedResponse.Version);
+            return Results.Ok(streamedResponse);
+        }
 
         // The patch is applied to the item as it stands inside the dataset's lock, with the
         // If-Match check in the same lock, so neither a concurrent edit of another field nor one
@@ -112,6 +144,7 @@ public static class ItemEditEndpoints
     public static async Task<IResult> BulkUpdateItems(
         [FromBody] BulkUpdateItemsRequest request,
         IDatasetItemRepository itemRepository,
+        IItemOverlayRepository overlayRepository,
         Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
@@ -154,7 +187,9 @@ public static class ItemEditEndpoints
             }
         }
 
-        List<DatasetItemDto> updated = new();
+        // The new version of each edited item, and the datasets edited (for the audit line).
+        Dictionary<Guid, string> versions = new();
+        List<Guid> editedDatasets = new();
         foreach ((Guid datasetId, List<Guid> ids) in idsByDataset)
         {
             DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
@@ -168,27 +203,114 @@ public static class ItemEditEndpoints
                 continue;
             }
 
-            // Applied to each item as it stands, under the dataset's lock (audit E-4): tags are
-            // added to the current list, not to a copy read before a concurrent edit.
-            IReadOnlyList<DatasetItemDto> edited = await itemRepository.EditItemsAsync(datasetId, ids, current => ApplyBulk(current, request), cancellationToken);
-            updated.AddRange(edited);
-            HashSet<Guid> editedIds = edited.Select(i => i.Id).ToHashSet();
-            skipped.AddRange(ids.Where(id => !editedIds.Contains(id))
-                .Select(id => new BulkSkippedItem { ItemId = id, Reason = BulkSkipReasons.NotFound }));
+            if (IsStreamed(dataset))
+            {
+                // Edits of streamed items go into their overlays (audit E-3). Their ids can't be
+                // checked against the source, so none is reported not-found.
+                HashSet<Guid> tagsUnknown = new();
+                IReadOnlyDictionary<Guid, ItemOverlay> written = await overlayRepository.EditManyAsync(
+                    datasetId,
+                    ids,
+                    (itemId, current) =>
+                    {
+                        List<string>? baseTags = current.Tags ?? SourceTags(dataset, request, itemId);
+                        if (ChangesTags(request) && baseTags is null)
+                        {
+                            tagsUnknown.Add(itemId);
+                            return null;
+                        }
+                        return ApplyBulk(current, request, baseTags);
+                    },
+                    cancellationToken);
+                foreach ((Guid itemId, ItemOverlay overlay) in written)
+                {
+                    versions[itemId] = ItemVersions.ForOverlay(overlay.Version);
+                }
+                skipped.AddRange(tagsUnknown.Select(id => new BulkSkippedItem { ItemId = id, Reason = BulkSkipReasons.TagsUnknown }));
+            }
+            else
+            {
+                // Applied to each item as it stands, under the dataset's lock (audit E-4): tags
+                // are added to the current list, not to a copy read before a concurrent edit.
+                IReadOnlyList<DatasetItemDto> edited = await itemRepository.EditItemsAsync(datasetId, ids, current => ApplyBulk(current, request), cancellationToken);
+                foreach (DatasetItemDto item in edited)
+                {
+                    versions[item.Id] = item.Version ?? ItemVersions.ForLocal(item.UpdatedAt);
+                }
+                HashSet<Guid> editedIds = edited.Select(i => i.Id).ToHashSet();
+                skipped.AddRange(ids.Where(id => !editedIds.Contains(id))
+                    .Select(id => new BulkSkippedItem { ItemId = id, Reason = BulkSkipReasons.NotFound }));
+            }
+            editedDatasets.Add(datasetId);
         }
 
         // Who changed how many items in which datasets (audit E-5); skipped items aren't counted.
         logger.LogInformation(
             "[Audit] User {UserId} bulk-edited {ItemCount} of {RequestedCount} items in datasets {DatasetIds} ({SkippedCount} skipped)",
-            httpContext.User.GetUserId(), updated.Count, request.ItemIds.Count,
-            string.Join(",", updated.Select(i => i.DatasetId).Distinct()), skipped.Count);
+            httpContext.User.GetUserId(), versions.Count, request.ItemIds.Count,
+            string.Join(",", editedDatasets), skipped.Count);
 
         return Results.Ok(new BulkUpdateItemsResponse
         {
-            UpdatedCount = updated.Count,
+            UpdatedCount = versions.Count,
             Skipped = skipped,
-            Versions = updated.ToDictionary(i => i.Id, i => i.Version ?? ItemVersions.ForLocal(i.UpdatedAt))
+            Versions = versions
         });
+    }
+
+    /// <summary>
+    /// Whether a dataset's items are streamed from their source (HuggingFace datasets-server, an S3
+    /// bucket) rather than stored in Parquet, so edits go into overlays. Same test as the items
+    /// endpoint uses to pick its branch.
+    /// </summary>
+    internal static bool IsStreamed(DatasetDto dataset)
+    {
+        return dataset.SourceType is DatasetSourceType.HuggingFaceStreaming or DatasetSourceType.ExternalS3Streaming;
+    }
+
+    private static bool ChangesTags(BulkUpdateItemsRequest request)
+    {
+        return (request.TagsToAdd?.Count ?? 0) > 0 || (request.TagsToRemove?.Count ?? 0) > 0;
+    }
+
+    /// <summary>
+    /// The tags a streamed item has at its source, for a bulk tag change on an item whose tags were
+    /// never edited: the overlay stores the whole list, so it needs a starting point. The server
+    /// can't read a HuggingFace row back from its id, so it takes the tags the client shows
+    /// (<see cref="BulkUpdateItemsRequest.CurrentTags"/>); S3 objects have no source tags. Null
+    /// when unknown.
+    /// </summary>
+    private static List<string>? SourceTags(DatasetDto dataset, BulkUpdateItemsRequest request, Guid itemId)
+    {
+        if (request.CurrentTags is not null && request.CurrentTags.TryGetValue(itemId, out List<string>? shown))
+        {
+            return shown;
+        }
+        return dataset.SourceType == DatasetSourceType.ExternalS3Streaming ? new List<string>() : null;
+    }
+
+    /// <summary>Applies a single-item edit request to a streamed item's overlay as it stands.</summary>
+    internal static ItemOverlay ApplyPatch(ItemOverlay overlay, UpdateItemRequest request)
+    {
+        return overlay with
+        {
+            Title = request.Title ?? overlay.Title,
+            Description = request.Description ?? overlay.Description,
+            Tags = request.Tags ?? overlay.Tags,
+            IsFavorite = request.IsFavorite ?? overlay.IsFavorite,
+            Metadata = request.Metadata is null ? overlay.Metadata : MergeMetadata(overlay.Metadata, request.Metadata)
+        };
+    }
+
+    /// <summary>Applies a bulk edit request to a streamed item's overlay, starting tag changes from <paramref name="tags"/>.</summary>
+    internal static ItemOverlay ApplyBulk(ItemOverlay overlay, BulkUpdateItemsRequest request, List<string>? tags)
+    {
+        return overlay with
+        {
+            Tags = ChangesTags(request) ? EditTags(tags, request.TagsToAdd, request.TagsToRemove) : overlay.Tags,
+            IsFavorite = request.SetFavorite ?? overlay.IsFavorite,
+            Metadata = request.MetadataToAdd is { Count: > 0 } ? MergeMetadata(overlay.Metadata, request.MetadataToAdd) : overlay.Metadata
+        };
     }
 
     /// <summary>Applies a single-item edit request to the item as it stands.</summary>
@@ -276,6 +398,25 @@ public static class ItemEditEndpoints
             Tags = item.Tags,
             IsFavorite = item.IsFavorite,
             Metadata = item.Metadata
+        };
+    }
+
+    /// <summary>
+    /// A streamed item's overlay as the edit response: only the fields it overrides are set; the
+    /// others come from the source, which the client already shows.
+    /// </summary>
+    private static ItemEditResponse ToResponse(Guid itemId, Guid datasetId, ItemOverlay overlay)
+    {
+        return new ItemEditResponse
+        {
+            ItemId = itemId,
+            DatasetId = datasetId,
+            Version = ItemVersions.ForOverlay(overlay.Version),
+            Title = overlay.Title,
+            Description = overlay.Description,
+            Tags = overlay.Tags,
+            IsFavorite = overlay.IsFavorite,
+            Metadata = overlay.Metadata
         };
     }
 

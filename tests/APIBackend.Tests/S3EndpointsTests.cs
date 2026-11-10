@@ -284,6 +284,42 @@ namespace DatasetStudio.Tests.APIBackend
                 .And.Equal(second!.Items.Select(i => i.Id));
         }
 
+        /// <summary>
+        /// Audit E-3: an S3 object's edits 404'd. They are kept in an overlay and shown on every
+        /// listing; a bulk tag change needs no shown tags, since S3 objects have none of their own.
+        /// </summary>
+        [Fact]
+        public async Task EditS3Object_PersistsAndShowsOnTheNextPage()
+        {
+            string prefix = $"edit-{Guid.NewGuid():N}/";
+            await PutObjectAsync($"{prefix}a.png", MakeTestPng(5, 5, SKColors.Red));
+            await PutObjectAsync($"{prefix}b.png", MakeTestPng(5, 5, SKColors.Green));
+            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+            List<DatasetItemDto> before = (await _client.GetFromJsonAsync<PageResponse<DatasetItemDto>>($"/api/datasets/{dataset.Id}/items?pageSize=100"))!.Items.ToList();
+
+            HttpResponseMessage edited = await _client.PatchAsJsonAsync($"/api/items/{before[0].Id}",
+                new UpdateItemRequest { DatasetId = dataset.Id, Title = "renamed", Description = "a red square" });
+            edited.StatusCode.Should().Be(HttpStatusCode.OK);
+            HttpResponseMessage bulk = await _client.PatchAsJsonAsync("/api/items/bulk", new BulkUpdateItemsRequest
+            {
+                DatasetId = dataset.Id,
+                ItemIds = before.Select(i => i.Id).ToList(),
+                TagsToAdd = new List<string> { "colour" },
+                SetFavorite = true,
+            });
+            BulkUpdateItemsResponse bulkBody = (await bulk.Content.ReadFromJsonAsync<BulkUpdateItemsResponse>())!;
+            bulkBody.UpdatedCount.Should().Be(2);
+            bulkBody.Skipped.Should().BeEmpty();
+
+            List<DatasetItemDto> after = (await _client.GetFromJsonAsync<PageResponse<DatasetItemDto>>($"/api/datasets/{dataset.Id}/items?pageSize=100"))!.Items.ToList();
+            after.Select(i => i.Id).Should().Equal(before.Select(i => i.Id));
+            after[0].Title.Should().Be("renamed");
+            after[0].Description.Should().Be("a red square");
+            after[0].Version.Should().Be("2");
+            after[1].Title.Should().Be(before[1].Title);
+            after.Should().OnlyContain(i => i.IsFavorite && i.Tags.SequenceEqual(new[] { "colour" }));
+        }
+
         [Fact]
         public async Task GetS3File_ServesOriginalBytesUnmodifiedWithoutWidthQuery()
         {

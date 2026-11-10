@@ -136,7 +136,7 @@ refer to [docs/refactor-audit.md](docs/refactor-audit.md).
 | 4.7 | Server folder import | Working (admin-only) |
 | 4.8 | Thumbnails | Working |
 | 4.9 | Virtualised viewer (grid / list / detail / lightbox) | Working (caveats) |
-| 4.10 | Item editing (single, bulk) | Partial (local datasets; broken in the dev setup) |
+| 4.10 | Item editing (single, bulk) | Working (local, HuggingFace streaming and S3; no bulk toolbar yet) |
 | 4.11 | Filtering and search | Working (local); search only (HF streaming) |
 | 4.12 | Settings, theme, language | Partial (theme, viewer preferences, HuggingFace token; no i18n) |
 | 4.13 | AI tools | Placeholder |
@@ -311,7 +311,8 @@ the sum over all splits. Upstream failures return `403` for an auth refusal (401
 Each row's item id is derived from the dataset id, repository, config, split and the row's index
 (`StreamingItemIds`: SHA-256 of those parts, as a version 8 UUID), so a row keeps its id on every
 page request and in search results, which report the original row index (E-3). It used to be a
-new `Guid` per request.
+new `Guid` per request. Rows can be edited: the edits are kept in `item_overlays` and applied to
+every page (see 4.10).
 
 Cached rows and thumbnails are keyed by the caller's access scope (a SHA-256 prefix of their
 token, or anonymous), so an image fetched with one user's token for a gated repository is never
@@ -345,7 +346,8 @@ token as cursor, filtered to image extensions. The dataset prefix is treated as 
 listed with a trailing `/` (so `images` doesn't also list `images-other/…`), and `S3KeySafety`
 accepts a key only under that folder and without a `.` or `..` path segment (a name such as
 `photo..final.jpg` is fine). An object's item id is derived from the dataset id, profile, bucket
-and key (`StreamingItemIds`), so it is the same on every listing (E-3).
+and key (`StreamingItemIds`), so it is the same on every listing (E-3), and objects can be
+edited like any item: the edits are kept in `item_overlays` and applied to every listing (see 4.10).
 
 **Why.** Proxying rather than presigned URLs makes the dataset permission check and the
 thumbnail cache the single enforcement point. Bucket allow-lists exist because registration
@@ -435,10 +437,10 @@ Placeholder colour + lazy `<img>` give instant layout with zero shift.
 
 **Gaps.** Gallery mode renders like the grid.
 
-### 4.10 Item editing — Partial
+### 4.10 Item editing — Working
 
 **What.** Edit title, description, tags, favourite and metadata on one item; add/remove tags,
-set favourite, add metadata on many.
+set favourite, add metadata on many. Local, HuggingFace streaming and S3 items alike.
 
 **How.** `PATCH /api/items/{id}` and `/api/items/bulk` (the client sends the dataset id) →
 `ParquetItemRepository.EditItemAsync`/`EditItemsAsync`: under the dataset's lock the item is found
@@ -459,14 +461,32 @@ item it didn't edit is listed with `not-found` (no such item, or one in a datase
 see) or `forbidden` (visible, but not the caller's to edit), and `versions` holds each edited
 item's new version. It used to return only a lower count (E-1).
 
+Streamed items (HuggingFace streaming, S3) can't be written back to their source, so their edits
+go into the Postgres table `item_overlays` (one row per dataset and item id; null columns are not
+overridden; tags are the whole edited list, metadata the edited keys) through
+`ItemOverlayRepository`. Each page of such a dataset loads the overlays of its items in one query
+and applies them: overridden fields replace the source's and metadata merges over it. An overlay
+edit locks the item's row from read to write, so the same rules hold: concurrent edits of
+different fields both survive, `If-Match` is checked against the overlay's edit counter (the
+item's `Version`, `0` before any edit), and the response carries only the fields the overlay holds.
+These edits need the dataset id in the request: the item id is a hash of the item's source and
+can't be resolved alone, so without it the PATCH is a 404 that says so. A bulk tag change starts
+from the item's edited tags or, before any tag edit, from the tags the client shows
+(`currentTags`), since the server can't read a HuggingFace row back from its id; an item with
+neither is skipped as `tags-unknown`. S3 objects have no tags of their own. Deleting a dataset
+deletes its overlays (foreign key cascade).
+
 **Why.** Parquet is immutable, so updates are rewrites; limiting the rewrite to touched segments
 (10,000 rows each from ingestion, up to about 2M after merging) is the cheapest correct option
 without a delta store. Applying the change to the current item inside the lock is what keeps two
 concurrent edits of different fields: the endpoint used to read the item, change it and write the
 whole item back, so the last writer won.
 
-**Gaps.** Only local datasets are editable — streaming items have stable ids now, but nothing
-stores their edits yet, so a PATCH 404s (E-3). The dataset lock is held for the rewrite, so reads of that dataset wait.
+**Gaps.** The dataset lock is held for the rewrite, so reads of that dataset wait. There is no
+bulk-edit toolbar in the viewer yet. Search and filters on a streaming dataset see the source's values, not edited ones. A
+streamed item's id can't be checked against its source, so an edit of an id that no source item
+has is stored and never shown. The optional IndexedDB page cache can show a page as it was
+before an edit until it is cleared.
 
 ### 4.11 Filtering and search — Working (local datasets)
 
