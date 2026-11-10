@@ -20,47 +20,42 @@ public sealed class DatasetPermissionService : IDatasetPermissionService
         {
             return true;
         }
-        return await CanAccessAsync(dataset, user, requireWrite: false, requireDelete: false, cancellationToken);
+        return (await GetAccessAsync(dataset, user, cancellationToken)).CanRead;
     }
 
-    public Task<bool> CanWriteAsync(DatasetDto dataset, ClaimsPrincipal? user, CancellationToken cancellationToken = default) =>
-        CanAccessAsync(dataset, user, requireWrite: true, requireDelete: false, cancellationToken);
+    public async Task<bool> CanWriteAsync(DatasetDto dataset, ClaimsPrincipal? user, CancellationToken cancellationToken = default) =>
+        (await GetAccessAsync(dataset, user, cancellationToken)).CanWrite;
 
-    public Task<bool> CanDeleteAsync(DatasetDto dataset, ClaimsPrincipal? user, CancellationToken cancellationToken = default) =>
-        CanAccessAsync(dataset, user, requireWrite: false, requireDelete: true, cancellationToken);
+    public async Task<bool> CanDeleteAsync(DatasetDto dataset, ClaimsPrincipal? user, CancellationToken cancellationToken = default) =>
+        (await GetAccessAsync(dataset, user, cancellationToken)).CanDelete;
 
-    private async Task<bool> CanAccessAsync(
-        DatasetDto dataset, ClaimsPrincipal? user, bool requireWrite, bool requireDelete, CancellationToken cancellationToken)
+    public async Task<DatasetAccess> GetAccessAsync(DatasetDto dataset, ClaimsPrincipal? user, CancellationToken cancellationToken = default)
     {
         Guid? userId = user.GetUserId();
         if (userId is null)
         {
-            return false; // not authenticated -- private-dataset access always requires a real account
+            // Not authenticated: private-dataset access always requires a real account.
+            return dataset.IsPublic ? DatasetAccess.None with { CanRead = true } : DatasetAccess.None;
         }
 
-        if (user.IsSiteAdmin())
+        if (user.IsSiteAdmin() || dataset.CreatedByUserId == userId)
         {
-            return true;
-        }
-        if (dataset.CreatedByUserId == userId)
-        {
-            return true; // owner
+            return DatasetAccess.Full;
         }
 
         PermissionDto? grant = await _permissionRepository.GetAsync(dataset.Id, userId.Value, cancellationToken);
         if (grant is null || grant.IsExpired(DateTime.UtcNow))
         {
-            return false;
+            return dataset.IsPublic ? DatasetAccess.None with { CanRead = true } : DatasetAccess.None;
         }
 
-        if (requireDelete)
-        {
-            return grant.CanDelete;
-        }
-        if (requireWrite)
-        {
-            return grant.AccessLevel is "Write" or "Admin" or "Owner";
-        }
-        return true; // any non-expired grant is at least read access
+        // Any non-expired grant is at least read access.
+        return new DatasetAccess(
+            CanRead: true,
+            CanWrite: grant.AccessLevel is "Write" or "Admin" or "Owner",
+            CanDelete: grant.CanDelete,
+            CanShare: grant.CanShare,
+            IsOwnerOrAdmin: false,
+            ExpiresAt: grant.ExpiresAt);
     }
 }

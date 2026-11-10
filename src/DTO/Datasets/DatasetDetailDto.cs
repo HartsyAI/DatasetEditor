@@ -26,4 +26,10 @@ public sealed record DatasetDetailDto
     public long TotalSizeBytes { get; init; }
     public bool IsPublic { get; init; }
     public Guid? CreatedByUserId { get; init; }
+
+    /// <summary>
+    /// Whether the requesting user may manage this dataset's shares (owner, admin, or a share
+    /// with the share right). Set by <c>GET /api/datasets/{id}</c> for the caller; false elsewhere.
+    /// </summary>
+    public bool CanShare { get; init; }
 }

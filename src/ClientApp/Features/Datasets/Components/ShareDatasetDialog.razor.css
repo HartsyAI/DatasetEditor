@@ -1,0 +1,22 @@
+/* Access and end date sit side by side and wrap on narrow screens. */
+::deep .ds-share-access {
+    min-width: 10rem;
+    flex: 1 1 10rem;
+}
+
+::deep .ds-share-expiry {
+    flex: 2 1 14rem;
+}
+
+.ds-share-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+}
+
+.ds-share-who {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}

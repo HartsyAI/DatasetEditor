@@ -22,20 +22,9 @@ public class DatasetStudioDbContext : DbContext
     public DbSet<DatasetEntity> Datasets { get; set; } = null!;
 
     /// <summary>
-    /// Dataset items table (for metadata and small datasets)
-    /// Note: Large datasets should use Parquet storage
-    /// </summary>
-    public DbSet<DatasetItemEntity> DatasetItems { get; set; } = null!;
-
-    /// <summary>
     /// Users table
     /// </summary>
     public DbSet<UserEntity> Users { get; set; } = null!;
-
-    /// <summary>
-    /// Captions table (for AI-generated and manual captions)
-    /// </summary>
-    public DbSet<CaptionEntity> Captions { get; set; } = null!;
 
     /// <summary>
     /// Permissions table (for dataset access control)
@@ -69,32 +58,9 @@ public class DatasetStudioDbContext : DbContext
                 .HasForeignKey(d => d.CreatedByUserId)
                 .OnDelete(DeleteBehavior.SetNull);
 
-            entity.HasMany(d => d.Captions)
-                .WithOne(c => c.Dataset)
-                .HasForeignKey(c => c.DatasetId)
-                .OnDelete(DeleteBehavior.Cascade);
-
             entity.HasMany(d => d.Permissions)
                 .WithOne(p => p.Dataset)
                 .HasForeignKey(p => p.DatasetId)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        // Configure DatasetItemEntity
-        modelBuilder.Entity<DatasetItemEntity>(entity =>
-        {
-            // Indexes
-            entity.HasIndex(e => e.DatasetId);
-            entity.HasIndex(e => new { e.DatasetId, e.ItemId }).IsUnique();
-            entity.HasIndex(e => e.CreatedAt);
-            entity.HasIndex(e => e.QualityScore);
-            entity.HasIndex(e => e.IsFlagged);
-            entity.HasIndex(e => e.IsDeleted);
-
-            // Relationships
-            entity.HasOne(i => i.Dataset)
-                .WithMany()
-                .HasForeignKey(i => i.DatasetId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -120,33 +86,6 @@ public class DatasetStudioDbContext : DbContext
                 .WithOne(p => p.User)
                 .HasForeignKey(p => p.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        // Configure CaptionEntity
-        modelBuilder.Entity<CaptionEntity>(entity =>
-        {
-            // Indexes
-            entity.HasIndex(e => e.DatasetId);
-            entity.HasIndex(e => new { e.DatasetId, e.ItemId });
-            entity.HasIndex(e => e.Source);
-            entity.HasIndex(e => e.IsPrimary);
-            entity.HasIndex(e => e.CreatedAt);
-            entity.HasIndex(e => e.Score);
-
-            // Full-text search index on caption text (PostgreSQL specific)
-            // Uncomment when using PostgreSQL extensions
-            // entity.HasIndex(e => e.Text).HasMethod("GIN").IsTsVectorExpressionIndex("english");
-
-            // Relationships
-            entity.HasOne(c => c.Dataset)
-                .WithMany(d => d.Captions)
-                .HasForeignKey(c => c.DatasetId)
-                .OnDelete(DeleteBehavior.Cascade);
-
-            entity.HasOne(c => c.CreatedByUser)
-                .WithMany()
-                .HasForeignKey(c => c.CreatedByUserId)
-                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // Configure PermissionEntity

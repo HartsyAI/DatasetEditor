@@ -368,6 +368,7 @@ foreach (var extension in extensions)
 // Map all endpoints
 app.MapAuthEndpoints();
 app.MapDatasetEndpoints();
+app.MapDatasetShareEndpoints();
 app.MapItemEditEndpoints();
 
 // Unknown /api routes answer 404 instead of falling through to the SPA shell (audit C-8). These are

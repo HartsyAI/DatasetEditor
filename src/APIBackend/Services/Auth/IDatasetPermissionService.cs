@@ -19,4 +19,10 @@ public interface IDatasetPermissionService
 
     /// <summary>True if this principal may delete the dataset.</summary>
     Task<bool> CanDeleteAsync(DatasetDto dataset, ClaimsPrincipal? user, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Everything this principal may do with the dataset, in one lookup. Sharing endpoints need
+    /// all of it: a user who shares onward can't hand out more than they hold.
+    /// </summary>
+    Task<DatasetAccess> GetAccessAsync(DatasetDto dataset, ClaimsPrincipal? user, CancellationToken cancellationToken = default);
 }
