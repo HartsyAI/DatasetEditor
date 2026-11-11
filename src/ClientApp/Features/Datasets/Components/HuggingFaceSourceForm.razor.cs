@@ -110,8 +110,7 @@ public partial class HuggingFaceSourceForm
                 AccessToken = _accessToken,
                 Config = config,
                 Split = split,
-                DataFilePath = dataFile,
-                ConfirmedDownloadFallback = !streaming && _isStreaming
+                DataFilePath = dataFile
             },
             cancellationToken);
         if (!accepted)

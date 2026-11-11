@@ -69,8 +69,6 @@ internal sealed class HuggingFaceClient : IHuggingFaceClient
             {
                 Id = apiResponse.Id ?? repository,
                 Author = apiResponse.Author ?? string.Empty,
-                Sha = apiResponse.Sha ?? string.Empty,
-                LastModified = apiResponse.LastModified,
                 Private = apiResponse.Private,
                 Gated = apiResponse.Gated is { ValueKind: JsonValueKind.True or JsonValueKind.String },
                 Tags = apiResponse.Tags ?? new List<string>(),
@@ -340,11 +338,6 @@ internal sealed class HuggingFaceClient : IHuggingFaceClient
         public string? Id { get; set; }
 
         public string? Author { get; set; }
-        public string? Sha { get; set; }
-
-        [JsonPropertyName("lastModified")]
-        public DateTime LastModified { get; set; }
-
         public bool Private { get; set; }
 
         /// <summary>
