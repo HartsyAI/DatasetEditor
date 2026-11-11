@@ -73,6 +73,10 @@ one of three item backends chosen by `SourceType`:
 | `HuggingFaceStreaming` | Not stored; each page is a `/rows` call | HuggingFace CDN, thumbnails proxied + cached by the API |
 | `ExternalS3Streaming` | Not stored; each page is a `ListObjectsV2` call | The bucket, proxied + thumbnailed by the API |
 
+`POST /api/datasets` always creates a `LocalUpload` shell and answers 400 to any other
+`SourceType`; the folder, HuggingFace and S3 import endpoints set their own source type with the
+fields it needs. `WebUrl` exists in the enum but nothing imports from a URL.
+
 **Every page request is bounded.** Local: an `r{offset}` cursor and one row group at a time.
 HuggingFace: an integer offset against `/rows`. S3: the continuation token. The client asks for
 the next page when the virtualised grid nears its buffer edge, and evicts old pages.

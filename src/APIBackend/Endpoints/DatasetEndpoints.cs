@@ -48,6 +48,7 @@ internal static class DatasetEndpoints
         group.MapPost("/", CreateDataset)
             .WithName("CreateDataset")
             .Produces<DatasetDetailDto>(StatusCodes.Status201Created)
+            .Produces(StatusCodes.Status400BadRequest)
             .RequireAuthorization();
 
         group.MapPost("/{datasetId:guid}/upload", UploadDatasetFile)
@@ -178,6 +179,20 @@ internal static class DatasetEndpoints
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
+        // A bare create is the start of an upload; every other source type is set by its import
+        // endpoint (folder, HuggingFace, S3) together with the fields it needs. Create used to
+        // store whatever SourceType it was sent, including WebUrl and LocalFolder, which nothing
+        // processes, and streaming types with none of the repository/bucket fields their items
+        // endpoint reads (audit D-5).
+        if (request.SourceType != DatasetSourceType.LocalUpload)
+        {
+            return Results.BadRequest(new
+            {
+                error = $"Datasets are created as {nameof(DatasetSourceType.LocalUpload)}; " +
+                        "use the folder, HuggingFace or S3 import endpoint to set another source."
+            });
+        }
+
         // RequireAuthorization() on this route guarantees GetUserId() is non-null here.
         DatasetDto dataset = new()
         {

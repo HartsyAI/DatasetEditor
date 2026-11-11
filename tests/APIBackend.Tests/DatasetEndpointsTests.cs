@@ -103,6 +103,27 @@ namespace DatasetStudio.Tests.APIBackend
             body.TotalCount.Should().Be(1);
         }
 
+        // Regression test for audit D-5: create accepted any SourceType and stored it, although
+        // only an upload starts from a bare create. WebUrl and LocalFolder had no processing path
+        // at all, and a dataset created as HuggingFaceStreaming or ExternalS3Streaming had none of
+        // the repository/bucket fields its items endpoint reads. The import endpoints set those
+        // source types themselves.
+        [Theory]
+        [InlineData(DatasetSourceType.WebUrl)]
+        [InlineData(DatasetSourceType.LocalFolder)]
+        [InlineData(DatasetSourceType.HuggingFace)]
+        [InlineData(DatasetSourceType.HuggingFaceStreaming)]
+        [InlineData(DatasetSourceType.ExternalS3Streaming)]
+        public async Task CreateDataset_WithASourceTypeOtherThanUpload_Returns400AndCreatesNothing(DatasetSourceType sourceType)
+        {
+            HttpResponseMessage response = await _client.PostAsJsonAsync(
+                "/api/datasets", new CreateDatasetRequest("Unsupported source", null, sourceType));
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            DatasetsListResponse? body = await (await _client.GetAsync("/api/datasets")).Content.ReadFromJsonAsync<DatasetsListResponse>();
+            body!.Datasets.Should().BeEmpty();
+        }
+
         [Fact]
         public async Task DeleteDataset_RemovesItFromSubsequentListing()
         {
