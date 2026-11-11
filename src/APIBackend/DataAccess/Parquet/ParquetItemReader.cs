@@ -341,7 +341,8 @@ public class ParquetItemReader
         var datasetIds = (Guid[])columns["dataset_id"];
         var externalIds = (string[])columns["external_id"];
         var titles = (string[])columns["title"];
-        var descriptions = (string[])columns["description"];
+        // Nullable column: null stays null (audit P-9). Files written before that fix hold "".
+        var descriptions = (string?[])columns["description"];
         var imageUrls = (string[])columns["image_url"];
         var thumbnailUrls = (string[])columns["thumbnail_url"];
         var widths = (int[])columns["width"];

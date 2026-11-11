@@ -152,6 +152,44 @@ namespace DatasetStudio.Tests.APIBackend
             }
         }
 
+        // Regression test for audit P-9: the writer stored a null Description as "", so an item
+        // without a description came back with an empty one, and a segment rewrite (any edit)
+        // kept it that way. Null, empty and a real value must each survive a write and a rewrite.
+        [Fact]
+        public async Task Description_NullEmptyAndValue_RoundTripThroughWriteAndRewrite()
+        {
+            string dataDirectory = CreateUniqueDataDirectory();
+
+            try
+            {
+                using ParquetItemRepository repository = new ParquetItemRepository(dataDirectory, NullLogger<ParquetItemRepository>.Instance);
+                Guid datasetId = Guid.NewGuid();
+                DatasetItemDto withoutDescription = MakeItem(datasetId, "none") with { Description = null };
+                DatasetItemDto withEmptyDescription = MakeItem(datasetId, "empty") with { Description = string.Empty };
+                DatasetItemDto withDescription = MakeItem(datasetId, "text") with { Description = "a description" };
+
+                await repository.AddRangeAsync(datasetId, new[] { withoutDescription, withEmptyDescription, withDescription }, CancellationToken.None);
+
+                (await repository.GetItemAsync(datasetId, withoutDescription.Id, CancellationToken.None))!.Description.Should().BeNull();
+                (await repository.GetItemAsync(datasetId, withEmptyDescription.Id, CancellationToken.None))!.Description.Should().Be(string.Empty);
+                (await repository.GetItemAsync(datasetId, withDescription.Id, CancellationToken.None))!.Description.Should().Be("a description");
+
+                // Editing another item rewrites the whole segment through the reader and writer.
+                await repository.UpdateItemsAsync(new[] { withDescription with { Title = "edited" } }, CancellationToken.None);
+
+                (await repository.GetItemAsync(datasetId, withoutDescription.Id, CancellationToken.None))!.Description.Should().BeNull();
+                (await repository.GetItemAsync(datasetId, withEmptyDescription.Id, CancellationToken.None))!.Description.Should().Be(string.Empty);
+                (await repository.GetItemAsync(datasetId, withDescription.Id, CancellationToken.None))!.Title.Should().Be("edited");
+            }
+            finally
+            {
+                if (Directory.Exists(dataDirectory))
+                {
+                    Directory.Delete(dataDirectory, true);
+                }
+            }
+        }
+
         private static DatasetItemDto MakeItem(Guid datasetId, string externalId) => new DatasetItemDto
         {
             Id = Guid.NewGuid(),
