@@ -51,8 +51,7 @@ public class DatasetStudioDbContext : DbContext
             entity.HasIndex(e => e.Name);
             entity.HasIndex(e => e.CreatedByUserId);
             entity.HasIndex(e => e.CreatedAt);
-            entity.HasIndex(e => e.Format);
-            entity.HasIndex(e => e.Modality);
+            // No index on modality: every row holds "Image", so it only cost writes (audit D-5).
             entity.HasIndex(e => e.IsPublic);
 
             // Relationships

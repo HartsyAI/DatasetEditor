@@ -61,7 +61,6 @@ namespace DatasetStudio.Tests.APIBackend
             Id = Guid.NewGuid(),
             Name = name,
             Description = "Description",
-            Format = "CSV",
             Modality = "Image",
             Status = IngestionStatusDto.Pending,
             TotalItems = 0,
@@ -288,7 +287,7 @@ namespace DatasetStudio.Tests.APIBackend
                 writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { SourceFileName = "a.csv" }))));
                 writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { Description = "described" }))));
                 writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { IsPublic = true }))));
-                writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { Format = "CSV2" }))));
+                writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { SourceUri = "https://example.com/a.csv" }))));
                 writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateItemCountAsync(snapshot.Id, 42))));
                 writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateStatusAsync(snapshot.Id, IngestionStatusDto.Processing))));
             }
@@ -296,7 +295,7 @@ namespace DatasetStudio.Tests.APIBackend
             await Task.WhenAll(writers);
 
             DatasetDto loaded = (await GetAsync(snapshot.Id))!;
-            (loaded.SourceFileName, loaded.Description, loaded.IsPublic, loaded.Format).Should().Be(("a.csv", "described", true, "CSV2"));
+            (loaded.SourceFileName, loaded.Description, loaded.IsPublic, loaded.SourceUri).Should().Be(("a.csv", "described", true, "https://example.com/a.csv"));
         }
 
         /// <summary>Many concurrent patches of different fields all land.</summary>

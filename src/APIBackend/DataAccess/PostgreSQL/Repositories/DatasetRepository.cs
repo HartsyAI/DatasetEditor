@@ -42,13 +42,9 @@ public sealed class DatasetRepository : IDatasetRepository
             S3Prefix = dataset.S3Prefix,
             TotalItems = dataset.TotalItems,
             ErrorMessage = dataset.ErrorMessage,
-            Format = dataset.Format,
             Modality = dataset.Modality,
-            TotalSizeBytes = dataset.TotalSizeBytes,
             StoragePath = dataset.StoragePath,
-            ParquetPath = dataset.ParquetPath,
             IsPublic = dataset.IsPublic,
-            Metadata = dataset.Metadata,
             CreatedByUserId = dataset.CreatedByUserId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -178,13 +174,9 @@ public sealed class DatasetRepository : IDatasetRepository
             patch.Apply(nameof(DatasetDto.S3Prefix), original.S3Prefix, updated.S3Prefix, entity.S3Prefix, v => entity.S3Prefix = v);
             patch.Apply(nameof(DatasetDto.TotalItems), original.TotalItems, updated.TotalItems, entity.TotalItems, v => entity.TotalItems = v);
             patch.Apply(nameof(DatasetDto.ErrorMessage), original.ErrorMessage, updated.ErrorMessage, entity.ErrorMessage, v => entity.ErrorMessage = v);
-            patch.Apply(nameof(DatasetDto.Format), original.Format, updated.Format, entity.Format, v => entity.Format = v);
             patch.Apply(nameof(DatasetDto.Modality), original.Modality, updated.Modality, entity.Modality, v => entity.Modality = v);
-            patch.Apply(nameof(DatasetDto.TotalSizeBytes), original.TotalSizeBytes, updated.TotalSizeBytes, entity.TotalSizeBytes, v => entity.TotalSizeBytes = v);
             patch.Apply(nameof(DatasetDto.StoragePath), original.StoragePath, updated.StoragePath, entity.StoragePath, v => entity.StoragePath = v);
-            patch.Apply(nameof(DatasetDto.ParquetPath), original.ParquetPath, updated.ParquetPath, entity.ParquetPath, v => entity.ParquetPath = v);
             patch.Apply(nameof(DatasetDto.IsPublic), original.IsPublic, updated.IsPublic, entity.IsPublic, v => entity.IsPublic = v);
-            patch.Apply(nameof(DatasetDto.Metadata), original.Metadata, updated.Metadata, entity.Metadata, v => entity.Metadata = v);
             patch.Apply(nameof(DatasetDto.CreatedByUserId), original.CreatedByUserId, updated.CreatedByUserId, entity.CreatedByUserId, v => entity.CreatedByUserId = v);
 
             if (patch.Conflicts.Count > 0 || !patch.Changed)
@@ -289,24 +281,6 @@ public sealed class DatasetRepository : IDatasetRepository
         return await ApplyVisibilityFilter(_dbContext.Datasets.AsNoTracking(), visibility).LongCountAsync(cancellationToken);
     }
 
-    public async Task<List<DatasetDto>> SearchAsync(string query, int page = 0, int pageSize = 50, DatasetVisibilityFilter? visibility = null, CancellationToken cancellationToken = default)
-    {
-        var searchLower = query.ToLowerInvariant();
-
-        var entities = await ApplyVisibilityFilter(_dbContext.Datasets.AsNoTracking(), visibility)
-            .Where(d =>
-                d.Name.ToLower().Contains(searchLower) ||
-                (d.Description != null && d.Description.ToLower().Contains(searchLower)) ||
-                (d.HuggingFaceRepository != null && d.HuggingFaceRepository.ToLower().Contains(searchLower))
-            )
-            .OrderByDescending(d => d.CreatedAt)
-            .Skip(page * pageSize)
-            .Take(pageSize)
-            .ToListAsync(cancellationToken);
-
-        return entities.Select(MapToDto).ToList();
-    }
-
     /// <summary>
     /// One UPDATE of just these columns, with no read first, so it can't revert another
     /// writer's fields and never trips the row's concurrency token (audit D-4).
@@ -368,13 +342,9 @@ public sealed class DatasetRepository : IDatasetRepository
             S3Bucket = entity.S3Bucket,
             S3Prefix = entity.S3Prefix,
             ErrorMessage = entity.ErrorMessage,
-            Format = entity.Format,
             Modality = entity.Modality,
-            TotalSizeBytes = entity.TotalSizeBytes,
             StoragePath = entity.StoragePath,
-            ParquetPath = entity.ParquetPath,
             IsPublic = entity.IsPublic,
-            Metadata = entity.Metadata,
             CreatedByUserId = entity.CreatedByUserId
         };
     }

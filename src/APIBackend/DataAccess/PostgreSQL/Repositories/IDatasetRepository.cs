@@ -30,11 +30,9 @@ public interface IDatasetRepository
     /// <summary>Deletes a dataset (metadata only, Parquet files handled separately)</summary>
     Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 
-    /// <summary>Gets total count of datasets. Must use the same <paramref name="visibility"/> as the matching GetAllAsync/SearchAsync call or pagination totals won't match the rows actually returned.</summary>
+    /// <summary>Gets total count of datasets. Must use the same <paramref name="visibility"/> as the matching GetAllAsync call or pagination totals won't match the rows actually returned.</summary>
     Task<long> GetCountAsync(DatasetVisibilityFilter? visibility = null, CancellationToken cancellationToken = default);
 
-    /// <summary>Searches datasets by name or description</summary>
-    Task<List<DatasetDto>> SearchAsync(string query, int page = 0, int pageSize = 50, DatasetVisibilityFilter? visibility = null, CancellationToken cancellationToken = default);
 
     /// <summary>Updates dataset status (e.g., during ingestion)</summary>
     Task UpdateStatusAsync(Guid id, IngestionStatusDto status, string? errorMessage = null, CancellationToken cancellationToken = default);

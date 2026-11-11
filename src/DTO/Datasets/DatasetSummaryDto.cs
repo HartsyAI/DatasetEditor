@@ -10,7 +10,6 @@ public sealed record DatasetSummaryDto
     public long TotalItems { get; init; }
     public DateTime CreatedAt { get; init; }
     public DateTime UpdatedAt { get; init; }
-    public string Format { get; init; } = string.Empty;
     public string Modality { get; init; } = string.Empty;
     public DatasetSourceType SourceType { get; init; } = DatasetSourceType.LocalUpload;
     public string? SourceUri { get; init; }

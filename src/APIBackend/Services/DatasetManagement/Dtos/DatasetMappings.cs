@@ -13,7 +13,6 @@ internal static class DatasetMappings
         TotalItems = dataset.TotalItems,
         CreatedAt = dataset.CreatedAt,
         UpdatedAt = dataset.UpdatedAt,
-        Format = dataset.Format,
         Modality = dataset.Modality,
         SourceType = dataset.SourceType,
         SourceUri = dataset.SourceUri,
@@ -48,9 +47,7 @@ internal static class DatasetMappings
         S3Bucket = dataset.S3Bucket,
         S3Prefix = dataset.S3Prefix,
         ErrorMessage = dataset.ErrorMessage,
-        Format = dataset.Format,
         Modality = dataset.Modality,
-        TotalSizeBytes = dataset.TotalSizeBytes,
         IsPublic = dataset.IsPublic,
         CreatedByUserId = dataset.CreatedByUserId,
     };

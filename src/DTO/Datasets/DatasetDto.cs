@@ -29,12 +29,8 @@ public sealed record DatasetDto
     public string? S3Bucket { get; init; }
     public string? S3Prefix { get; init; }
     public string? ErrorMessage { get; init; }
-    public string Format { get; init; } = "Unknown";
     public string Modality { get; init; } = "Image";
-    public long TotalSizeBytes { get; init; }
     public string? StoragePath { get; init; }
-    public string? ParquetPath { get; init; }
     public bool IsPublic { get; init; } = false;
-    public string? Metadata { get; init; }
     public Guid? CreatedByUserId { get; init; }
 }
