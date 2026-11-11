@@ -206,7 +206,10 @@ delete and share rights and an end date; change or end shares from the same list
 **How.** `DatasetEndpoints.GetAllDatasets/GetDataset/CreateDataset/DeleteDataset`,
 `DataAccess/PostgreSQL/Repositories/DatasetRepository.cs`, `Services/Auth/DatasetPermissionService.cs`.
 A `DatasetVisibilityFilter` is built from the principal and applied as SQL `WHERE`, so pages
-are never under-filled by post-filtering. `CanRead/CanWrite/CanDelete` consult owner, admin
+are never under-filled by post-filtering. The caller's unexpired share ids are read first, so the
+filter is `is_public OR created_by_user_id = me OR id = ANY(shared)`; each branch has an index
+(`IX_datasets_created_at_public`, partial on `is_public`; `(created_by_user_id, created_at)`; the
+primary key), so a page reads only visible rows instead of filtering the whole table. `CanRead/CanWrite/CanDelete` consult owner, admin
 role, and the `permissions` table. Updates are patches: `UpdateAsync(original, updated)` writes only the fields the caller
 changed, status and item-count writes are single `UPDATE` statements, and a field someone else
 changed to a different value in the meantime is refused with `409` (the row's `xmin` is the

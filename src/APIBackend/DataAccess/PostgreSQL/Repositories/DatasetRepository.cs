@@ -67,7 +67,8 @@ public sealed class DatasetRepository : IDatasetRepository
 
     public async Task<List<DatasetDto>> GetAllAsync(int page = 0, int pageSize = 50, DatasetVisibilityFilter? visibility = null, CancellationToken cancellationToken = default)
     {
-        var entities = await ApplyVisibilityFilter(_dbContext.Datasets.AsNoTracking(), visibility)
+        IQueryable<DatasetEntity> visible = await VisibleDatasetsAsync(visibility, cancellationToken);
+        var entities = await visible
             .OrderByDescending(d => d.CreatedAt)
             .Skip(page * pageSize)
             .Take(pageSize)
@@ -82,21 +83,37 @@ public sealed class DatasetRepository : IDatasetRepository
     /// the fetched rows aren't visible to the caller (the same undercounting bug class Phase 1
     /// fixed for item-cursor filtering).
     /// </summary>
-    private static IQueryable<DatasetEntity> ApplyVisibilityFilter(IQueryable<DatasetEntity> query, DatasetVisibilityFilter? visibility)
+    /// <remarks>
+    /// The datasets shared with the caller are read first, as an id list, and the listing filter is
+    /// <c>is_public OR created_by_user_id = me OR id = ANY(shared ids)</c>. Each branch has its own
+    /// index, so Postgres combines them (BitmapOr) and reads only the visible rows. The share check
+    /// used to be a correlated EXISTS, which no index can serve inside an OR: every listing walked
+    /// the created_at index and filtered each row it passed, about 10,000 rows for page 5 of a
+    /// 20,000-dataset table (audit D-6, DatasetLibraryQueryPlanTests).
+    /// </remarks>
+    private async Task<IQueryable<DatasetEntity>> VisibleDatasetsAsync(DatasetVisibilityFilter? visibility, CancellationToken cancellationToken)
     {
+        IQueryable<DatasetEntity> query = _dbContext.Datasets.AsNoTracking();
         if (visibility is null || visibility.Value.IsAdmin)
         {
             return query; // unfiltered: internal/background caller, or an admin who can see everything
         }
 
+        Guid? userId = visibility.Value.RequestingUserId;
+        if (userId is null)
+        {
+            return query.Where(d => d.IsPublic);
+        }
+
         // Datasets shared with the caller (an unexpired grant) are listed too, the same set the
         // permission service lets them open (audit D-2).
-        Guid? userId = visibility.Value.RequestingUserId;
         DateTime now = DateTime.UtcNow;
-        return query.Where(d => d.IsPublic
-            || (userId != null
-                && (d.CreatedByUserId == userId
-                    || d.Permissions.Any(p => p.UserId == userId && (p.ExpiresAt == null || p.ExpiresAt > now)))));
+        List<Guid> sharedIds = await _dbContext.Permissions
+            .AsNoTracking()
+            .Where(p => p.UserId == userId && (p.ExpiresAt == null || p.ExpiresAt > now))
+            .Select(p => p.DatasetId)
+            .ToListAsync(cancellationToken);
+        return query.Where(d => d.IsPublic || d.CreatedByUserId == userId || sharedIds.Contains(d.Id));
     }
 
     public async Task UpdateAsync(DatasetDto original, DatasetDto updated, CancellationToken cancellationToken = default)
@@ -278,7 +295,8 @@ public sealed class DatasetRepository : IDatasetRepository
 
     public async Task<long> GetCountAsync(DatasetVisibilityFilter? visibility = null, CancellationToken cancellationToken = default)
     {
-        return await ApplyVisibilityFilter(_dbContext.Datasets.AsNoTracking(), visibility).LongCountAsync(cancellationToken);
+        IQueryable<DatasetEntity> visible = await VisibleDatasetsAsync(visibility, cancellationToken);
+        return await visible.LongCountAsync(cancellationToken);
     }
 
     /// <summary>

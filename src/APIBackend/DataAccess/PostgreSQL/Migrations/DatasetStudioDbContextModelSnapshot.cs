@@ -136,11 +136,12 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
 
                     b.HasIndex("CreatedAt");
 
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("IsPublic");
-
                     b.HasIndex("Name");
+
+                    b.HasIndex("CreatedByUserId", "CreatedAt");
+
+                    b.HasIndex(new[] { "CreatedAt" }, "IX_datasets_created_at_public")
+                        .HasFilter("is_public");
 
                     b.ToTable("datasets");
                 });
