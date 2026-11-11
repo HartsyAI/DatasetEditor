@@ -40,7 +40,7 @@
 | Project | Target | Responsibility |
 |---|---|---|
 | `Core` | net10.0 | Client-side domain models and enums, storage keys, the `Logs` wrapper (used by the client only) |
-| `DTO` | net10.0 | Shared contracts (`DatasetItemDto`, `PageResponse<T>`, …) |
+| `DTO` | net10.0 | Shared contracts (`DatasetDto` extending the library's `DatasetSummaryDto`, `DatasetItemDto`, `PageResponse<T>`, …). The API's own dataset row type is `DatasetRecord` in `APIBackend/DataAccess`; it is never serialised |
 | `APIBackend` | net10.0 | API endpoints, EF/Postgres, Parquet storage, ingestion, HF integration |
 | `ClientApp` | net10.0 | Blazor WASM viewer, caching, state, JS interop |
 | `Extensions/SDK` | net10.0 | Extension manifest model and the `IApiExtension` contract |

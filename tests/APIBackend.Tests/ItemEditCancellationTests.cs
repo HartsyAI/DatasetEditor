@@ -28,7 +28,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             Guid datasetId = Guid.NewGuid();
             Guid itemId = Guid.NewGuid();
-            DatasetDto dataset = new() { Id = datasetId, Name = "edit" };
+            DatasetRecord dataset = new() { Id = datasetId, Name = "edit" };
             DatasetItemDto item = new() { Id = itemId, DatasetId = datasetId, Title = "before" };
             using var cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;
@@ -69,7 +69,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             Guid datasetId = Guid.NewGuid();
             Guid itemId = Guid.NewGuid();
-            DatasetDto dataset = new() { Id = datasetId, Name = "bulk" };
+            DatasetRecord dataset = new() { Id = datasetId, Name = "bulk" };
             DatasetItemDto item = new() { Id = itemId, DatasetId = datasetId, Title = "bulk" };
             using var cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;

@@ -56,9 +56,9 @@ namespace DatasetStudio.Tests.APIBackend
         /// <summary>Creates a local dataset as <paramref name="client"/>'s user with items of the given ids.</summary>
         private async Task<Guid> CreateDatasetAsync(HttpClient client, bool isPublic, params Guid[] itemIds)
         {
-            DatasetDetailDto dataset = (await (await client.PostAsJsonAsync("/api/datasets",
+            DatasetDto dataset = (await (await client.PostAsJsonAsync("/api/datasets",
                     new CreateDatasetRequest("bulk-" + Guid.NewGuid().ToString("N")[..8], null, IsPublic: isPublic)))
-                .Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+                .Content.ReadFromJsonAsync<DatasetDto>())!;
             using IServiceScope scope = _factory.Services.CreateScope();
             await scope.ServiceProvider.GetRequiredService<IDatasetItemRepository>().AddRangeAsync(dataset.Id,
                 itemIds.Select(id => new DatasetItemDto { Id = id, DatasetId = dataset.Id, Title = "item", CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow }));

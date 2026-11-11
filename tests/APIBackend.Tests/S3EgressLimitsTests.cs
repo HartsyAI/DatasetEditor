@@ -111,7 +111,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest($"egress-{Guid.NewGuid():N}", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
             HttpResponseMessage import = await _client.PostAsJsonAsync(
                 $"/api/datasets/{created.Id}/import-s3", new ImportS3DatasetRequest(ProfileName, Bucket, prefix));
             import.StatusCode.Should().Be(HttpStatusCode.Accepted);

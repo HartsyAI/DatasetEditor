@@ -86,7 +86,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             HttpResponseMessage createResponse = await client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest($"roots-{Guid.NewGuid():N}"[..20], null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
             return await client.PostAsJsonAsync($"/api/datasets/{created.Id}/import-folder", new ImportFolderRequest(folder));
         }
 

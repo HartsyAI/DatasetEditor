@@ -135,7 +135,7 @@ public class DatasetIngestionService : IDatasetIngestionService
                     {
                         // Persist the resolved config/split. The items endpoint streams from these fields;
                         // leaving them unset would make every page request re-run /size discovery.
-                        DatasetDto? current = await _datasetRepository.GetByIdAsync(datasetId, cancellationToken);
+                        DatasetRecord? current = await _datasetRepository.GetByIdAsync(datasetId, cancellationToken);
                         if (current != null)
                         {
                             await _datasetRepository.UpdateAsync(
@@ -344,7 +344,7 @@ public class DatasetIngestionService : IDatasetIngestionService
             // folder on disk, and copying it into managed storage would defeat the point of
             // "point at a folder" ingestion (and contradicts the flat-memory/no-materialization
             // design elsewhere in this app).
-            DatasetDto? dataset = await _datasetRepository.GetByIdAsync(datasetId, cancellationToken);
+            DatasetRecord? dataset = await _datasetRepository.GetByIdAsync(datasetId, cancellationToken);
             if (dataset is null)
             {
                 throw new InvalidOperationException($"Dataset {datasetId} not found");
@@ -555,7 +555,7 @@ public class DatasetIngestionService : IDatasetIngestionService
         // _uploadPath/temp_{datasetId} and then delete it in `finally` on every run, so a
         // ZIP-imported dataset's images were deleted immediately after being catalogued and
         // could never actually be served, regardless of what URL scheme they were given.
-        DatasetDto? dataset = await _datasetRepository.GetByIdAsync(datasetId, cancellationToken);
+        DatasetRecord? dataset = await _datasetRepository.GetByIdAsync(datasetId, cancellationToken);
         if (dataset is null)
         {
             throw new InvalidOperationException($"Dataset {datasetId} not found");
@@ -884,7 +884,7 @@ public class DatasetIngestionService : IDatasetIngestionService
     /// <summary>The dataset's managed storage folder (ServeDatasetFile's {root}/{slug}-{shortId}).</summary>
     private async Task<string> GetDatasetFolderAsync(Guid datasetId, CancellationToken cancellationToken)
     {
-        DatasetDto? dataset = await _datasetRepository.GetByIdAsync(datasetId, cancellationToken)
+        DatasetRecord? dataset = await _datasetRepository.GetByIdAsync(datasetId, cancellationToken)
             ?? throw new InvalidOperationException($"Dataset {datasetId} not found");
         string folder = Path.GetFullPath(Services.Storage.DatasetStorageConventions.GetDatasetFolderPath(_datasetRootPath, datasetId, dataset.Name));
         Directory.CreateDirectory(folder);

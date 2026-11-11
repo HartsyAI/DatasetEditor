@@ -72,7 +72,7 @@ public static class ItemEditEndpoints
         // rule as DatasetEndpoints' mutation routes. Same existence-leak guard as those routes too:
         // if the caller can't even read the dataset (private, not theirs, no grant), the item
         // itself must read as not-found, not "exists but forbidden".
-        DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
+        DatasetRecord? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
         if (dataset is null || !await permissionService.CanReadAsync(dataset, httpContext.User, cancellationToken))
         {
             return ItemNotFound(itemId);
@@ -192,7 +192,7 @@ public static class ItemEditEndpoints
         List<Guid> editedDatasets = new();
         foreach ((Guid datasetId, List<Guid> ids) in idsByDataset)
         {
-            DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
+            DatasetRecord? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
             if (dataset is null || !await permissionService.CanWriteAsync(dataset, httpContext.User, cancellationToken))
             {
                 // The rest of the batch still goes ahead. A dataset the caller can't even see
@@ -266,7 +266,7 @@ public static class ItemEditEndpoints
     /// bucket) rather than stored in Parquet, so edits go into overlays. Same test as the items
     /// endpoint uses to pick its branch.
     /// </summary>
-    internal static bool IsStreamed(DatasetDto dataset)
+    internal static bool IsStreamed(DatasetRecord dataset)
     {
         return dataset.SourceType is DatasetSourceType.HuggingFaceStreaming or DatasetSourceType.ExternalS3Streaming;
     }
@@ -283,7 +283,7 @@ public static class ItemEditEndpoints
     /// (<see cref="BulkUpdateItemsRequest.CurrentTags"/>); S3 objects have no source tags. Null
     /// when unknown.
     /// </summary>
-    private static List<string>? SourceTags(DatasetDto dataset, BulkUpdateItemsRequest request, Guid itemId)
+    private static List<string>? SourceTags(DatasetRecord dataset, BulkUpdateItemsRequest request, Guid itemId)
     {
         if (request.CurrentTags is not null && request.CurrentTags.TryGetValue(itemId, out List<string>? shown))
         {

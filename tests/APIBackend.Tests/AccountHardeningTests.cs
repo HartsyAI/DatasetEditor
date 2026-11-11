@@ -510,8 +510,8 @@ INSERT INTO users (id, username, email, password_hash, role, is_active, email_ve
         [Fact]
         public void DatasetDetail_IsPrivateByDefault_LikeTheOtherDatasetContracts()
         {
-            new DatasetDetailDto().IsPublic.Should().BeFalse();
             new DatasetDto().IsPublic.Should().BeFalse();
+            new DatasetRecord().IsPublic.Should().BeFalse();
         }
     }
 }

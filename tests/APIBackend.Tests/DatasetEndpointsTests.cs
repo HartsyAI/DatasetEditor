@@ -75,7 +75,7 @@ namespace DatasetStudio.Tests.APIBackend
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync("/api/datasets", request);
             createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
-            DatasetDetailDto? created = await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>();
+            DatasetDto? created = await createResponse.Content.ReadFromJsonAsync<DatasetDto>();
             created.Should().NotBeNull();
             created!.Name.Should().Be("Test Dataset");
             created.Status.Should().Be(IngestionStatusDto.Pending);
@@ -83,7 +83,7 @@ namespace DatasetStudio.Tests.APIBackend
             HttpResponseMessage getResponse = await _client.GetAsync($"/api/datasets/{created.Id}");
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-            DatasetDetailDto? fetched = await getResponse.Content.ReadFromJsonAsync<DatasetDetailDto>();
+            DatasetDto? fetched = await getResponse.Content.ReadFromJsonAsync<DatasetDto>();
             fetched.Should().NotBeNull();
             fetched!.Id.Should().Be(created.Id);
             fetched.Name.Should().Be("Test Dataset");
@@ -129,7 +129,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("ToDelete", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             HttpResponseMessage deleteResponse = await _client.DeleteAsync($"/api/datasets/{created.Id}");
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -158,7 +158,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("HF Streaming Test", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             ImportHuggingFaceDatasetRequest importRequest = new()
             {
@@ -175,7 +175,7 @@ namespace DatasetStudio.Tests.APIBackend
             {
                 await Task.Delay(200);
                 HttpResponseMessage pollResponse = await _client.GetAsync($"/api/datasets/{created.Id}");
-                DatasetDetailDto polled = (await pollResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+                DatasetDto polled = (await pollResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
                 finalStatus = polled.Status;
                 if (finalStatus is IngestionStatusDto.Completed or IngestionStatusDto.Failed)
                 {

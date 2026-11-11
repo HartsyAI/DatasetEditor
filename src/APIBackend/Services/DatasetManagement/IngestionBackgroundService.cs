@@ -254,7 +254,7 @@ public sealed class IngestionBackgroundService : BackgroundService
         {
             // The ingestion service records its own failures with more detail; this covers the
             // ones it never saw (an undecryptable payload, a failure before it started).
-            DatasetDto? dataset = await datasets.GetByIdAsync(claimed.Job.DatasetId, CancellationToken.None);
+            DatasetRecord? dataset = await datasets.GetByIdAsync(claimed.Job.DatasetId, CancellationToken.None);
             if (dataset is not null && dataset.Status != IngestionStatusDto.Failed)
             {
                 await datasets.UpdateStatusAsync(claimed.Job.DatasetId, IngestionStatusDto.Failed, message, CancellationToken.None);

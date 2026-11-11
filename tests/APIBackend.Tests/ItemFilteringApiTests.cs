@@ -59,10 +59,10 @@ namespace DatasetStudio.Tests.APIBackend
             await _factory.DisposeAsync();
         }
 
-        private async Task<DatasetDetailDto> CreateDatasetAsync(Action<DatasetEntity>? configure = null)
+        private async Task<DatasetDto> CreateDatasetAsync(Action<DatasetEntity>? configure = null)
         {
             HttpResponseMessage response = await _client.PostAsJsonAsync("/api/datasets", new CreateDatasetRequest("filter-" + Guid.NewGuid().ToString("N")[..8], null));
-            DatasetDetailDto created = (await response.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await response.Content.ReadFromJsonAsync<DatasetDto>())!;
             if (configure is not null)
             {
                 using IServiceScope scope = _factory.Services.CreateScope();
@@ -75,9 +75,9 @@ namespace DatasetStudio.Tests.APIBackend
         }
 
         /// <summary>A local dataset of 60 items: every third is tagged "cat", every fifth a favourite, widths 100..690.</summary>
-        private async Task<DatasetDetailDto> CreateLocalDatasetAsync()
+        private async Task<DatasetDto> CreateLocalDatasetAsync()
         {
-            DatasetDetailDto dataset = await CreateDatasetAsync(e => e.TotalItems = 60);
+            DatasetDto dataset = await CreateDatasetAsync(e => e.TotalItems = 60);
             using IServiceScope scope = _factory.Services.CreateScope();
             IDatasetItemRepository items = scope.ServiceProvider.GetRequiredService<IDatasetItemRepository>();
             await items.AddRangeAsync(dataset.Id, Enumerable.Range(0, 60).Select(i => new DatasetItemDto
@@ -119,7 +119,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task LocalDataset_TagFilter_PagesThroughEveryMatchOnce()
         {
-            DatasetDetailDto dataset = await CreateLocalDatasetAsync();
+            DatasetDto dataset = await CreateLocalDatasetAsync();
 
             (List<string> ids, List<PageResponse<DatasetItemDto>> pages) = await ReadAllAsync(dataset.Id, "&tag=cat");
 
@@ -130,7 +130,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task LocalDataset_CombinedFilters_ApplyTogether()
         {
-            DatasetDetailDto dataset = await CreateLocalDatasetAsync();
+            DatasetDto dataset = await CreateLocalDatasetAsync();
 
             (List<string> ids, _) = await ReadAllAsync(dataset.Id, "&favorites=true&minWidth=300&maxWidth=500");
 
@@ -140,7 +140,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task LocalDataset_Search_MatchesTitles()
         {
-            DatasetDetailDto dataset = await CreateLocalDatasetAsync();
+            DatasetDto dataset = await CreateLocalDatasetAsync();
 
             (List<string> ids, _) = await ReadAllAsync(dataset.Id, "&q=HARBOUR");
 
@@ -150,7 +150,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task LocalDataset_NoFilter_StillReportsTheTotal()
         {
-            DatasetDetailDto dataset = await CreateLocalDatasetAsync();
+            DatasetDto dataset = await CreateLocalDatasetAsync();
 
             PageResponse<DatasetItemDto> page = (await _client.GetFromJsonAsync<PageResponse<DatasetItemDto>>($"/api/datasets/{dataset.Id}/items?pageSize=10"))!;
 
@@ -164,7 +164,7 @@ namespace DatasetStudio.Tests.APIBackend
         [InlineData("&dateFrom=yesterday")]
         public async Task MalformedFilter_IsRejected(string query)
         {
-            DatasetDetailDto dataset = await CreateLocalDatasetAsync();
+            DatasetDto dataset = await CreateLocalDatasetAsync();
 
             HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{dataset.Id}/items?pageSize=10{query}");
 
@@ -174,7 +174,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task S3Dataset_AnyFilter_IsRejected()
         {
-            DatasetDetailDto dataset = await CreateDatasetAsync(e =>
+            DatasetDto dataset = await CreateDatasetAsync(e =>
             {
                 e.SourceType = DatasetSourceType.ExternalS3Streaming;
                 e.IsStreaming = true;
@@ -188,7 +188,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task HuggingFaceDataset_Search_UsesDatasetsServerSearch_AndOtherFiltersAreRejected()
         {
-            DatasetDetailDto dataset = await CreateDatasetAsync(e =>
+            DatasetDto dataset = await CreateDatasetAsync(e =>
             {
                 e.SourceType = DatasetSourceType.HuggingFaceStreaming;
                 e.IsStreaming = true;

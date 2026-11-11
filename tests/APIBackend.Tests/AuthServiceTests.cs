@@ -144,14 +144,14 @@ namespace DatasetStudio.Tests.APIBackend
                 new Claim(ClaimTypes.Role, role)
             }, authenticationType: "Test"));
 
-        private static DatasetDto PrivateDataset(Guid? ownerId) => new() { Id = Guid.NewGuid(), Name = "d", IsPublic = false, CreatedByUserId = ownerId };
-        private static DatasetDto PublicDataset(Guid? ownerId) => new() { Id = Guid.NewGuid(), Name = "d", IsPublic = true, CreatedByUserId = ownerId };
+        private static DatasetRecord PrivateDataset(Guid? ownerId) => new() { Id = Guid.NewGuid(), Name = "d", IsPublic = false, CreatedByUserId = ownerId };
+        private static DatasetRecord PublicDataset(Guid? ownerId) => new() { Id = Guid.NewGuid(), Name = "d", IsPublic = true, CreatedByUserId = ownerId };
 
         [Fact]
         public async Task CanReadAsync_PublicDataset_AllowsAnonymous()
         {
             var service = new DatasetPermissionService(new Mock<IPermissionRepository>().Object);
-            DatasetDto dataset = PublicDataset(Guid.NewGuid());
+            DatasetRecord dataset = PublicDataset(Guid.NewGuid());
 
             (await service.CanReadAsync(dataset, AnonymousUser)).Should().BeTrue();
         }
@@ -160,7 +160,7 @@ namespace DatasetStudio.Tests.APIBackend
         public async Task CanReadAsync_PrivateDataset_DeniesAnonymous()
         {
             var service = new DatasetPermissionService(new Mock<IPermissionRepository>().Object);
-            DatasetDto dataset = PrivateDataset(Guid.NewGuid());
+            DatasetRecord dataset = PrivateDataset(Guid.NewGuid());
 
             (await service.CanReadAsync(dataset, AnonymousUser)).Should().BeFalse();
         }
@@ -170,7 +170,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             Guid ownerId = Guid.NewGuid();
             var service = new DatasetPermissionService(new Mock<IPermissionRepository>().Object);
-            DatasetDto dataset = PrivateDataset(ownerId);
+            DatasetRecord dataset = PrivateDataset(ownerId);
 
             (await service.CanReadAsync(dataset, AuthenticatedUser(ownerId))).Should().BeTrue();
         }
@@ -181,7 +181,7 @@ namespace DatasetStudio.Tests.APIBackend
             var permissionRepo = new Mock<IPermissionRepository>();
             permissionRepo.Setup(r => r.GetAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync((PermissionDto?)null);
             var service = new DatasetPermissionService(permissionRepo.Object);
-            DatasetDto dataset = PrivateDataset(Guid.NewGuid());
+            DatasetRecord dataset = PrivateDataset(Guid.NewGuid());
 
             (await service.CanDeleteAsync(dataset, AuthenticatedUser(Guid.NewGuid(), role: "Admin"))).Should().BeTrue();
         }
@@ -192,7 +192,7 @@ namespace DatasetStudio.Tests.APIBackend
             var permissionRepo = new Mock<IPermissionRepository>();
             permissionRepo.Setup(r => r.GetAsync(It.IsAny<Guid>(), It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync((PermissionDto?)null);
             var service = new DatasetPermissionService(permissionRepo.Object);
-            DatasetDto dataset = PrivateDataset(Guid.NewGuid());
+            DatasetRecord dataset = PrivateDataset(Guid.NewGuid());
 
             (await service.CanWriteAsync(dataset, AuthenticatedUser(Guid.NewGuid()))).Should().BeFalse();
         }
@@ -201,7 +201,7 @@ namespace DatasetStudio.Tests.APIBackend
         public async Task CanWriteAsync_NonOwnerWithNonExpiredWriteGrant_Allowed()
         {
             Guid granteeId = Guid.NewGuid();
-            DatasetDto dataset = PrivateDataset(Guid.NewGuid());
+            DatasetRecord dataset = PrivateDataset(Guid.NewGuid());
             var grant = new PermissionDto { DatasetId = dataset.Id, UserId = granteeId, AccessLevel = "Write", ExpiresAt = DateTime.UtcNow.AddDays(1) };
 
             var permissionRepo = new Mock<IPermissionRepository>();
@@ -215,7 +215,7 @@ namespace DatasetStudio.Tests.APIBackend
         public async Task CanWriteAsync_ExpiredGrant_Denied()
         {
             Guid granteeId = Guid.NewGuid();
-            DatasetDto dataset = PrivateDataset(Guid.NewGuid());
+            DatasetRecord dataset = PrivateDataset(Guid.NewGuid());
             var grant = new PermissionDto { DatasetId = dataset.Id, UserId = granteeId, AccessLevel = "Write", ExpiresAt = DateTime.UtcNow.AddDays(-1) };
 
             var permissionRepo = new Mock<IPermissionRepository>();
@@ -229,7 +229,7 @@ namespace DatasetStudio.Tests.APIBackend
         public async Task CanDeleteAsync_ReadOnlyGrantWithoutCanDeleteFlag_Denied()
         {
             Guid granteeId = Guid.NewGuid();
-            DatasetDto dataset = PrivateDataset(Guid.NewGuid());
+            DatasetRecord dataset = PrivateDataset(Guid.NewGuid());
             // A grant can allow read/write without allowing delete -- CanDelete is its own flag.
             var grant = new PermissionDto { DatasetId = dataset.Id, UserId = granteeId, AccessLevel = "Write", CanDelete = false };
 

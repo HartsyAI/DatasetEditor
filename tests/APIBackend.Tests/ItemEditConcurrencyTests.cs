@@ -55,8 +55,8 @@ namespace DatasetStudio.Tests.APIBackend
         /// <summary>Creates a local dataset holding one item and returns both ids.</summary>
         private async Task<(Guid DatasetId, Guid ItemId)> CreateItemAsync()
         {
-            DatasetDetailDto dataset = (await (await _client.PostAsJsonAsync("/api/datasets", new CreateDatasetRequest("edits-" + Guid.NewGuid().ToString("N")[..8], null)))
-                .Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto dataset = (await (await _client.PostAsJsonAsync("/api/datasets", new CreateDatasetRequest("edits-" + Guid.NewGuid().ToString("N")[..8], null)))
+                .Content.ReadFromJsonAsync<DatasetDto>())!;
             Guid itemId = Guid.NewGuid();
             using IServiceScope scope = _factory.Services.CreateScope();
             await scope.ServiceProvider.GetRequiredService<IDatasetItemRepository>().AddRangeAsync(dataset.Id, new[]

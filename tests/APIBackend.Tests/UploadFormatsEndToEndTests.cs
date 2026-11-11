@@ -49,10 +49,10 @@ namespace DatasetStudio.Tests.APIBackend
             await _factory.DropDatabaseAsync();
         }
 
-        private async Task<DatasetDetailDto> UploadAndWaitAsync(string fileName, string content)
+        private async Task<DatasetDto> UploadAndWaitAsync(string fileName, string content)
         {
-            DatasetDetailDto dataset = (await (await _client.PostAsJsonAsync("/api/datasets", new CreateDatasetRequest("formats-" + fileName, null)))
-                .Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto dataset = (await (await _client.PostAsJsonAsync("/api/datasets", new CreateDatasetRequest("formats-" + fileName, null)))
+                .Content.ReadFromJsonAsync<DatasetDto>())!;
 
             using MultipartFormDataContent form = new();
             form.Add(new ByteArrayContent(Encoding.UTF8.GetBytes(content)), "file", fileName);
@@ -61,7 +61,7 @@ namespace DatasetStudio.Tests.APIBackend
 
             for (int i = 0; i < 300; i++)
             {
-                dataset = (await _client.GetFromJsonAsync<DatasetDetailDto>($"/api/datasets/{dataset.Id}"))!;
+                dataset = (await _client.GetFromJsonAsync<DatasetDto>($"/api/datasets/{dataset.Id}"))!;
                 if (dataset.Status is IngestionStatusDto.Completed or IngestionStatusDto.Failed)
                 {
                     break;
@@ -79,7 +79,7 @@ namespace DatasetStudio.Tests.APIBackend
         [InlineData("items.jsonl", "{\"title\":\"first\",\"image_url\":\"https://example.com/1.jpg\",\"width\":640}\n{\"title\":\"second\",\"image_url\":\"https://example.com/2.jpg\",\"width\":800}\n")]
         public async Task Upload_EachTextFormat_IsIngestedAndServed(string fileName, string content)
         {
-            DatasetDetailDto dataset = await UploadAndWaitAsync(fileName, content);
+            DatasetDto dataset = await UploadAndWaitAsync(fileName, content);
 
             dataset.TotalItems.Should().Be(2);
             PageResponse<DatasetItemDto>? page = await _client.GetFromJsonAsync<PageResponse<DatasetItemDto>>($"/api/datasets/{dataset.Id}/items?pageSize=10");
@@ -92,7 +92,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task DeleteDataset_RemovesItsStoredItemFiles()
         {
-            DatasetDetailDto dataset = await UploadAndWaitAsync("to-delete.csv", "title,image_url\nonly,https://example.com/a.jpg\n");
+            DatasetDto dataset = await UploadAndWaitAsync("to-delete.csv", "title,image_url\nonly,https://example.com/a.jpg\n");
             string idPart = dataset.Id.ToString("N");
             string[] StoredFiles() => Directory.Exists(_factory.ParquetPath)
                 ? Directory.GetFiles(_factory.ParquetPath, "*", SearchOption.AllDirectories).Where(f => f.Contains(idPart, StringComparison.OrdinalIgnoreCase)).ToArray()

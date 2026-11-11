@@ -127,11 +127,11 @@ namespace DatasetStudio.Tests.APIBackend
             });
         }
 
-        private async Task<DatasetDetailDto> CreateAndConnectDatasetAsync(string? prefix = "images/", bool isPublic = true)
+        private async Task<DatasetDto> CreateAndConnectDatasetAsync(string? prefix = "images/", bool isPublic = true)
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest($"s3-test-{Guid.NewGuid():N}", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             HttpResponseMessage importResponse = await _client.PostAsJsonAsync(
                 $"/api/datasets/{created.Id}/import-s3", new ImportS3DatasetRequest(ProfileName, Bucket, prefix));
@@ -147,13 +147,13 @@ namespace DatasetStudio.Tests.APIBackend
                 await db.SaveChangesAsync();
             }
 
-            return (await (await _client.GetAsync($"/api/datasets/{created.Id}")).Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            return (await (await _client.GetAsync($"/api/datasets/{created.Id}")).Content.ReadFromJsonAsync<DatasetDto>())!;
         }
 
         [Fact]
         public async Task ImportFromS3_ValidProfileAndBucket_ConnectsAndPersistsMetadata()
         {
-            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: "images/");
+            DatasetDto dataset = await CreateAndConnectDatasetAsync(prefix: "images/");
 
             dataset.SourceType.Should().Be(DatasetSourceType.ExternalS3Streaming);
             dataset.IsStreaming.Should().BeTrue();
@@ -168,7 +168,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("s3-bad-profile", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             HttpResponseMessage response = await _client.PostAsJsonAsync(
                 $"/api/datasets/{created.Id}/import-s3", new ImportS3DatasetRequest("no-such-profile", Bucket, null));
@@ -183,7 +183,7 @@ namespace DatasetStudio.Tests.APIBackend
             // it must also be on the profile's own AllowedBuckets list.
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("s3-bad-bucket", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             HttpResponseMessage response = await _client.PostAsJsonAsync(
                 $"/api/datasets/{created.Id}/import-s3", new ImportS3DatasetRequest(ProfileName, "some-other-bucket", null));
@@ -199,7 +199,7 @@ namespace DatasetStudio.Tests.APIBackend
             await PutObjectAsync($"{prefix}photo-2.png", MakeTestPng(10, 10, SKColors.Blue));
             await PutObjectAsync($"{prefix}manifest.json", System.Text.Encoding.UTF8.GetBytes("{}"));
 
-            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+            DatasetDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
 
             HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{dataset.Id}/items?pageSize=100");
             PageResponse<DatasetItemDto>? page = await response.Content.ReadFromJsonAsync<PageResponse<DatasetItemDto>>();
@@ -221,7 +221,7 @@ namespace DatasetStudio.Tests.APIBackend
             await PutObjectAsync($"{prefix}/mine.png", MakeTestPng(5, 5, SKColors.Red));
             await PutObjectAsync($"{prefix}EXTRA/theirs.png", MakeTestPng(5, 5, SKColors.Blue));
 
-            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+            DatasetDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
 
             HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{dataset.Id}/items?pageSize=100");
             PageResponse<DatasetItemDto>? page = await response.Content.ReadFromJsonAsync<PageResponse<DatasetItemDto>>();
@@ -237,7 +237,7 @@ namespace DatasetStudio.Tests.APIBackend
             byte[] original = MakeTestPng(8, 8, SKColors.Purple);
             await PutObjectAsync($"{prefix}photo..final.png", original);
 
-            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+            DatasetDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
 
             HttpResponseMessage response = await _client.GetAsync(
                 $"/api/datasets/{dataset.Id}/s3-file?key={Uri.EscapeDataString($"{prefix}photo..final.png")}");
@@ -253,7 +253,7 @@ namespace DatasetStudio.Tests.APIBackend
             await PutObjectAsync($"{prefix}a.png", MakeTestPng(5, 5, SKColors.Red));
             await PutObjectAsync($"{prefix}b.png", MakeTestPng(5, 5, SKColors.Green));
 
-            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+            DatasetDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
 
             HttpResponseMessage firstResponse = await _client.GetAsync($"/api/datasets/{dataset.Id}/items?pageSize=1");
             PageResponse<DatasetItemDto>? firstPage = await firstResponse.Content.ReadFromJsonAsync<PageResponse<DatasetItemDto>>();
@@ -275,7 +275,7 @@ namespace DatasetStudio.Tests.APIBackend
             string prefix = $"ids-{Guid.NewGuid():N}/";
             await PutObjectAsync($"{prefix}a.png", MakeTestPng(5, 5, SKColors.Red));
             await PutObjectAsync($"{prefix}b.png", MakeTestPng(5, 5, SKColors.Green));
-            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+            DatasetDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
 
             PageResponse<DatasetItemDto>? first = await _client.GetFromJsonAsync<PageResponse<DatasetItemDto>>($"/api/datasets/{dataset.Id}/items?pageSize=100");
             PageResponse<DatasetItemDto>? second = await _client.GetFromJsonAsync<PageResponse<DatasetItemDto>>($"/api/datasets/{dataset.Id}/items?pageSize=100");
@@ -294,7 +294,7 @@ namespace DatasetStudio.Tests.APIBackend
             string prefix = $"edit-{Guid.NewGuid():N}/";
             await PutObjectAsync($"{prefix}a.png", MakeTestPng(5, 5, SKColors.Red));
             await PutObjectAsync($"{prefix}b.png", MakeTestPng(5, 5, SKColors.Green));
-            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+            DatasetDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
             List<DatasetItemDto> before = (await _client.GetFromJsonAsync<PageResponse<DatasetItemDto>>($"/api/datasets/{dataset.Id}/items?pageSize=100"))!.Items.ToList();
 
             HttpResponseMessage edited = await _client.PatchAsJsonAsync($"/api/items/{before[0].Id}",
@@ -327,7 +327,7 @@ namespace DatasetStudio.Tests.APIBackend
             byte[] original = MakeTestPng(200, 100, SKColors.CornflowerBlue);
             await PutObjectAsync($"{prefix}photo.png", original);
 
-            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+            DatasetDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
 
             HttpResponseMessage response = await _client.GetAsync(
                 $"/api/datasets/{dataset.Id}/s3-file?key={Uri.EscapeDataString($"{prefix}photo.png")}");
@@ -343,7 +343,7 @@ namespace DatasetStudio.Tests.APIBackend
             string prefix = $"thumb-{Guid.NewGuid():N}/";
             await PutObjectAsync($"{prefix}photo.png", MakeTestPng(400, 200, SKColors.Gold));
 
-            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+            DatasetDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
 
             HttpResponseMessage response = await _client.GetAsync(
                 $"/api/datasets/{dataset.Id}/s3-file?key={Uri.EscapeDataString($"{prefix}photo.png")}&w=100");
@@ -365,7 +365,7 @@ namespace DatasetStudio.Tests.APIBackend
             await PutObjectAsync($"{prefix}photo.png", MakeTestPng(10, 10, SKColors.Red));
             await PutObjectAsync("outside-prefix/secret.png", MakeTestPng(10, 10, SKColors.Black));
 
-            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+            DatasetDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
 
             HttpResponseMessage response = await _client.GetAsync(
                 $"/api/datasets/{dataset.Id}/s3-file?key={Uri.EscapeDataString("outside-prefix/secret.png")}");
@@ -385,7 +385,7 @@ namespace DatasetStudio.Tests.APIBackend
             string prefix = $"nonimage-{Guid.NewGuid():N}/";
             await PutObjectAsync($"{prefix}.env", System.Text.Encoding.UTF8.GetBytes("SECRET=1"));
 
-            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
+            DatasetDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix);
 
             HttpResponseMessage response = await _client.GetAsync(
                 $"/api/datasets/{dataset.Id}/s3-file?key={Uri.EscapeDataString($"{prefix}.env")}");
@@ -400,7 +400,7 @@ namespace DatasetStudio.Tests.APIBackend
             string prefix = $"private-{Guid.NewGuid():N}/";
             await PutObjectAsync($"{prefix}photo.png", MakeTestPng(10, 10, SKColors.Red));
 
-            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix, isPublic: false);
+            DatasetDto dataset = await CreateAndConnectDatasetAsync(prefix: prefix, isPublic: false);
 
             using HttpClient otherClient = _factory.CreateClient();
             await otherClient.PostAsJsonAsync("/api/auth/register",
@@ -415,7 +415,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task GetS3File_NonExistentKey_ReturnsNotFound()
         {
-            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: "images/");
+            DatasetDto dataset = await CreateAndConnectDatasetAsync(prefix: "images/");
 
             HttpResponseMessage response = await _client.GetAsync(
                 $"/api/datasets/{dataset.Id}/s3-file?key={Uri.EscapeDataString("images/does-not-exist.png")}");
@@ -430,7 +430,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task GetDatasetItems_S3ListingFails_Returns502AndLogs()
         {
-            DatasetDetailDto dataset = await CreateAndConnectDatasetAsync(prefix: "images/");
+            DatasetDto dataset = await CreateAndConnectDatasetAsync(prefix: "images/");
             using (IServiceScope scope = _factory.Services.CreateScope())
             {
                 DatasetStudioDbContext db = scope.ServiceProvider.GetRequiredService<DatasetStudioDbContext>();

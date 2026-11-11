@@ -51,7 +51,7 @@ public sealed class DatasetCacheService : IDisposable
     /// </summary>
     private int _loadVersion;
     public string? NextCursor { get; private set; }
-    public DatasetDetailDto? CurrentDatasetDetail { get; private set; }
+    public DatasetDto? CurrentDatasetDetail { get; private set; }
 
     public bool HasMorePages => !string.IsNullOrWhiteSpace(NextCursor);
     public bool HasPreviousPages => _windowStartIndex > 0;
@@ -145,7 +145,7 @@ public sealed class DatasetCacheService : IDisposable
                 await _indexedDbCache.ClearAsync(datasetId, cancellationToken).ConfigureAwait(false);
             }
 
-            DatasetDetailDto? dataset = await _apiClient.GetDatasetAsync(datasetId, cancellationToken).ConfigureAwait(false);
+            DatasetDto? dataset = await _apiClient.GetDatasetAsync(datasetId, cancellationToken).ConfigureAwait(false);
             if (dataset is null)
             {
                 throw new InvalidOperationException("Dataset not found on server.");
@@ -290,15 +290,15 @@ public sealed class DatasetCacheService : IDisposable
         return FilterQueryString.Build(a) == FilterQueryString.Build(b);
     }
 
-    public async Task<DatasetDetailDto?> RefreshDatasetStatusAsync(CancellationToken cancellationToken = default)
+    public async Task<DatasetDto?> RefreshDatasetStatusAsync(CancellationToken cancellationToken = default)
     {
         if (CurrentDatasetId is null)
         {
             return null;
         }
 
-        DatasetDetailDto? previous = CurrentDatasetDetail;
-        DatasetDetailDto? detail = await _apiClient.GetDatasetAsync(CurrentDatasetId.Value, cancellationToken).ConfigureAwait(false);
+        DatasetDto? previous = CurrentDatasetDetail;
+        DatasetDto? detail = await _apiClient.GetDatasetAsync(CurrentDatasetId.Value, cancellationToken).ConfigureAwait(false);
         if (detail == null)
         {
             return null;
@@ -332,7 +332,7 @@ public sealed class DatasetCacheService : IDisposable
     /// </summary>
     /// <param name="previous">The detail the viewer had.</param>
     /// <param name="current">The detail just read.</param>
-    public static bool FinishedIngesting(DatasetDetailDto? previous, DatasetDetailDto current)
+    public static bool FinishedIngesting(DatasetDto? previous, DatasetDto current)
     {
         return previous is { Status: IngestionStatusDto.Pending or IngestionStatusDto.Processing }
             && current.Status == IngestionStatusDto.Completed;
@@ -357,7 +357,7 @@ public sealed class DatasetCacheService : IDisposable
     /// cursor), so matches past the first scan budget were never shown. Stops if the server returns
     /// the cursor it was given, so a misbehaving source can't loop forever.
     /// </summary>
-    private async Task<PageResponse<DatasetItemDto>?> FetchMatchingPageAsync(Guid datasetId, int pageSize, string? cursor, DatasetDetailDto? datasetDetail, FilterRequest? filter, CancellationToken cancellationToken)
+    private async Task<PageResponse<DatasetItemDto>?> FetchMatchingPageAsync(Guid datasetId, int pageSize, string? cursor, DatasetDto? datasetDetail, FilterRequest? filter, CancellationToken cancellationToken)
     {
         PageResponse<DatasetItemDto>? page = await FetchPageAsync(datasetId, pageSize, cursor, datasetDetail, filter, cancellationToken).ConfigureAwait(false);
         while (page is { Items.Count: 0 }
@@ -376,7 +376,7 @@ public sealed class DatasetCacheService : IDisposable
         return page;
     }
 
-    private async Task<PageResponse<DatasetItemDto>?> FetchPageAsync(Guid datasetId, int pageSize, string? cursor, DatasetDetailDto? datasetDetail, FilterRequest? filter, CancellationToken cancellationToken)
+    private async Task<PageResponse<DatasetItemDto>?> FetchPageAsync(Guid datasetId, int pageSize, string? cursor, DatasetDto? datasetDetail, FilterRequest? filter, CancellationToken cancellationToken)
     {
         // The page cache is keyed by cursor only, so it holds unfiltered pages; skip it while filtering.
         bool useIndexedDb = _isIndexedDbEnabled && filter is null;
@@ -420,7 +420,7 @@ public sealed class DatasetCacheService : IDisposable
         return page;
     }
 
-    private static DatasetStudio.Core.DomainModels.Datasets.Dataset MapDataset(DatasetDetailDto dto) => new()
+    private static DatasetStudio.Core.DomainModels.Datasets.Dataset MapDataset(DatasetDto dto) => new()
     {
         Id = dto.Id.ToString(),
         Name = dto.Name,
@@ -439,7 +439,7 @@ public sealed class DatasetCacheService : IDisposable
     /// </summary>
     /// <param name="dataset">The record read before the first page.</param>
     /// <param name="firstPage">The first page, whose TotalCount the server sets when known.</param>
-    public static DatasetDetailDto WithPageTotal(DatasetDetailDto dataset, PageResponse<DatasetItemDto>? firstPage)
+    public static DatasetDto WithPageTotal(DatasetDto dataset, PageResponse<DatasetItemDto>? firstPage)
     {
         return dataset.TotalItems <= 0 && firstPage?.TotalCount is long total && total > 0
             ? dataset with { TotalItems = total }

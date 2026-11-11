@@ -144,7 +144,7 @@ namespace DatasetStudio.Tests.APIBackend
 
             HttpResponseMessage response = await client.PostAsJsonAsync("/api/datasets", new CreateDatasetRequest("erins-dataset", null));
             response.StatusCode.Should().Be(HttpStatusCode.Created);
-            DatasetDetailDto created = (await response.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await response.Content.ReadFromJsonAsync<DatasetDto>())!;
             created.CreatedByUserId.Should().Be(user.Id);
         }
 
@@ -159,7 +159,7 @@ namespace DatasetStudio.Tests.APIBackend
             // already-covered case (GetDataset_Anonymous_AllowedForPublicDeniedForPrivate).
             HttpResponseMessage createResponse = await ownerClient.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("franks-public-set", null, IsPublic: true));
-            DatasetDetailDto dataset = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto dataset = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             using HttpClient otherClient = NewCookieClient();
             AuthUserDto other = await RegisterAsync(otherClient, "grace");
@@ -184,7 +184,7 @@ namespace DatasetStudio.Tests.APIBackend
             // isolates the CanDeleteAsync check from the (separately-covered) read-gate/404 case.
             HttpResponseMessage createResponse = await ownerClient.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("henrys-set", null, IsPublic: true));
-            DatasetDetailDto dataset = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto dataset = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             using HttpClient otherClient = NewCookieClient();
             AuthUserDto other = await RegisterAsync(otherClient, "ivy");
@@ -199,12 +199,12 @@ namespace DatasetStudio.Tests.APIBackend
         public async Task CreateDataset_WithoutIsPublic_DefaultsPrivateAndInvisibleToAnonymous()
         {
             // A creator who says nothing about visibility must get a private dataset, not a
-            // world-readable one -- opt-in, not opt-out. Regression guard for the DatasetDto/
+            // world-readable one -- opt-in, not opt-out. Regression guard for the DatasetRecord/
             // DatasetEntity IsPublic default (both flipped from true to false).
             using HttpClient ownerClient = NewCookieClient();
             await RegisterAsync(ownerClient, "jack");
             HttpResponseMessage createResponse = await ownerClient.PostAsJsonAsync("/api/datasets", new CreateDatasetRequest("jacks-set", null));
-            DatasetDetailDto dataset = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto dataset = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
             dataset.IsPublic.Should().BeFalse();
 
             using HttpClient anonymousClient = NewCookieClient();
@@ -219,7 +219,7 @@ namespace DatasetStudio.Tests.APIBackend
             await RegisterAsync(ownerClient, "jill");
             HttpResponseMessage createResponse = await ownerClient.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("jills-set", null, IsPublic: true));
-            DatasetDetailDto dataset = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto dataset = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
             dataset.IsPublic.Should().BeTrue();
 
             using HttpClient anonymousClient = NewCookieClient();
@@ -245,7 +245,7 @@ namespace DatasetStudio.Tests.APIBackend
             using HttpClient client = NewCookieClient();
             await RegisterAsync(client, "kate");
             HttpResponseMessage createResponse = await client.PostAsJsonAsync("/api/datasets", new CreateDatasetRequest("kates-set", null));
-            DatasetDetailDto dataset = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto dataset = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             HttpResponseMessage response = await client.PostAsJsonAsync(
                 $"/api/datasets/{dataset.Id}/import-folder", new ImportFolderRequest("/tmp"));

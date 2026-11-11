@@ -57,11 +57,11 @@ namespace DatasetStudio.Tests.APIBackend
             return (client, (await response.Content.ReadFromJsonAsync<AuthUserDto>())!);
         }
 
-        private static async Task<DatasetDetailDto> CreatePrivateDatasetAsync(HttpClient owner, string name)
+        private static async Task<DatasetDto> CreatePrivateDatasetAsync(HttpClient owner, string name)
         {
             HttpResponseMessage response = await owner.PostAsJsonAsync("/api/datasets", new CreateDatasetRequest(name, null));
             response.StatusCode.Should().Be(HttpStatusCode.Created);
-            return (await response.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            return (await response.Content.ReadFromJsonAsync<DatasetDto>())!;
         }
 
         private static Task<HttpResponseMessage> ShareAsync(HttpClient client, Guid datasetId, ShareDatasetRequest request) =>
@@ -93,7 +93,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             (HttpClient owner, _) = await SignUpAsync("sh-owner1");
             (HttpClient reader, AuthUserDto readerUser) = await SignUpAsync("sh-reader1");
-            DatasetDetailDto dataset = await CreatePrivateDatasetAsync(owner, "private-shared");
+            DatasetDto dataset = await CreatePrivateDatasetAsync(owner, "private-shared");
 
             (await reader.GetAsync($"/api/datasets/{dataset.Id}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
             (await LibraryIdsAsync(reader)).Should().NotContain(dataset.Id);
@@ -105,13 +105,13 @@ namespace DatasetStudio.Tests.APIBackend
             share.AccessLevel.Should().Be(DatasetAccessLevel.Read);
             share.GrantedByUsername.Should().Be("sh-owner1");
 
-            DatasetDetailDto? seen = await reader.GetFromJsonAsync<DatasetDetailDto>($"/api/datasets/{dataset.Id}");
+            DatasetDto? seen = await reader.GetFromJsonAsync<DatasetDto>($"/api/datasets/{dataset.Id}");
             seen!.CanShare.Should().BeFalse();
             (await LibraryIdsAsync(reader)).Should().Contain(dataset.Id);
             (await UploadCsvAsync(reader, dataset.Id)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
             (await reader.GetAsync($"/api/datasets/{dataset.Id}/shares")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
 
-            DatasetDetailDto? ownerView = await owner.GetFromJsonAsync<DatasetDetailDto>($"/api/datasets/{dataset.Id}");
+            DatasetDto? ownerView = await owner.GetFromJsonAsync<DatasetDto>($"/api/datasets/{dataset.Id}");
             ownerView!.CanShare.Should().BeTrue();
         }
 
@@ -120,7 +120,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             (HttpClient owner, _) = await SignUpAsync("sh-owner2");
             (HttpClient writer, AuthUserDto writerUser) = await SignUpAsync("sh-writer2");
-            DatasetDetailDto dataset = await CreatePrivateDatasetAsync(owner, "write-shared");
+            DatasetDto dataset = await CreatePrivateDatasetAsync(owner, "write-shared");
 
             (await ShareAsync(owner, dataset.Id, new ShareDatasetRequest("sh-writer2"))).StatusCode.Should().Be(HttpStatusCode.OK);
             (await UploadCsvAsync(writer, dataset.Id)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
@@ -137,7 +137,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             (HttpClient owner, _) = await SignUpAsync("sh-owner3");
             (HttpClient guest, AuthUserDto guestUser) = await SignUpAsync("sh-guest3");
-            DatasetDetailDto dataset = await CreatePrivateDatasetAsync(owner, "revoked");
+            DatasetDto dataset = await CreatePrivateDatasetAsync(owner, "revoked");
 
             await ShareAsync(owner, dataset.Id, new ShareDatasetRequest("sh-guest3"));
             (await guest.GetAsync($"/api/datasets/{dataset.Id}")).StatusCode.Should().Be(HttpStatusCode.OK);
@@ -164,7 +164,7 @@ namespace DatasetStudio.Tests.APIBackend
             (HttpClient owner, _) = await SignUpAsync("sh-owner4");
             (HttpClient a, AuthUserDto aUser) = await SignUpAsync("sh-a4");
             (_, AuthUserDto bUser) = await SignUpAsync("sh-b4");
-            DatasetDetailDto dataset = await CreatePrivateDatasetAsync(owner, "leave");
+            DatasetDto dataset = await CreatePrivateDatasetAsync(owner, "leave");
             await ShareAsync(owner, dataset.Id, new ShareDatasetRequest("sh-a4"));
             await ShareAsync(owner, dataset.Id, new ShareDatasetRequest("sh-b4"));
 
@@ -180,7 +180,7 @@ namespace DatasetStudio.Tests.APIBackend
             (HttpClient sharer, _) = await SignUpAsync("sh-sharer5");
             (HttpClient third, AuthUserDto thirdUser) = await SignUpAsync("sh-third5");
             await SignUpAsync("sh-fourth5");
-            DatasetDetailDto dataset = await CreatePrivateDatasetAsync(owner, "reshare");
+            DatasetDto dataset = await CreatePrivateDatasetAsync(owner, "reshare");
             await ShareAsync(owner, dataset.Id, new ShareDatasetRequest("sh-sharer5", DatasetAccessLevel.Read, CanShare: true));
             await ShareAsync(owner, dataset.Id, new ShareDatasetRequest("sh-fourth5"));
 
@@ -213,7 +213,7 @@ namespace DatasetStudio.Tests.APIBackend
             (HttpClient owner, _) = await SignUpAsync("sh-owner8");
             (HttpClient sharer, _) = await SignUpAsync("sh-sharer8");
             await SignUpAsync("sh-third8");
-            DatasetDetailDto dataset = await CreatePrivateDatasetAsync(owner, "expiring-reshare");
+            DatasetDto dataset = await CreatePrivateDatasetAsync(owner, "expiring-reshare");
             DateTime ownEnd = DateTime.UtcNow.AddDays(1);
             await ShareAsync(owner, dataset.Id, new ShareDatasetRequest("sh-sharer8", CanShare: true, ExpiresAt: ownEnd));
 
@@ -240,7 +240,7 @@ namespace DatasetStudio.Tests.APIBackend
             (HttpClient owner, AuthUserDto ownerUser) = await SignUpAsync("sh-owner9");
             (_, AuthUserDto sharerUser) = await SignUpAsync("sh-sharer9");
             (_, AuthUserDto targetUser) = await SignUpAsync("sh-target9");
-            DatasetDetailDto dataset = await CreatePrivateDatasetAsync(owner, "atomic");
+            DatasetDto dataset = await CreatePrivateDatasetAsync(owner, "atomic");
             await ShareAsync(owner, dataset.Id, new ShareDatasetRequest("sh-target9", DatasetAccessLevel.Write));
 
             using IServiceScope scope = _factory.Services.CreateScope();
@@ -277,7 +277,7 @@ namespace DatasetStudio.Tests.APIBackend
         public async Task Share_WithAUsernameContainingAt_FindsTheAccount()
         {
             (HttpClient owner, _) = await SignUpAsync("sh-owner10");
-            DatasetDetailDto dataset = await CreatePrivateDatasetAsync(owner, "at-username");
+            DatasetDto dataset = await CreatePrivateDatasetAsync(owner, "at-username");
             using (IServiceScope scope = _factory.Services.CreateScope())
             {
                 IUserRepository users =
@@ -300,7 +300,7 @@ namespace DatasetStudio.Tests.APIBackend
         public async Task Share_ByUserId_TargetsThatAccountEvenWhenItsNameIsAnotherAccountsEmail()
         {
             (HttpClient owner, _) = await SignUpAsync("sh-owner11");
-            DatasetDetailDto dataset = await CreatePrivateDatasetAsync(owner, "id-target");
+            DatasetDto dataset = await CreatePrivateDatasetAsync(owner, "id-target");
             Guid named = Guid.NewGuid();
             Guid emailed = Guid.NewGuid();
             using (IServiceScope scope = _factory.Services.CreateScope())
@@ -325,7 +325,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             (HttpClient owner, _) = await SignUpAsync("sh-owner6");
             await SignUpAsync("sh-other6");
-            DatasetDetailDto dataset = await CreatePrivateDatasetAsync(owner, "bad-requests");
+            DatasetDto dataset = await CreatePrivateDatasetAsync(owner, "bad-requests");
 
             HttpResponseMessage unknown = await ShareAsync(owner, dataset.Id, new ShareDatasetRequest("nobody-at-all"));
             unknown.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -342,7 +342,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             (HttpClient owner, AuthUserDto ownerUser) = await SignUpAsync("sh-owner7");
             (HttpClient stranger, _) = await SignUpAsync("sh-stranger7");
-            DatasetDetailDto dataset = await CreatePrivateDatasetAsync(owner, "hidden");
+            DatasetDto dataset = await CreatePrivateDatasetAsync(owner, "hidden");
 
             (await stranger.GetAsync($"/api/datasets/{dataset.Id}/shares")).StatusCode.Should().Be(HttpStatusCode.NotFound);
             (await ShareAsync(stranger, dataset.Id, new ShareDatasetRequest("sh-stranger7"))).StatusCode.Should().Be(HttpStatusCode.NotFound);

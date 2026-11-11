@@ -88,7 +88,7 @@ namespace DatasetStudio.Tests.APIBackend
             using IServiceScope scope = _factory.Services.CreateScope();
             IDatasetRepository datasets = scope.ServiceProvider.GetRequiredService<IDatasetRepository>();
             Guid id = Guid.NewGuid();
-            await datasets.CreateAsync(new DatasetDto { Id = id, Name = "queue-" + id.ToString("N")[..8], Status = status });
+            await datasets.CreateAsync(new DatasetRecord { Id = id, Name = "queue-" + id.ToString("N")[..8], Status = status });
             return id;
         }
 
@@ -112,7 +112,7 @@ namespace DatasetStudio.Tests.APIBackend
             return await db.IngestionJobs.SingleAsync(j => j.Id == jobId);
         }
 
-        private async Task<DatasetDto> GetDatasetAsync(Guid datasetId)
+        private async Task<DatasetRecord> GetDatasetAsync(Guid datasetId)
         {
             using IServiceScope scope = _factory.Services.CreateScope();
             return (await scope.ServiceProvider.GetRequiredService<IDatasetRepository>().GetByIdAsync(datasetId))!;
@@ -229,7 +229,7 @@ namespace DatasetStudio.Tests.APIBackend
             _factory = CreateFactory(runWorker: true, databaseName: databaseName);
             _ = _factory.Services;
 
-            DatasetDto dataset = await GetDatasetAsync(datasetId);
+            DatasetRecord dataset = await GetDatasetAsync(datasetId);
             for (int i = 0; i < 300 && dataset.Status != IngestionStatusDto.Completed && dataset.Status != IngestionStatusDto.Failed; i++)
             {
                 await Task.Delay(100);
@@ -282,13 +282,13 @@ namespace DatasetStudio.Tests.APIBackend
             await CreateWorkerHost().RecoverInterruptedJobsAsync(CancellationToken.None);
 
             (await GetJobAsync(cleanJob.Id)).State.Should().Be(IngestionJobState.Queued);
-            DatasetDto clean = await GetDatasetAsync(cleanDataset);
+            DatasetRecord clean = await GetDatasetAsync(cleanDataset);
             clean.Status.Should().Be(IngestionStatusDto.Pending);
             clean.TotalItems.Should().Be(0, "the stale progress count is replaced by the real item count");
 
             IngestionJobEntity failedJob = await GetJobAsync(partialJob.Id);
             failedJob.State.Should().Be(IngestionJobState.Failed);
-            DatasetDto partial = await GetDatasetAsync(partialDataset);
+            DatasetRecord partial = await GetDatasetAsync(partialDataset);
             partial.Status.Should().Be(IngestionStatusDto.Failed);
             partial.ErrorMessage.Should().Contain("3 item(s)");
             partial.TotalItems.Should().Be(3);
@@ -312,7 +312,7 @@ namespace DatasetStudio.Tests.APIBackend
             await CreateWorkerHost().RecoverInterruptedJobsAsync(CancellationToken.None);
 
             (await GetJobAsync(claimed.Id)).State.Should().Be(IngestionJobState.Failed);
-            DatasetDto dataset = await GetDatasetAsync(datasetId);
+            DatasetRecord dataset = await GetDatasetAsync(datasetId);
             dataset.Status.Should().Be(IngestionStatusDto.Failed);
             dataset.ErrorMessage.Should().StartWith("Ingestion was interrupted by a server restart and could not be recovered");
         }
@@ -343,7 +343,7 @@ namespace DatasetStudio.Tests.APIBackend
 
             await CreateWorkerHost().RecoverInterruptedJobsAsync(CancellationToken.None);
 
-            DatasetDto stuckNow = await GetDatasetAsync(stuck);
+            DatasetRecord stuckNow = await GetDatasetAsync(stuck);
             stuckNow.Status.Should().Be(IngestionStatusDto.Failed);
             stuckNow.ErrorMessage.Should().Be(IngestionBackgroundService.OrphanedDatasetMessage);
             (await GetDatasetAsync(waiting)).Status.Should().Be(IngestionStatusDto.Pending);
@@ -406,7 +406,7 @@ namespace DatasetStudio.Tests.APIBackend
             await client.PostAsJsonAsync("/api/auth/register",
                 new DatasetStudio.DTO.Auth.RegisterRequest("queue-delete-user", "queue-delete-user@example.com", "password123"));
             HttpResponseMessage created = await client.PostAsJsonAsync("/api/datasets", new CreateDatasetRequest("queued-delete", null));
-            DatasetDetailDto dataset = (await created.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto dataset = (await created.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             using MultipartFormDataContent form = new();
             form.Add(new ByteArrayContent(System.Text.Encoding.UTF8.GetBytes("title\na\n")), "file", "rows.csv");

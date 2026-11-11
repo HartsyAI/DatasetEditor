@@ -89,7 +89,7 @@ namespace DatasetStudio.Tests.APIBackend
                 .UseNpgsql(connectionString)
                 .AddInterceptors(capture)
                 .Options;
-            List<DatasetDto> page;
+            List<DatasetRecord> page;
             long total;
             await using (DatasetStudioDbContext db = new(options))
             {

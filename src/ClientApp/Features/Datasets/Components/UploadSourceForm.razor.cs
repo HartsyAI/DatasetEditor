@@ -61,7 +61,7 @@ public partial class UploadSourceForm
 
         return RunAsync("Upload", async cancellationToken =>
         {
-            DatasetDetailDto dataset = await Workflow.CreateAsync(_name.Trim(), $"Uploaded from {file.Name}", IsPublic, cancellationToken);
+            DatasetDto dataset = await Workflow.CreateAsync(_name.Trim(), $"Uploaded from {file.Name}", IsPublic, cancellationToken);
             await SetStatusAsync($"Uploading {file.Name} ({FormatSize(file.Size)})");
             await Workflow.UploadAsync(dataset.Id, file, cancellationToken);
             return dataset.Id;

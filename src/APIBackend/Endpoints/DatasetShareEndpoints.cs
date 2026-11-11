@@ -48,7 +48,7 @@ internal static class DatasetShareEndpoints
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        (DatasetDto? dataset, DatasetAccess access) = await LoadAsync(datasetId, datasets, permissions, httpContext, cancellationToken);
+        (DatasetRecord? dataset, DatasetAccess access) = await LoadAsync(datasetId, datasets, permissions, httpContext, cancellationToken);
         if (dataset is null)
         {
             return Results.NotFound();
@@ -74,7 +74,7 @@ internal static class DatasetShareEndpoints
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        (DatasetDto? dataset, DatasetAccess access) = await LoadAsync(datasetId, datasets, permissions, httpContext, cancellationToken);
+        (DatasetRecord? dataset, DatasetAccess access) = await LoadAsync(datasetId, datasets, permissions, httpContext, cancellationToken);
         if (dataset is null)
         {
             return Results.NotFound();
@@ -174,7 +174,7 @@ internal static class DatasetShareEndpoints
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        (DatasetDto? dataset, DatasetAccess access) = await LoadAsync(datasetId, datasets, permissions, httpContext, cancellationToken);
+        (DatasetRecord? dataset, DatasetAccess access) = await LoadAsync(datasetId, datasets, permissions, httpContext, cancellationToken);
         if (dataset is null)
         {
             return Results.NotFound();
@@ -207,14 +207,14 @@ internal static class DatasetShareEndpoints
     /// exist or the caller can't read it, so a private dataset's existence isn't revealed (404,
     /// as everywhere else).
     /// </summary>
-    private static async Task<(DatasetDto? Dataset, DatasetAccess Access)> LoadAsync(
+    private static async Task<(DatasetRecord? Dataset, DatasetAccess Access)> LoadAsync(
         Guid datasetId,
         IDatasetRepository datasets,
         IDatasetPermissionService permissions,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        DatasetDto? dataset = await datasets.GetByIdAsync(datasetId, cancellationToken);
+        DatasetRecord? dataset = await datasets.GetByIdAsync(datasetId, cancellationToken);
         if (dataset is null)
         {
             return (null, DatasetAccess.None);

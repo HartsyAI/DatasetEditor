@@ -35,9 +35,9 @@ public sealed class IngestionWorkflowService
 
     /// <summary>Creates the dataset record that an upload or import then fills.</summary>
     /// <exception cref="InvalidOperationException">The server returned no dataset.</exception>
-    public async Task<DatasetDetailDto> CreateAsync(string name, string? description, bool isPublic, CancellationToken cancellationToken = default)
+    public async Task<DatasetDto> CreateAsync(string name, string? description, bool isPublic, CancellationToken cancellationToken = default)
     {
-        DatasetDetailDto? dataset = await _api.CreateDatasetAsync(
+        DatasetDto? dataset = await _api.CreateDatasetAsync(
             new CreateDatasetRequest(name, description, IsPublic: isPublic), cancellationToken);
         return dataset ?? throw new InvalidOperationException("The server didn't return the new dataset.");
     }
@@ -62,14 +62,14 @@ public sealed class IngestionWorkflowService
     /// <param name="isSettled">When to stop, given the latest status.</param>
     /// <param name="timeout">Upper bound on the wait.</param>
     /// <param name="cancellationToken">Stops the wait early.</param>
-    public async Task<DatasetDetailDto?> WaitForStatusAsync(
+    public async Task<DatasetDto?> WaitForStatusAsync(
         Guid datasetId,
-        Func<DatasetDetailDto, bool> isSettled,
+        Func<DatasetDto, bool> isSettled,
         TimeSpan timeout,
         CancellationToken cancellationToken = default)
     {
         DateTime deadline = DateTime.UtcNow + timeout;
-        DatasetDetailDto? latest = null;
+        DatasetDto? latest = null;
         while (true)
         {
             latest = await _api.GetDatasetAsync(datasetId, cancellationToken) ?? latest;

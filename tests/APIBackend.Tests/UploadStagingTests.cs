@@ -89,7 +89,7 @@ namespace DatasetStudio.Tests.APIBackend
         private async Task<(IResult Result, HttpContext Context)> UploadAsync(
             Guid datasetId, RecordingQueue queue, string? uploadPath = null, bool datasetUpdateFails = false)
         {
-            DatasetDto dataset = new() { Id = datasetId, Name = "staged" };
+            DatasetRecord dataset = new() { Id = datasetId, Name = "staged" };
 
             var datasetRepository = new Mock<IDatasetRepository>();
             datasetRepository
@@ -99,16 +99,16 @@ namespace DatasetStudio.Tests.APIBackend
             {
                 // What happens when the dataset is deleted while its upload is being written.
                 datasetRepository
-                    .Setup(r => r.UpdateAsync(It.IsAny<DatasetDto>(), It.IsAny<DatasetDto>(), It.IsAny<CancellationToken>()))
+                    .Setup(r => r.UpdateAsync(It.IsAny<DatasetRecord>(), It.IsAny<DatasetRecord>(), It.IsAny<CancellationToken>()))
                     .ThrowsAsync(new InvalidOperationException("Dataset not found"));
             }
 
             var permissionService = new Mock<IDatasetPermissionService>();
             permissionService
-                .Setup(p => p.CanReadAsync(It.IsAny<DatasetDto>(), It.IsAny<ClaimsPrincipal?>(), It.IsAny<CancellationToken>()))
+                .Setup(p => p.CanReadAsync(It.IsAny<DatasetRecord>(), It.IsAny<ClaimsPrincipal?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(true);
             permissionService
-                .Setup(p => p.CanWriteAsync(It.IsAny<DatasetDto>(), It.IsAny<ClaimsPrincipal?>(), It.IsAny<CancellationToken>()))
+                .Setup(p => p.CanWriteAsync(It.IsAny<DatasetRecord>(), It.IsAny<ClaimsPrincipal?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(true);
 
             IConfiguration configuration = new ConfigurationBuilder()
