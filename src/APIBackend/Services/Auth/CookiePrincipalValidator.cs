@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using DatasetStudio.Core.Abstractions.Repositories;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 using DatasetStudio.DTO.Auth;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;

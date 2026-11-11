@@ -1,7 +1,6 @@
 using DatasetStudio.Core.Constants;
 using DatasetStudio.Core.DomainModels;
 using DatasetStudio.Core.Enumerations;
-using DatasetStudio.Core.Utilities;
 using DatasetStudio.Core.Utilities.Logging;
 using Blazored.LocalStorage;
 

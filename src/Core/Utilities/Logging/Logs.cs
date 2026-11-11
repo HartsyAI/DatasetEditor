@@ -3,22 +3,21 @@ using Microsoft.Extensions.Logging;
 namespace DatasetStudio.Core.Utilities.Logging;
 
 /// <summary>
-/// Thin static wrapper around a real <see cref="ILogger"/>, used by the call sites across
-/// Core/ClientApp that predate this project's real logging pipeline. Call <see cref="Initialize"/>
-/// once at startup (both APIBackend's and ClientApp's Program.cs do) so these calls route
-/// through the app's actual configured logging (respects Logging:LogLevel, and in WASM goes to
-/// the browser console via the built-in provider) instead of a hardcoded Console.WriteLine.
+/// Thin static wrapper around a real <see cref="ILogger"/>, used by the ClientApp call sites
+/// that predate this project's real logging pipeline. Call <see cref="Initialize"/> once at
+/// startup (ClientApp's Program.cs does) so these calls route through the app's actual
+/// configured logging (respects Logging:LogLevel, and in WASM goes to the browser console via
+/// the built-in provider) instead of a hardcoded Console.WriteLine.
 /// Converting every call site to constructor-injected ILogger&lt;T&gt; instead of this wrapper
-/// was considered and rejected for Core/ClientApp specifically: ~250 call sites across ~36
-/// files, many of them static utility classes with no DI-constructed instance to inject into --
-/// out of proportion to what a hardening pass should touch. APIBackend's own services use real
-/// ILogger&lt;T&gt; injection; this wrapper is only for the shared/client side.
+/// was considered and rejected: there are 107 call sites across 24 ClientApp files (counted
+/// when the Core parser chain was deleted, audit K-7; the comment used to say ~250 across ~36),
+/// two of them in Program.cs's global exception handlers, which run outside DI. APIBackend uses real
+/// ILogger&lt;T&gt; injection and no longer calls this wrapper at all.
 /// </summary>
 public static class Logs
 {
     // Console fallback (not NullLogger) until Initialize() runs, so nothing logged during the
-    // narrow startup window before DI is available (see ServiceCollectionExtensions.
-    // AddDatasetServices, called pre-Build()) is silently dropped.
+    // narrow startup window before the WASM host is built is silently dropped.
     private static ILogger _logger = new ConsoleFallbackLogger();
 
     /// <summary>Routes all subsequent Logs.* calls through a real logger. Call once at startup.</summary>

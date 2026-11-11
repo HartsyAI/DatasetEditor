@@ -64,7 +64,7 @@ namespace DatasetStudio.Tests.APIBackend
             // hex chars of the id, "N" format} — see DatasetEndpoints.GetDatasetFolderPathForFile.
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("traversal-test", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             string shortId = created.Id.ToString("N")[..8];
             string datasetFolder = Path.Combine(_factory.DatasetRootPath, $"traversal-test-{shortId}");
@@ -96,7 +96,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("dir-link-test", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             string shortId = created.Id.ToString("N")[..8];
             string datasetFolder = Path.Combine(_factory.DatasetRootPath, $"dir-link-test-{shortId}");
@@ -123,7 +123,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("renamed-link-test", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             string shortId = created.Id.ToString("N")[..8];
             string datasetFolder = Path.Combine(_factory.DatasetRootPath, $"renamed-link-test-{shortId}");
@@ -147,7 +147,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("linked-root-test", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             _secretDirectory = Path.Combine(Path.GetTempPath(), "DatasetStudioTests", "linked-roots", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_secretDirectory);
@@ -179,7 +179,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("extension-test", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             string shortId = created.Id.ToString("N")[..8];
             string datasetFolder = Path.Combine(_factory.DatasetRootPath, $"extension-test-{shortId}");
@@ -201,7 +201,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("traversal-test-thumb", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             string shortId = created.Id.ToString("N")[..8];
             string datasetFolder = Path.Combine(_factory.DatasetRootPath, $"traversal-test-thumb-{shortId}");

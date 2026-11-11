@@ -73,6 +73,10 @@ one of three item backends chosen by `SourceType`:
 | `HuggingFaceStreaming` | Not stored; each page is a `/rows` call | HuggingFace CDN, thumbnails proxied + cached by the API |
 | `ExternalS3Streaming` | Not stored; each page is a `ListObjectsV2` call | The bucket, proxied + thumbnailed by the API |
 
+`POST /api/datasets` always creates a `LocalUpload` shell and answers 400 to any other
+`SourceType`; the folder, HuggingFace and S3 import endpoints set their own source type with the
+fields it needs. `WebUrl` exists in the enum but nothing imports from a URL.
+
 **Every page request is bounded.** Local: an `r{offset}` cursor and one row group at a time.
 HuggingFace: an integer offset against `/rows`. S3: the continuation token. The client asks for
 the next page when the virtualised grid nears its buffer edge, and evicts old pages.
@@ -202,7 +206,10 @@ delete and share rights and an end date; change or end shares from the same list
 **How.** `DatasetEndpoints.GetAllDatasets/GetDataset/CreateDataset/DeleteDataset`,
 `DataAccess/PostgreSQL/Repositories/DatasetRepository.cs`, `Services/Auth/DatasetPermissionService.cs`.
 A `DatasetVisibilityFilter` is built from the principal and applied as SQL `WHERE`, so pages
-are never under-filled by post-filtering. `CanRead/CanWrite/CanDelete` consult owner, admin
+are never under-filled by post-filtering. The caller's unexpired share ids are read first, so the
+filter is `is_public OR created_by_user_id = me OR id = ANY(shared)`; each branch has an index
+(`IX_datasets_created_at_public`, partial on `is_public`; `(created_by_user_id, created_at)`; the
+primary key), so a page reads only visible rows instead of filtering the whole table. `CanRead/CanWrite/CanDelete` consult owner, admin
 role, and the `permissions` table. Updates are patches: `UpdateAsync(original, updated)` writes only the fields the caller
 changed, status and item-count writes are single `UPDATE` statements, and a field someone else
 changed to a different value in the meantime is refused with `409` (the row's `xmin` is the
@@ -583,7 +590,7 @@ via `docker-compose.prod.yml`; secrets via `.env`. See [docs/DEPLOYMENT.md](docs
 
 | Path | Target | Role |
 |---|---|---|
-| `src/Core` | net10.0 | Domain models, shared abstractions, a client-era parser/filter library (largely unused by the API) |
+| `src/Core` | net10.0 | Client-side domain models and enums (`Dataset`, `FilterCriteria`, `ViewSettings`), storage keys, the `Logs` wrapper. Only the client uses it; the API's repository interfaces live next to their implementations in `APIBackend/DataAccess` |
 | `src/DTO` | net10.0 | Wire contracts shared by API and client |
 | `src/APIBackend` | net10.0 | Minimal API, EF Core 10/Npgsql, Parquet storage, ingestion, HF/S3 integration |
 | `src/ClientApp` | net10.0 | Blazor WASM UI (MudBlazor 7.8) |

@@ -10,10 +10,8 @@ using DatasetStudio.ClientApp.Features.Datasets.Services;
 using DatasetStudio.ClientApp.Services.StateManagement;
 using DatasetStudio.ClientApp.Shared.Services;
 using DatasetStudio.DTO.Datasets;
-using DatasetStudio.Core.Abstractions;
 using DatasetStudio.Core.DomainModels;
 using DatasetStudio.Core.Enumerations;
-using DatasetStudio.Core.Utilities;
 using DatasetStudio.Core.Utilities.Logging;
 
 namespace DatasetStudio.ClientApp.Features.Datasets.Pages;
@@ -45,7 +43,7 @@ public partial class DatasetViewer : IDisposable
     private int _filteredCount = 0;
     private int _lastFilteredSourceCount = 0;
     private ViewMode _viewMode = ViewMode.Grid;
-    private DatasetDetailDto? _datasetDetail;
+    private DatasetDto? _datasetDetail;
     private CancellationTokenSource? _statusPollingCts;
     private bool _isIndexedDbEnabled;
     private bool _isBuffering;
@@ -403,7 +401,7 @@ public partial class DatasetViewer : IDisposable
         {
             while (!token.IsCancellationRequested)
             {
-                DatasetDetailDto? detail = await _datasetCache.RefreshDatasetStatusAsync(token).ConfigureAwait(false);
+                DatasetDto? detail = await _datasetCache.RefreshDatasetStatusAsync(token).ConfigureAwait(false);
                 if (detail is null || detail.Status is IngestionStatusDto.Completed or IngestionStatusDto.Failed)
                 {
                     break;

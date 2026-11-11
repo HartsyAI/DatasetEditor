@@ -176,7 +176,7 @@ public class ParquetItemWriter : IDisposable
         var datasetIds = new Guid[count];
         var externalIds = new string[count];
         var titles = new string[count];
-        var descriptions = new string[count];
+        var descriptions = new string?[count];
         var imageUrls = new string[count];
         var thumbnailUrls = new string[count];
         var widths = new int[count];
@@ -198,7 +198,9 @@ public class ParquetItemWriter : IDisposable
             datasetIds[i] = item.DatasetId;
             externalIds[i] = item.ExternalId ?? string.Empty;
             titles[i] = item.Title ?? string.Empty;
-            descriptions[i] = item.Description ?? string.Empty;
+            // The description column is nullable, so null is written as null. Coalescing it to ""
+            // made every item without a description read back with an empty one (audit P-9).
+            descriptions[i] = item.Description;
             imageUrls[i] = item.ImageUrl ?? string.Empty;
             thumbnailUrls[i] = item.ThumbnailUrl ?? string.Empty;
             widths[i] = item.Width;

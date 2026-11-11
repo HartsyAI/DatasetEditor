@@ -1,5 +1,4 @@
 using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Entities;
-using DatasetStudio.Core.Abstractions.Repositories;
 using DatasetStudio.DTO.Datasets;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,7 +6,7 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 /// <summary>
 /// Entity Framework Core implementation of IDatasetRepository for PostgreSQL.
-/// Handles mapping between DatasetEntity (DB) and DatasetDto (application).
+/// Handles mapping between DatasetEntity (DB) and DatasetRecord (application).
 /// </summary>
 public sealed class DatasetRepository : IDatasetRepository
 {
@@ -18,7 +17,7 @@ public sealed class DatasetRepository : IDatasetRepository
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
     }
 
-    public async Task<Guid> CreateAsync(DatasetDto dataset, CancellationToken cancellationToken = default)
+    public async Task<Guid> CreateAsync(DatasetRecord dataset, CancellationToken cancellationToken = default)
     {
         if (dataset == null)
         {
@@ -43,13 +42,9 @@ public sealed class DatasetRepository : IDatasetRepository
             S3Prefix = dataset.S3Prefix,
             TotalItems = dataset.TotalItems,
             ErrorMessage = dataset.ErrorMessage,
-            Format = dataset.Format,
             Modality = dataset.Modality,
-            TotalSizeBytes = dataset.TotalSizeBytes,
             StoragePath = dataset.StoragePath,
-            ParquetPath = dataset.ParquetPath,
             IsPublic = dataset.IsPublic,
-            Metadata = dataset.Metadata,
             CreatedByUserId = dataset.CreatedByUserId,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -61,7 +56,7 @@ public sealed class DatasetRepository : IDatasetRepository
         return entity.Id;
     }
 
-    public async Task<DatasetDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<DatasetRecord?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var entity = await _dbContext.Datasets
             .AsNoTracking()
@@ -70,9 +65,10 @@ public sealed class DatasetRepository : IDatasetRepository
         return entity == null ? null : MapToDto(entity);
     }
 
-    public async Task<List<DatasetDto>> GetAllAsync(int page = 0, int pageSize = 50, DatasetVisibilityFilter? visibility = null, CancellationToken cancellationToken = default)
+    public async Task<List<DatasetRecord>> GetAllAsync(int page = 0, int pageSize = 50, DatasetVisibilityFilter? visibility = null, CancellationToken cancellationToken = default)
     {
-        var entities = await ApplyVisibilityFilter(_dbContext.Datasets.AsNoTracking(), visibility)
+        IQueryable<DatasetEntity> visible = await VisibleDatasetsAsync(visibility, cancellationToken);
+        var entities = await visible
             .OrderByDescending(d => d.CreatedAt)
             .Skip(page * pageSize)
             .Take(pageSize)
@@ -87,24 +83,40 @@ public sealed class DatasetRepository : IDatasetRepository
     /// the fetched rows aren't visible to the caller (the same undercounting bug class Phase 1
     /// fixed for item-cursor filtering).
     /// </summary>
-    private static IQueryable<DatasetEntity> ApplyVisibilityFilter(IQueryable<DatasetEntity> query, DatasetVisibilityFilter? visibility)
+    /// <remarks>
+    /// The datasets shared with the caller are read first, as an id list, and the listing filter is
+    /// <c>is_public OR created_by_user_id = me OR id = ANY(shared ids)</c>. Each branch has its own
+    /// index, so Postgres combines them (BitmapOr) and reads only the visible rows. The share check
+    /// used to be a correlated EXISTS, which no index can serve inside an OR: every listing walked
+    /// the created_at index and filtered each row it passed, about 10,000 rows for page 5 of a
+    /// 20,000-dataset table (audit D-6, DatasetLibraryQueryPlanTests).
+    /// </remarks>
+    private async Task<IQueryable<DatasetEntity>> VisibleDatasetsAsync(DatasetVisibilityFilter? visibility, CancellationToken cancellationToken)
     {
+        IQueryable<DatasetEntity> query = _dbContext.Datasets.AsNoTracking();
         if (visibility is null || visibility.Value.IsAdmin)
         {
             return query; // unfiltered: internal/background caller, or an admin who can see everything
         }
 
+        Guid? userId = visibility.Value.RequestingUserId;
+        if (userId is null)
+        {
+            return query.Where(d => d.IsPublic);
+        }
+
         // Datasets shared with the caller (an unexpired grant) are listed too, the same set the
         // permission service lets them open (audit D-2).
-        Guid? userId = visibility.Value.RequestingUserId;
         DateTime now = DateTime.UtcNow;
-        return query.Where(d => d.IsPublic
-            || (userId != null
-                && (d.CreatedByUserId == userId
-                    || d.Permissions.Any(p => p.UserId == userId && (p.ExpiresAt == null || p.ExpiresAt > now)))));
+        List<Guid> sharedIds = await _dbContext.Permissions
+            .AsNoTracking()
+            .Where(p => p.UserId == userId && (p.ExpiresAt == null || p.ExpiresAt > now))
+            .Select(p => p.DatasetId)
+            .ToListAsync(cancellationToken);
+        return query.Where(d => d.IsPublic || d.CreatedByUserId == userId || sharedIds.Contains(d.Id));
     }
 
-    public async Task UpdateAsync(DatasetDto original, DatasetDto updated, CancellationToken cancellationToken = default)
+    public async Task UpdateAsync(DatasetRecord original, DatasetRecord updated, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(original);
         ArgumentNullException.ThrowIfNull(updated);
@@ -138,16 +150,16 @@ public sealed class DatasetRepository : IDatasetRepository
             // repository with the old one's resolved split (Codex review on #21).
             (string Name, object? Original, object? Updated, object? Current)[] source =
             {
-                (nameof(DatasetDto.SourceType), original.SourceType, updated.SourceType, entity.SourceType),
-                (nameof(DatasetDto.SourceUri), original.SourceUri, updated.SourceUri, entity.SourceUri),
-                (nameof(DatasetDto.IsStreaming), original.IsStreaming, updated.IsStreaming, entity.IsStreaming),
-                (nameof(DatasetDto.HuggingFaceRepository), original.HuggingFaceRepository, updated.HuggingFaceRepository, entity.HuggingFaceRepository),
-                (nameof(DatasetDto.HuggingFaceConfig), original.HuggingFaceConfig, updated.HuggingFaceConfig, entity.HuggingFaceConfig),
-                (nameof(DatasetDto.HuggingFaceSplit), original.HuggingFaceSplit, updated.HuggingFaceSplit, entity.HuggingFaceSplit),
-                (nameof(DatasetDto.S3StorageProfileName), original.S3StorageProfileName, updated.S3StorageProfileName, entity.S3StorageProfileName),
-                (nameof(DatasetDto.S3Bucket), original.S3Bucket, updated.S3Bucket, entity.S3Bucket),
-                (nameof(DatasetDto.S3Prefix), original.S3Prefix, updated.S3Prefix, entity.S3Prefix),
-                (nameof(DatasetDto.StoragePath), original.StoragePath, updated.StoragePath, entity.StoragePath),
+                (nameof(DatasetRecord.SourceType), original.SourceType, updated.SourceType, entity.SourceType),
+                (nameof(DatasetRecord.SourceUri), original.SourceUri, updated.SourceUri, entity.SourceUri),
+                (nameof(DatasetRecord.IsStreaming), original.IsStreaming, updated.IsStreaming, entity.IsStreaming),
+                (nameof(DatasetRecord.HuggingFaceRepository), original.HuggingFaceRepository, updated.HuggingFaceRepository, entity.HuggingFaceRepository),
+                (nameof(DatasetRecord.HuggingFaceConfig), original.HuggingFaceConfig, updated.HuggingFaceConfig, entity.HuggingFaceConfig),
+                (nameof(DatasetRecord.HuggingFaceSplit), original.HuggingFaceSplit, updated.HuggingFaceSplit, entity.HuggingFaceSplit),
+                (nameof(DatasetRecord.S3StorageProfileName), original.S3StorageProfileName, updated.S3StorageProfileName, entity.S3StorageProfileName),
+                (nameof(DatasetRecord.S3Bucket), original.S3Bucket, updated.S3Bucket, entity.S3Bucket),
+                (nameof(DatasetRecord.S3Prefix), original.S3Prefix, updated.S3Prefix, entity.S3Prefix),
+                (nameof(DatasetRecord.StoragePath), original.StoragePath, updated.StoragePath, entity.StoragePath),
             };
             if (source.Any(f => !Equals(f.Original, f.Updated)))
             {
@@ -164,29 +176,25 @@ public sealed class DatasetRepository : IDatasetRepository
                 }
             }
 
-            patch.Apply(nameof(DatasetDto.Name), original.Name, updated.Name, entity.Name, v => entity.Name = v);
-            patch.Apply(nameof(DatasetDto.Description), original.Description, updated.Description, entity.Description, v => entity.Description = v);
-            patch.Apply(nameof(DatasetDto.Status), original.Status, updated.Status, entity.Status, v => entity.Status = v);
-            patch.Apply(nameof(DatasetDto.SourceFileName), original.SourceFileName, updated.SourceFileName, entity.SourceFileName, v => entity.SourceFileName = v);
-            patch.Apply(nameof(DatasetDto.SourceType), original.SourceType, updated.SourceType, entity.SourceType, v => entity.SourceType = v);
-            patch.Apply(nameof(DatasetDto.SourceUri), original.SourceUri, updated.SourceUri, entity.SourceUri, v => entity.SourceUri = v);
-            patch.Apply(nameof(DatasetDto.IsStreaming), original.IsStreaming, updated.IsStreaming, entity.IsStreaming, v => entity.IsStreaming = v);
-            patch.Apply(nameof(DatasetDto.HuggingFaceRepository), original.HuggingFaceRepository, updated.HuggingFaceRepository, entity.HuggingFaceRepository, v => entity.HuggingFaceRepository = v);
-            patch.Apply(nameof(DatasetDto.HuggingFaceConfig), original.HuggingFaceConfig, updated.HuggingFaceConfig, entity.HuggingFaceConfig, v => entity.HuggingFaceConfig = v);
-            patch.Apply(nameof(DatasetDto.HuggingFaceSplit), original.HuggingFaceSplit, updated.HuggingFaceSplit, entity.HuggingFaceSplit, v => entity.HuggingFaceSplit = v);
-            patch.Apply(nameof(DatasetDto.S3StorageProfileName), original.S3StorageProfileName, updated.S3StorageProfileName, entity.S3StorageProfileName, v => entity.S3StorageProfileName = v);
-            patch.Apply(nameof(DatasetDto.S3Bucket), original.S3Bucket, updated.S3Bucket, entity.S3Bucket, v => entity.S3Bucket = v);
-            patch.Apply(nameof(DatasetDto.S3Prefix), original.S3Prefix, updated.S3Prefix, entity.S3Prefix, v => entity.S3Prefix = v);
-            patch.Apply(nameof(DatasetDto.TotalItems), original.TotalItems, updated.TotalItems, entity.TotalItems, v => entity.TotalItems = v);
-            patch.Apply(nameof(DatasetDto.ErrorMessage), original.ErrorMessage, updated.ErrorMessage, entity.ErrorMessage, v => entity.ErrorMessage = v);
-            patch.Apply(nameof(DatasetDto.Format), original.Format, updated.Format, entity.Format, v => entity.Format = v);
-            patch.Apply(nameof(DatasetDto.Modality), original.Modality, updated.Modality, entity.Modality, v => entity.Modality = v);
-            patch.Apply(nameof(DatasetDto.TotalSizeBytes), original.TotalSizeBytes, updated.TotalSizeBytes, entity.TotalSizeBytes, v => entity.TotalSizeBytes = v);
-            patch.Apply(nameof(DatasetDto.StoragePath), original.StoragePath, updated.StoragePath, entity.StoragePath, v => entity.StoragePath = v);
-            patch.Apply(nameof(DatasetDto.ParquetPath), original.ParquetPath, updated.ParquetPath, entity.ParquetPath, v => entity.ParquetPath = v);
-            patch.Apply(nameof(DatasetDto.IsPublic), original.IsPublic, updated.IsPublic, entity.IsPublic, v => entity.IsPublic = v);
-            patch.Apply(nameof(DatasetDto.Metadata), original.Metadata, updated.Metadata, entity.Metadata, v => entity.Metadata = v);
-            patch.Apply(nameof(DatasetDto.CreatedByUserId), original.CreatedByUserId, updated.CreatedByUserId, entity.CreatedByUserId, v => entity.CreatedByUserId = v);
+            patch.Apply(nameof(DatasetRecord.Name), original.Name, updated.Name, entity.Name, v => entity.Name = v);
+            patch.Apply(nameof(DatasetRecord.Description), original.Description, updated.Description, entity.Description, v => entity.Description = v);
+            patch.Apply(nameof(DatasetRecord.Status), original.Status, updated.Status, entity.Status, v => entity.Status = v);
+            patch.Apply(nameof(DatasetRecord.SourceFileName), original.SourceFileName, updated.SourceFileName, entity.SourceFileName, v => entity.SourceFileName = v);
+            patch.Apply(nameof(DatasetRecord.SourceType), original.SourceType, updated.SourceType, entity.SourceType, v => entity.SourceType = v);
+            patch.Apply(nameof(DatasetRecord.SourceUri), original.SourceUri, updated.SourceUri, entity.SourceUri, v => entity.SourceUri = v);
+            patch.Apply(nameof(DatasetRecord.IsStreaming), original.IsStreaming, updated.IsStreaming, entity.IsStreaming, v => entity.IsStreaming = v);
+            patch.Apply(nameof(DatasetRecord.HuggingFaceRepository), original.HuggingFaceRepository, updated.HuggingFaceRepository, entity.HuggingFaceRepository, v => entity.HuggingFaceRepository = v);
+            patch.Apply(nameof(DatasetRecord.HuggingFaceConfig), original.HuggingFaceConfig, updated.HuggingFaceConfig, entity.HuggingFaceConfig, v => entity.HuggingFaceConfig = v);
+            patch.Apply(nameof(DatasetRecord.HuggingFaceSplit), original.HuggingFaceSplit, updated.HuggingFaceSplit, entity.HuggingFaceSplit, v => entity.HuggingFaceSplit = v);
+            patch.Apply(nameof(DatasetRecord.S3StorageProfileName), original.S3StorageProfileName, updated.S3StorageProfileName, entity.S3StorageProfileName, v => entity.S3StorageProfileName = v);
+            patch.Apply(nameof(DatasetRecord.S3Bucket), original.S3Bucket, updated.S3Bucket, entity.S3Bucket, v => entity.S3Bucket = v);
+            patch.Apply(nameof(DatasetRecord.S3Prefix), original.S3Prefix, updated.S3Prefix, entity.S3Prefix, v => entity.S3Prefix = v);
+            patch.Apply(nameof(DatasetRecord.TotalItems), original.TotalItems, updated.TotalItems, entity.TotalItems, v => entity.TotalItems = v);
+            patch.Apply(nameof(DatasetRecord.ErrorMessage), original.ErrorMessage, updated.ErrorMessage, entity.ErrorMessage, v => entity.ErrorMessage = v);
+            patch.Apply(nameof(DatasetRecord.Modality), original.Modality, updated.Modality, entity.Modality, v => entity.Modality = v);
+            patch.Apply(nameof(DatasetRecord.StoragePath), original.StoragePath, updated.StoragePath, entity.StoragePath, v => entity.StoragePath = v);
+            patch.Apply(nameof(DatasetRecord.IsPublic), original.IsPublic, updated.IsPublic, entity.IsPublic, v => entity.IsPublic = v);
+            patch.Apply(nameof(DatasetRecord.CreatedByUserId), original.CreatedByUserId, updated.CreatedByUserId, entity.CreatedByUserId, v => entity.CreatedByUserId = v);
 
             if (patch.Conflicts.Count > 0 || !patch.Changed)
             {
@@ -287,25 +295,8 @@ public sealed class DatasetRepository : IDatasetRepository
 
     public async Task<long> GetCountAsync(DatasetVisibilityFilter? visibility = null, CancellationToken cancellationToken = default)
     {
-        return await ApplyVisibilityFilter(_dbContext.Datasets.AsNoTracking(), visibility).LongCountAsync(cancellationToken);
-    }
-
-    public async Task<List<DatasetDto>> SearchAsync(string query, int page = 0, int pageSize = 50, DatasetVisibilityFilter? visibility = null, CancellationToken cancellationToken = default)
-    {
-        var searchLower = query.ToLowerInvariant();
-
-        var entities = await ApplyVisibilityFilter(_dbContext.Datasets.AsNoTracking(), visibility)
-            .Where(d =>
-                d.Name.ToLower().Contains(searchLower) ||
-                (d.Description != null && d.Description.ToLower().Contains(searchLower)) ||
-                (d.HuggingFaceRepository != null && d.HuggingFaceRepository.ToLower().Contains(searchLower))
-            )
-            .OrderByDescending(d => d.CreatedAt)
-            .Skip(page * pageSize)
-            .Take(pageSize)
-            .ToListAsync(cancellationToken);
-
-        return entities.Select(MapToDto).ToList();
+        IQueryable<DatasetEntity> visible = await VisibleDatasetsAsync(visibility, cancellationToken);
+        return await visible.LongCountAsync(cancellationToken);
     }
 
     /// <summary>
@@ -345,11 +336,11 @@ public sealed class DatasetRepository : IDatasetRepository
     }
 
     /// <summary>
-    /// Maps DatasetEntity to DatasetDto
+    /// Maps DatasetEntity to DatasetRecord
     /// </summary>
-    private static DatasetDto MapToDto(DatasetEntity entity)
+    private static DatasetRecord MapToDto(DatasetEntity entity)
     {
-        return new DatasetDto
+        return new DatasetRecord
         {
             Id = entity.Id,
             Name = entity.Name,
@@ -369,13 +360,9 @@ public sealed class DatasetRepository : IDatasetRepository
             S3Bucket = entity.S3Bucket,
             S3Prefix = entity.S3Prefix,
             ErrorMessage = entity.ErrorMessage,
-            Format = entity.Format,
             Modality = entity.Modality,
-            TotalSizeBytes = entity.TotalSizeBytes,
             StoragePath = entity.StoragePath,
-            ParquetPath = entity.ParquetPath,
             IsPublic = entity.IsPublic,
-            Metadata = entity.Metadata,
             CreatedByUserId = entity.CreatedByUserId
         };
     }

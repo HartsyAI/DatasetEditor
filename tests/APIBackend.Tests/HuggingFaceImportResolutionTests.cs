@@ -5,10 +5,7 @@ using System.Threading.Tasks;
 using DatasetStudio.APIBackend.Services.DatasetManagement;
 using DatasetStudio.APIBackend.Services.Integration;
 using DatasetStudio.DTO.Datasets;
-// Same alias convention as StreamingIngestionTests: DatasetIngestionService uses the Core repository
-// interfaces, not the unrelated Services.DatasetManagement item repository.
-using IDatasetRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetRepository;
-using IDatasetItemRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetItemRepository;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -46,7 +43,7 @@ namespace DatasetStudio.Tests.APIBackend
             var datasetRepoMock = new Mock<IDatasetRepository>();
             datasetRepoMock
                 .Setup(r => r.GetByIdAsync(datasetId, It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new DatasetDto
+                .ReturnsAsync(new DatasetRecord
                 {
                     Id = datasetId,
                     Name = "beans",
@@ -71,8 +68,8 @@ namespace DatasetStudio.Tests.APIBackend
 
             datasetRepoMock.Verify(r => r.UpdateItemCountAsync(datasetId, 1_034, It.IsAny<CancellationToken>()), Times.Once);
             datasetRepoMock.Verify(r => r.UpdateAsync(
-                It.IsAny<DatasetDto>(),
-                It.Is<DatasetDto>(d => d.Id == datasetId && d.HuggingFaceConfig == "default" && d.HuggingFaceSplit == "train"),
+                It.IsAny<DatasetRecord>(),
+                It.Is<DatasetRecord>(d => d.Id == datasetId && d.HuggingFaceConfig == "default" && d.HuggingFaceSplit == "train"),
                 It.IsAny<CancellationToken>()), Times.Once);
         }
 
@@ -97,7 +94,7 @@ namespace DatasetStudio.Tests.APIBackend
                 CancellationToken.None);
 
             datasetRepoMock.Verify(r => r.UpdateItemCountAsync(It.IsAny<Guid>(), It.IsAny<long>(), It.IsAny<CancellationToken>()), Times.Never);
-            datasetRepoMock.Verify(r => r.UpdateAsync(It.IsAny<DatasetDto>(), It.IsAny<DatasetDto>(), It.IsAny<CancellationToken>()), Times.Never);
+            datasetRepoMock.Verify(r => r.UpdateAsync(It.IsAny<DatasetRecord>(), It.IsAny<DatasetRecord>(), It.IsAny<CancellationToken>()), Times.Never);
         }
     }
 }

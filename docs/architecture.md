@@ -39,8 +39,8 @@
 
 | Project | Target | Responsibility |
 |---|---|---|
-| `Core` | net10.0 | Domain models, parsers, filtering, abstractions |
-| `DTO` | net10.0 | Shared contracts (`DatasetItemDto`, `PageResponse<T>`, …) |
+| `Core` | net10.0 | Client-side domain models and enums, storage keys, the `Logs` wrapper (used by the client only) |
+| `DTO` | net10.0 | Shared contracts (`DatasetDto` extending the library's `DatasetSummaryDto`, `DatasetItemDto`, `PageResponse<T>`, …). The API's own dataset row type is `DatasetRecord` in `APIBackend/DataAccess`; it is never serialised |
 | `APIBackend` | net10.0 | API endpoints, EF/Postgres, Parquet storage, ingestion, HF integration |
 | `ClientApp` | net10.0 | Blazor WASM viewer, caching, state, JS interop |
 | `Extensions/SDK` | net10.0 | Extension manifest model and the `IApiExtension` contract |
@@ -177,7 +177,7 @@ API's own target framework and the newest build wins. APIBackend has a build-ord
 to `CoreViewer.Api`, so `dotnet run` builds it and the loader finds it. Each extension gets its
 own `ExtensionLoadContext` with an `AssemblyDependencyResolver` over its `.deps.json`, so a
 library that ships only with the extension resolves from its folder. Any assembly the API itself
-has (the SDK, ASP.NET Core, Core, DTO) always comes from the API, so there is one
+has (the SDK, ASP.NET Core, DTO) always comes from the API, so there is one
 `IApiExtension` type and an extension gets the API's version of a shared library. Reference the
 SDK with `Private="false" ExcludeAssets="runtime"`, as `CoreViewer.Api.csproj` does, to keep it
 out of the extension's output. Any failure is logged and skips that extension; it never

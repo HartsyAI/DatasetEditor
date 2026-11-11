@@ -12,9 +12,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
-// The Core repository interface is aliased for the same reason as in the other endpoint tests: the
-// API layer has its own IDatasetItemRepository in the namespace the endpoints use.
-using IDatasetRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetRepository;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 namespace DatasetStudio.Tests.APIBackend
 {
@@ -30,7 +28,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             Guid datasetId = Guid.NewGuid();
             Guid itemId = Guid.NewGuid();
-            DatasetDto dataset = new() { Id = datasetId, Name = "edit" };
+            DatasetRecord dataset = new() { Id = datasetId, Name = "edit" };
             DatasetItemDto item = new() { Id = itemId, DatasetId = datasetId, Title = "before" };
             using var cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;
@@ -71,7 +69,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             Guid datasetId = Guid.NewGuid();
             Guid itemId = Guid.NewGuid();
-            DatasetDto dataset = new() { Id = datasetId, Name = "bulk" };
+            DatasetRecord dataset = new() { Id = datasetId, Name = "bulk" };
             DatasetItemDto item = new() { Id = itemId, DatasetId = datasetId, Title = "bulk" };
             using var cts = new CancellationTokenSource();
             CancellationToken token = cts.Token;

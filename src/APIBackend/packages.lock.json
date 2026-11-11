@@ -388,18 +388,13 @@
         "dependencies": {
           "Blazored.LocalStorage": "[4.5.0, )",
           "Core": "[0.2.0-alpha, )",
-          "CsvHelper": "[33.1.0, )",
           "DTO": "[0.2.0-alpha, )",
           "Microsoft.AspNetCore.Components.WebAssembly": "[10.0.14, )",
           "MudBlazor": "[7.8.0, )"
         }
       },
       "core": {
-        "type": "Project",
-        "dependencies": {
-          "CsvHelper": "[33.1.0, )",
-          "DTO": "[0.2.0-alpha, )"
-        }
+        "type": "Project"
       },
       "dto": {
         "type": "Project"

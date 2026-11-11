@@ -12,8 +12,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
-using IDatasetItemRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetItemRepository;
-using IDatasetRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetRepository;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 namespace DatasetStudio.Tests.APIBackend
 {

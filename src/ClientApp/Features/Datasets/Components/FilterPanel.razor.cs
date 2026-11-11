@@ -1,9 +1,7 @@
 using Microsoft.AspNetCore.Components;
 using DatasetStudio.ClientApp.Features.Datasets.Services;
 using DatasetStudio.ClientApp.Services.StateManagement;
-using DatasetStudio.Core.Abstractions;
 using DatasetStudio.Core.DomainModels;
-using DatasetStudio.Core.Utilities;
 using DatasetStudio.Core.Utilities.Logging;
 using DatasetStudio.DTO.Datasets;
 using System.Threading.Tasks;

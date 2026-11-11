@@ -19,8 +19,7 @@ using Parquet.Data;
 using Parquet.Schema;
 using SkiaSharp;
 using Xunit;
-using IDatasetItemRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetItemRepository;
-using IDatasetRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetRepository;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 namespace DatasetStudio.Tests.APIBackend
 {
@@ -38,17 +37,17 @@ namespace DatasetStudio.Tests.APIBackend
         private readonly Mock<IDatasetItemRepository> _items = new();
         private readonly Mock<IHuggingFaceClient> _huggingFace = new();
         private readonly List<DatasetItemDto> _written = new();
-        private DatasetDto _dataset;
+        private DatasetRecord _dataset;
 
         public FormatIngestionTests()
         {
             Directory.CreateDirectory(_root);
-            _dataset = new DatasetDto { Id = _datasetId, Name = "formats" };
+            _dataset = new DatasetRecord { Id = _datasetId, Name = "formats" };
             _datasets.Setup(r => r.GetByIdAsync(_datasetId, It.IsAny<CancellationToken>())).ReturnsAsync(() => _dataset);
-            _datasets.Setup(r => r.UpdateAsync(It.IsAny<DatasetDto>(), It.IsAny<DatasetDto>(), It.IsAny<CancellationToken>()))
-                .Callback((DatasetDto _, DatasetDto d, CancellationToken _) => _dataset = d)
+            _datasets.Setup(r => r.UpdateAsync(It.IsAny<DatasetRecord>(), It.IsAny<DatasetRecord>(), It.IsAny<CancellationToken>()))
+                .Callback((DatasetRecord _, DatasetRecord d, CancellationToken _) => _dataset = d)
                 .Returns(Task.CompletedTask);
-            _items.Setup(r => r.InsertItemsAsync(_datasetId, It.IsAny<IEnumerable<DatasetItemDto>>(), It.IsAny<CancellationToken>()))
+            _items.Setup(r => r.AddRangeAsync(_datasetId, It.IsAny<IEnumerable<DatasetItemDto>>(), It.IsAny<CancellationToken>()))
                 .Callback((Guid _, IEnumerable<DatasetItemDto> batch, CancellationToken _) => _written.AddRange(batch))
                 .Returns(Task.CompletedTask);
             _items.Setup(r => r.GetCountAsync(_datasetId, It.IsAny<CancellationToken>())).ReturnsAsync(() => _written.Count);

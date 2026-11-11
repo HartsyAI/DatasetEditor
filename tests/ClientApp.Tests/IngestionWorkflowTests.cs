@@ -31,7 +31,7 @@ public sealed class IngestionWorkflowTests
         SequenceHandler handler = new(statuses, error: "STREAMING_UNAVAILABLE: no parquet export");
         IngestionWorkflowService workflow = Create(handler);
 
-        DatasetDetailDto? result = await workflow.WaitForStatusAsync(
+        DatasetDto? result = await workflow.WaitForStatusAsync(
             DatasetId, d => d.Status != IngestionStatusDto.Pending, TimeSpan.FromSeconds(10));
 
         Assert.NotNull(result);
@@ -46,7 +46,7 @@ public sealed class IngestionWorkflowTests
         SequenceHandler handler = new(new Queue<IngestionStatusDto>(), error: null, repeat: IngestionStatusDto.Pending);
         IngestionWorkflowService workflow = Create(handler);
 
-        DatasetDetailDto? result = await workflow.WaitForStatusAsync(
+        DatasetDto? result = await workflow.WaitForStatusAsync(
             DatasetId, d => d.Status == IngestionStatusDto.Completed, TimeSpan.FromMilliseconds(50));
 
         Assert.Equal(IngestionStatusDto.Pending, result!.Status);
@@ -94,7 +94,7 @@ public sealed class IngestionWorkflowTests
     [Fact]
     public void WithPageTotal_FillsAMissingTotalFromTheFirstPage()
     {
-        DatasetDetailDto fresh = new() { Id = DatasetId, Name = "mnist", TotalItems = 0 };
+        DatasetDto fresh = new() { Id = DatasetId, Name = "mnist", TotalItems = 0 };
         DatasetStudio.DTO.Common.PageResponse<DatasetItemDto> page = new() { Items = Array.Empty<DatasetItemDto>(), TotalCount = 60_000 };
 
         Assert.Equal(60_000, DatasetCacheService.WithPageTotal(fresh, page).TotalItems);

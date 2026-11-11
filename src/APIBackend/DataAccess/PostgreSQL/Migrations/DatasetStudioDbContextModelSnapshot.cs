@@ -45,12 +45,6 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
                         .HasColumnType("text")
                         .HasColumnName("error_message");
 
-                    b.Property<string>("Format")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("format");
-
                     b.Property<string>("HuggingFaceConfig")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
@@ -74,10 +68,6 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_streaming");
 
-                    b.Property<string>("Metadata")
-                        .HasColumnType("jsonb")
-                        .HasColumnName("metadata");
-
                     b.Property<string>("Modality")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -89,11 +79,6 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("name");
-
-                    b.Property<string>("ParquetPath")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
-                        .HasColumnName("parquet_path");
 
                     b.Property<string>("S3Bucket")
                         .HasMaxLength(255)
@@ -137,10 +122,6 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("total_items");
 
-                    b.Property<long>("TotalSizeBytes")
-                        .HasColumnType("bigint")
-                        .HasColumnName("total_size_bytes");
-
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
@@ -155,15 +136,12 @@ namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Migrations
 
                     b.HasIndex("CreatedAt");
 
-                    b.HasIndex("CreatedByUserId");
-
-                    b.HasIndex("Format");
-
-                    b.HasIndex("IsPublic");
-
-                    b.HasIndex("Modality");
-
                     b.HasIndex("Name");
+
+                    b.HasIndex("CreatedByUserId", "CreatedAt");
+
+                    b.HasIndex(new[] { "CreatedAt" }, "IX_datasets_created_at_public")
+                        .HasFilter("is_public");
 
                     b.ToTable("datasets");
                 });

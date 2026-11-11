@@ -79,11 +79,6 @@
           "Microsoft.AspNetCore.Components.Web": "8.0.0"
         }
       },
-      "CsvHelper": {
-        "type": "Transitive",
-        "resolved": "33.1.0",
-        "contentHash": "kqfTOZGrn7NarNeXgjh86JcpTHUoeQDMB8t9NVa/ZtlSYiV1rxfRnQ49WaJsob4AiGrbK0XDzpyKkBwai4F8eg=="
-      },
       "Microsoft.AspNetCore.Authorization": {
         "type": "Transitive",
         "resolved": "10.0.14",
@@ -463,7 +458,6 @@
         "dependencies": {
           "Blazored.LocalStorage": "[4.5.0, )",
           "Core": "[0.2.0-alpha, )",
-          "CsvHelper": "[33.1.0, )",
           "DTO": "[0.2.0-alpha, )",
           "Microsoft.AspNetCore.Components.Authorization": "[10.0.14, )",
           "Microsoft.AspNetCore.Components.WebAssembly": "[10.0.14, )",
@@ -474,8 +468,6 @@
       "core": {
         "type": "Project",
         "dependencies": {
-          "CsvHelper": "[33.1.0, )",
-          "DTO": "[0.2.0-alpha, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.14, )"
         }
       },

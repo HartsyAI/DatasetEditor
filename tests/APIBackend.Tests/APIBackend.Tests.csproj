@@ -22,7 +22,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\APIBackend\APIBackend.csproj" />
-    <ProjectReference Include="..\..\src\Core\Core.csproj" />
     <ProjectReference Include="..\..\src\DTO\DTO.csproj" />
     <!-- Build order only: the extension loader tests load this fixture from its own bin folder,
          so it must be built but must not be referenced or copied here. -->

@@ -104,7 +104,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("thumb-local-test", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
             PlantImageFile(created.Id, "thumb-local-test", "photo.png", MakeTestPng(400, 200, SKColors.CornflowerBlue));
 
             HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{created.Id}/files/photo.png?w=100");
@@ -123,7 +123,7 @@ namespace DatasetStudio.Tests.APIBackend
             byte[] original = MakeTestPng(400, 200, SKColors.Coral);
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("thumb-local-passthrough", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
             PlantImageFile(created.Id, "thumb-local-passthrough", "photo.png", original);
 
             HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{created.Id}/files/photo.png");
@@ -139,7 +139,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("thumb-local-cache", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
             PlantImageFile(created.Id, "thumb-local-cache", "photo.png", MakeTestPng(300, 300, SKColors.Gold));
 
             HttpResponseMessage first = await _client.GetAsync($"/api/datasets/{created.Id}/files/photo.png?w=80");
@@ -159,7 +159,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("thumb-local-replaced", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
             PlantImageFile(created.Id, "thumb-local-replaced", "photo.png", MakeTestPng(200, 100, SKColors.Red));
             HttpResponseMessage first = await _client.GetAsync($"/api/datasets/{created.Id}/files/photo.png?w=80");
             (await DecodeDimensionsAsync(first)).Should().Be((80, 40));
@@ -177,11 +177,11 @@ namespace DatasetStudio.Tests.APIBackend
             return DecodeDimensions(await response.Content.ReadAsByteArrayAsync());
         }
 
-        private async Task<(DatasetDetailDto Dataset, Guid UserId)> CreateStreamingDatasetAsync(bool isPublic = true)
+        private async Task<(DatasetDto Dataset, Guid UserId)> CreateStreamingDatasetAsync(bool isPublic = true)
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("hf-thumb-test", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             using IServiceScope scope = _factory.Services.CreateScope();
             DatasetStudioDbContext db = scope.ServiceProvider.GetRequiredService<DatasetStudioDbContext>();
@@ -272,7 +272,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task GetHuggingFaceThumbnail_CachedForATokenHolder_IsNotServedWithoutTheToken()
         {
-            (DatasetDetailDto dataset, _) = await CreateStreamingDatasetAsync();
+            (DatasetDto dataset, _) = await CreateStreamingDatasetAsync();
             SetupGatedHfRow(0, "https://fake-hf-asset.example.test/gated.png");
 
             HttpResponseMessage withToken = await GetThumbnailAsync(dataset.Id, 120, GatedToken);
@@ -292,7 +292,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task GetHuggingFaceThumbnail_RowPageFetchedWithAToken_IsNotReusedWithoutTheToken()
         {
-            (DatasetDetailDto dataset, _) = await CreateStreamingDatasetAsync();
+            (DatasetDto dataset, _) = await CreateStreamingDatasetAsync();
             SetupGatedHfRow(0, "https://fake-hf-asset.example.test/gated.png");
 
             HttpResponseMessage withToken = await GetThumbnailAsync(dataset.Id, 120, GatedToken);
@@ -305,7 +305,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task GetHuggingFaceThumbnail_ForStreamingDataset_ReturnsResizedJpeg()
         {
-            (DatasetDetailDto dataset, _) = await CreateStreamingDatasetAsync();
+            (DatasetDto dataset, _) = await CreateStreamingDatasetAsync();
             SetupHfRow(0, "https://fake-hf-asset.example.test/image.png");
 
             HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{dataset.Id}/hf-thumbnail?offset=0&w=120");
@@ -323,7 +323,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task GetHuggingFaceThumbnail_UpstreamStallsMidBody_TimesOutAsNotFound()
         {
-            (DatasetDetailDto dataset, _) = await CreateStreamingDatasetAsync();
+            (DatasetDto dataset, _) = await CreateStreamingDatasetAsync();
             SetupHfRow(0, "https://fake-hf-asset.example.test/stalls.png");
             TimeSpan previous = DatasetStudio.APIBackend.Endpoints.DatasetEndpoints.HuggingFaceThumbnailFetchTimeout;
             DatasetStudio.APIBackend.Endpoints.DatasetEndpoints.HuggingFaceThumbnailFetchTimeout = TimeSpan.FromSeconds(1);
@@ -346,7 +346,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("not-streaming", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{created.Id}/hf-thumbnail?offset=0&w=120");
 
@@ -361,7 +361,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task GetHuggingFaceThumbnail_S3StreamingDataset_ReturnsNotFound()
         {
-            (DatasetDetailDto dataset, _) = await CreateStreamingDatasetAsync();
+            (DatasetDto dataset, _) = await CreateStreamingDatasetAsync();
             using (IServiceScope scope = _factory.Services.CreateScope())
             {
                 DatasetStudioDbContext db = scope.ServiceProvider.GetRequiredService<DatasetStudioDbContext>();
@@ -379,7 +379,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task GetHuggingFaceThumbnail_RowNotReturnedByUpstream_ReturnsNotFound()
         {
-            (DatasetDetailDto dataset, _) = await CreateStreamingDatasetAsync();
+            (DatasetDto dataset, _) = await CreateStreamingDatasetAsync();
             _hfServerClientMock
                 .Setup(c => c.GetRowsAsync(
                     It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(),
@@ -396,7 +396,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             // Ties Phase 3's existence-leak fix to Phase 4's new endpoint: a private streaming
             // dataset must be just as invisible to a non-owner here as it is on every other route.
-            (DatasetDetailDto dataset, _) = await CreateStreamingDatasetAsync(isPublic: false);
+            (DatasetDto dataset, _) = await CreateStreamingDatasetAsync(isPublic: false);
             SetupHfRow(0, "https://fake-hf-asset.example.test/image.png");
 
             using HttpClient otherClient = _factory.CreateClient();
@@ -411,7 +411,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task GetHuggingFaceThumbnail_MissingOffset_ReturnsBadRequest()
         {
-            (DatasetDetailDto dataset, _) = await CreateStreamingDatasetAsync();
+            (DatasetDto dataset, _) = await CreateStreamingDatasetAsync();
 
             HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{dataset.Id}/hf-thumbnail?w=120");
 

@@ -82,7 +82,7 @@ namespace DatasetStudio.Tests.APIBackend
 
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("folder-import-test", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             HttpResponseMessage importResponse = await _client.PostAsJsonAsync(
                 $"/api/datasets/{created.Id}/import-folder", new ImportFolderRequest(_sourceFolder));
@@ -92,8 +92,8 @@ namespace DatasetStudio.Tests.APIBackend
             for (int i = 0; i < 50; i++)
             {
                 await Task.Delay(200);
-                DatasetDetailDto polled = (await (await _client.GetAsync($"/api/datasets/{created.Id}"))
-                    .Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+                DatasetDto polled = (await (await _client.GetAsync($"/api/datasets/{created.Id}"))
+                    .Content.ReadFromJsonAsync<DatasetDto>())!;
                 finalStatus = polled.Status;
                 if (finalStatus is IngestionStatusDto.Completed or IngestionStatusDto.Failed)
                 {
@@ -139,7 +139,7 @@ namespace DatasetStudio.Tests.APIBackend
 
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("cumulative-count-test", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             async Task<IngestionStatusDto> ImportAndWaitAsync()
             {
@@ -148,8 +148,8 @@ namespace DatasetStudio.Tests.APIBackend
                 for (int i = 0; i < 50; i++)
                 {
                     await Task.Delay(200);
-                    DatasetDetailDto polled = (await (await _client.GetAsync($"/api/datasets/{created.Id}"))
-                        .Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+                    DatasetDto polled = (await (await _client.GetAsync($"/api/datasets/{created.Id}"))
+                        .Content.ReadFromJsonAsync<DatasetDto>())!;
                     status = polled.Status;
                     if (status is IngestionStatusDto.Completed or IngestionStatusDto.Failed)
                     {
@@ -160,13 +160,13 @@ namespace DatasetStudio.Tests.APIBackend
             }
 
             (await ImportAndWaitAsync()).Should().Be(IngestionStatusDto.Completed);
-            DatasetDetailDto afterFirst = (await (await _client.GetAsync($"/api/datasets/{created.Id}"))
-                .Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto afterFirst = (await (await _client.GetAsync($"/api/datasets/{created.Id}"))
+                .Content.ReadFromJsonAsync<DatasetDto>())!;
             afterFirst.TotalItems.Should().Be(1);
 
             (await ImportAndWaitAsync()).Should().Be(IngestionStatusDto.Completed);
-            DatasetDetailDto afterSecond = (await (await _client.GetAsync($"/api/datasets/{created.Id}"))
-                .Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto afterSecond = (await (await _client.GetAsync($"/api/datasets/{created.Id}"))
+                .Content.ReadFromJsonAsync<DatasetDto>())!;
 
             // The old bug would report 1 again here (this run's batch size), not 2 (the true
             // cumulative total across both imports).

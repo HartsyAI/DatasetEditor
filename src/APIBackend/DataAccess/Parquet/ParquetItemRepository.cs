@@ -304,47 +304,18 @@ public class ParquetItemRepository : IDatasetItemRepository, IDisposable
     }
 
     /// <summary>
-    /// Gets the total count of items in a dataset: the manifest's row total, or a scan when filtered.
+    /// Gets the total count of items in a dataset: the manifest's row total. (A filtered overload
+    /// that scanned the whole dataset had no caller and was dropped with the second item
+    /// repository interface, audit K-4.)
     /// </summary>
     /// <param name="datasetId">The dataset ID.</param>
-    /// <param name="filter">Optional filter to count only matching items.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>Total count of items.</returns>
     public async Task<long> GetCountAsync(
         Guid datasetId,
-        FilterRequest? filter = null,
         CancellationToken cancellationToken = default)
     {
-        return await WithDatasetAsync(datasetId, manifest => _reader.CountAsync(manifest, filter, cancellationToken), cancellationToken);
-    }
-
-    /// <summary>
-    /// Performs bulk statistics aggregation across items.
-    /// </summary>
-    /// <param name="datasetId">The dataset ID.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Dictionary of aggregated statistics.</returns>
-    public async Task<Dictionary<string, object>> GetStatisticsAsync(
-        Guid datasetId,
-        CancellationToken cancellationToken = default)
-    {
-        List<DatasetItemDto> allItems = await WithDatasetAsync(datasetId, manifest => _reader.ReadAllAsync(manifest, cancellationToken), cancellationToken);
-
-        return new Dictionary<string, object>
-        {
-            ["total_items"] = allItems.Count,
-            ["favorite_count"] = allItems.Count(i => i.IsFavorite),
-            ["avg_width"] = allItems.Any() ? allItems.Average(i => i.Width) : 0,
-            ["avg_height"] = allItems.Any() ? allItems.Average(i => i.Height) : 0,
-            ["min_width"] = allItems.Any() ? allItems.Min(i => i.Width) : 0,
-            ["max_width"] = allItems.Any() ? allItems.Max(i => i.Width) : 0,
-            ["min_height"] = allItems.Any() ? allItems.Min(i => i.Height) : 0,
-            ["max_height"] = allItems.Any() ? allItems.Max(i => i.Height) : 0,
-            ["tag_counts"] = allItems
-                .SelectMany(i => i.Tags)
-                .GroupBy(t => t)
-                .ToDictionary(g => g.Key, g => g.Count())
-        };
+        return await WithDatasetAsync(datasetId, manifest => Task.FromResult(manifest.TotalRows), cancellationToken);
     }
 
     /// <summary>

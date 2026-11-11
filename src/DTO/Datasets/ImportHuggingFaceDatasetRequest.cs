@@ -23,7 +23,4 @@ public sealed record ImportHuggingFaceDatasetRequest
 
     /// <summary>User-selected data file path for download mode.</summary>
     public string? DataFilePath { get; init; }
-
-    /// <summary>User explicitly confirmed fallback to download mode when streaming failed.</summary>
-    public bool ConfirmedDownloadFallback { get; init; }
 }

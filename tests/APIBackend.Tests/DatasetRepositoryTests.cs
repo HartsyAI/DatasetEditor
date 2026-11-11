@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using DatasetStudio.Core.Abstractions.Repositories;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 using DatasetStudio.DTO.Datasets;
 using DatasetStudio.Tests.APIBackend.Fixtures;
 using FluentAssertions;
@@ -56,30 +56,29 @@ namespace DatasetStudio.Tests.APIBackend
             });
         }
 
-        private static DatasetDto NewDataset(string name) => new()
+        private static DatasetRecord NewDataset(string name) => new()
         {
             Id = Guid.NewGuid(),
             Name = name,
             Description = "Description",
-            Format = "CSV",
             Modality = "Image",
             Status = IngestionStatusDto.Pending,
             TotalItems = 0,
             SourceType = DatasetSourceType.LocalUpload,
         };
 
-        private async Task<DatasetDto> CreateAsync(string name)
+        private async Task<DatasetRecord> CreateAsync(string name)
         {
             Guid id = await WithRepositoryAsync(r => r.CreateAsync(NewDataset(name)));
             return (await WithRepositoryAsync(r => r.GetByIdAsync(id)))!;
         }
 
-        private Task<DatasetDto?> GetAsync(Guid id) => WithRepositoryAsync(r => r.GetByIdAsync(id));
+        private Task<DatasetRecord?> GetAsync(Guid id) => WithRepositoryAsync(r => r.GetByIdAsync(id));
 
         [Fact]
         public async Task CreateAndGetAsync_PersistsDataset()
         {
-            DatasetDto loaded = await CreateAsync("Test dataset");
+            DatasetRecord loaded = await CreateAsync("Test dataset");
 
             loaded.Name.Should().Be("Test dataset");
             loaded.Description.Should().Be("Description");
@@ -93,7 +92,7 @@ namespace DatasetStudio.Tests.APIBackend
             await Task.Delay(TimeSpan.FromMilliseconds(5));
             await CreateAsync("Newer");
 
-            List<DatasetDto> list = await WithRepositoryAsync(r => r.GetAllAsync(page: 0, pageSize: 50));
+            List<DatasetRecord> list = await WithRepositoryAsync(r => r.GetAllAsync(page: 0, pageSize: 50));
 
             list.Should().HaveCount(2);
             list[0].Name.Should().Be("Newer");
@@ -107,11 +106,11 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task UpdateStatusAsync_PersistsTheNewStatus()
         {
-            DatasetDto dataset = await CreateAsync("Status test");
+            DatasetRecord dataset = await CreateAsync("Status test");
 
             await WithRepositoryAsync(r => r.UpdateStatusAsync(dataset.Id, IngestionStatusDto.Failed, "boom"));
 
-            DatasetDto loaded = (await GetAsync(dataset.Id))!;
+            DatasetRecord loaded = (await GetAsync(dataset.Id))!;
             loaded.Status.Should().Be(IngestionStatusDto.Failed);
             loaded.ErrorMessage.Should().Be("boom");
         }
@@ -119,7 +118,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task UpdateItemCountAsync_PersistsTheNewCount()
         {
-            DatasetDto dataset = await CreateAsync("Count test");
+            DatasetRecord dataset = await CreateAsync("Count test");
 
             await WithRepositoryAsync(r => r.UpdateItemCountAsync(dataset.Id, 12345));
 
@@ -137,7 +136,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task DeleteAsync_RemovesDataset()
         {
-            DatasetDto dataset = await CreateAsync("ToDelete");
+            DatasetRecord dataset = await CreateAsync("ToDelete");
 
             await WithRepositoryAsync(r => r.DeleteAsync(dataset.Id));
 
@@ -152,13 +151,13 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task UpdateAsync_KeepsStatusAndCountWrittenAfterTheSnapshot()
         {
-            DatasetDto snapshot = await CreateAsync("Snapshot");
+            DatasetRecord snapshot = await CreateAsync("Snapshot");
             await WithRepositoryAsync(r => r.UpdateStatusAsync(snapshot.Id, IngestionStatusDto.Processing));
             await WithRepositoryAsync(r => r.UpdateItemCountAsync(snapshot.Id, 5_000));
 
             await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { SourceFileName = "rows.csv" }));
 
-            DatasetDto loaded = (await GetAsync(snapshot.Id))!;
+            DatasetRecord loaded = (await GetAsync(snapshot.Id))!;
             loaded.SourceFileName.Should().Be("rows.csv");
             loaded.Status.Should().Be(IngestionStatusDto.Processing, "the background status write must survive");
             loaded.TotalItems.Should().Be(5_000, "the background count write must survive");
@@ -168,14 +167,14 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task UpdateAsync_FieldChangedByAnotherRequest_ThrowsConflictAndWritesNothing()
         {
-            DatasetDto snapshot = await CreateAsync("Original");
+            DatasetRecord snapshot = await CreateAsync("Original");
             await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { Name = "Renamed elsewhere" }));
 
             Func<Task> act = () => WithRepositoryAsync(r =>
                 r.UpdateAsync(snapshot, snapshot with { Name = "Renamed here", Description = "new description" }));
 
             (await act.Should().ThrowAsync<DatasetUpdateConflictException>()).Which.Fields.Should().Equal("Name");
-            DatasetDto loaded = (await GetAsync(snapshot.Id))!;
+            DatasetRecord loaded = (await GetAsync(snapshot.Id))!;
             loaded.Name.Should().Be("Renamed elsewhere");
             loaded.Description.Should().Be("Description", "a conflicting update is all-or-nothing");
         }
@@ -184,8 +183,8 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task UpdateAsync_SameValueWrittenConcurrently_IsNotAConflict()
         {
-            DatasetDto snapshot = await CreateAsync("Streaming");
-            DatasetDto resolved = snapshot with { HuggingFaceConfig = "default", HuggingFaceSplit = "train" };
+            DatasetRecord snapshot = await CreateAsync("Streaming");
+            DatasetRecord resolved = snapshot with { HuggingFaceConfig = "default", HuggingFaceSplit = "train" };
             await WithRepositoryAsync(r => r.UpdateAsync(snapshot, resolved));
 
             await WithRepositoryAsync(r => r.UpdateAsync(snapshot, resolved));
@@ -201,7 +200,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task UpdateAsync_NewRepositoryAfterConcurrentResolution_IsRefused()
         {
-            DatasetDto snapshot = await CreateAsync("Re-import");
+            DatasetRecord snapshot = await CreateAsync("Re-import");
             await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { HuggingFaceRepository = "org/old" }));
             snapshot = (await GetAsync(snapshot.Id))!;
             // A concurrent items request resolves the old repository's config/split.
@@ -211,7 +210,7 @@ namespace DatasetStudio.Tests.APIBackend
 
             (await act.Should().ThrowAsync<DatasetUpdateConflictException>()).Which.Fields
                 .Should().BeEquivalentTo("HuggingFaceConfig", "HuggingFaceSplit");
-            DatasetDto loaded = (await GetAsync(snapshot.Id))!;
+            DatasetRecord loaded = (await GetAsync(snapshot.Id))!;
             (loaded.HuggingFaceRepository, loaded.HuggingFaceConfig).Should().Be(("org/old", "old-config"), "a refused update writes nothing");
         }
 
@@ -222,15 +221,15 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task UpdateAsync_ConcurrentS3Selections_NeverMixProfileAndBucket()
         {
-            DatasetDto start = await CreateAsync("S3");
+            DatasetRecord start = await CreateAsync("S3");
             await WithRepositoryAsync(r => r.UpdateAsync(start, start with { S3StorageProfileName = "A", S3Bucket = "X" }));
-            DatasetDto snapshot = (await GetAsync(start.Id))!;
+            DatasetRecord snapshot = (await GetAsync(start.Id))!;
 
             await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { S3StorageProfileName = "B" }));
             Func<Task> second = () => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { S3Bucket = "Y" }));
 
             await second.Should().ThrowAsync<DatasetUpdateConflictException>();
-            DatasetDto loaded = (await GetAsync(start.Id))!;
+            DatasetRecord loaded = (await GetAsync(start.Id))!;
             (loaded.S3StorageProfileName, loaded.S3Bucket).Should().Be(("B", "X"), "B/Y was never validated by either request");
         }
 
@@ -241,12 +240,12 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task UpdateAsync_S3ReconnectAfterProviderSwitch_IsRefused()
         {
-            DatasetDto start = await CreateAsync("Provider switch");
+            DatasetRecord start = await CreateAsync("Provider switch");
             await WithRepositoryAsync(r => r.UpdateAsync(start, start with
             {
                 SourceType = DatasetSourceType.ExternalS3Streaming, IsStreaming = true, S3StorageProfileName = "A", S3Bucket = "X",
             }));
-            DatasetDto snapshot = (await GetAsync(start.Id))!;
+            DatasetRecord snapshot = (await GetAsync(start.Id))!;
 
             await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with
             {
@@ -255,7 +254,7 @@ namespace DatasetStudio.Tests.APIBackend
             Func<Task> reconnect = () => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { S3Bucket = "Y" }));
 
             await reconnect.Should().ThrowAsync<DatasetUpdateConflictException>();
-            DatasetDto loaded = (await GetAsync(start.Id))!;
+            DatasetRecord loaded = (await GetAsync(start.Id))!;
             (loaded.SourceType, loaded.S3Bucket).Should().Be((DatasetSourceType.HuggingFaceStreaming, "X"));
         }
 
@@ -263,12 +262,12 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task UpdateAsync_SourceChangeWithoutRace_IsWritten()
         {
-            DatasetDto snapshot = await CreateAsync("No race");
+            DatasetRecord snapshot = await CreateAsync("No race");
             await WithRepositoryAsync(r => r.UpdateItemCountAsync(snapshot.Id, 7));
 
             await WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { HuggingFaceRepository = "org/ds", HuggingFaceSplit = "train" }));
 
-            DatasetDto loaded = (await GetAsync(snapshot.Id))!;
+            DatasetRecord loaded = (await GetAsync(snapshot.Id))!;
             (loaded.HuggingFaceRepository, loaded.HuggingFaceSplit, loaded.TotalItems).Should().Be(("org/ds", "train", 7L));
         }
 
@@ -280,7 +279,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task UpdateAsync_HeavyContentionOnDifferentFields_NoFalseConflicts()
         {
-            DatasetDto snapshot = await CreateAsync("Contention");
+            DatasetRecord snapshot = await CreateAsync("Contention");
 
             List<Task> writers = new();
             for (int round = 0; round < 3; round++)
@@ -288,22 +287,22 @@ namespace DatasetStudio.Tests.APIBackend
                 writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { SourceFileName = "a.csv" }))));
                 writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { Description = "described" }))));
                 writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { IsPublic = true }))));
-                writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { Format = "CSV2" }))));
+                writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { SourceUri = "https://example.com/a.csv" }))));
                 writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateItemCountAsync(snapshot.Id, 42))));
                 writers.Add(Task.Run(() => WithRepositoryAsync(r => r.UpdateStatusAsync(snapshot.Id, IngestionStatusDto.Processing))));
             }
 
             await Task.WhenAll(writers);
 
-            DatasetDto loaded = (await GetAsync(snapshot.Id))!;
-            (loaded.SourceFileName, loaded.Description, loaded.IsPublic, loaded.Format).Should().Be(("a.csv", "described", true, "CSV2"));
+            DatasetRecord loaded = (await GetAsync(snapshot.Id))!;
+            (loaded.SourceFileName, loaded.Description, loaded.IsPublic, loaded.SourceUri).Should().Be(("a.csv", "described", true, "https://example.com/a.csv"));
         }
 
         /// <summary>Many concurrent patches of different fields all land.</summary>
         [Fact]
         public async Task UpdateAsync_ConcurrentPatchesOfDifferentFields_AllLand()
         {
-            DatasetDto snapshot = await CreateAsync("Concurrent");
+            DatasetRecord snapshot = await CreateAsync("Concurrent");
 
             await Task.WhenAll(
                 Task.Run(() => WithRepositoryAsync(r => r.UpdateAsync(snapshot, snapshot with { SourceFileName = "a.csv" }))),
@@ -312,7 +311,7 @@ namespace DatasetStudio.Tests.APIBackend
                 Task.Run(() => WithRepositoryAsync(r => r.UpdateItemCountAsync(snapshot.Id, 42))),
                 Task.Run(() => WithRepositoryAsync(r => r.UpdateStatusAsync(snapshot.Id, IngestionStatusDto.Processing))));
 
-            DatasetDto loaded = (await GetAsync(snapshot.Id))!;
+            DatasetRecord loaded = (await GetAsync(snapshot.Id))!;
             loaded.SourceFileName.Should().Be("a.csv");
             loaded.Description.Should().Be("described");
             loaded.IsPublic.Should().BeTrue();

@@ -1,6 +1,6 @@
 using DatasetStudio.DTO.Auth;
 
-namespace DatasetStudio.Core.Abstractions.Repositories;
+namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 /// <summary>Repository interface for user accounts (PostgreSQL-backed).</summary>
 public interface IUserRepository

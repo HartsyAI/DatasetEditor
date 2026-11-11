@@ -49,11 +49,18 @@ public class DatasetStudioDbContext : DbContext
         {
             // Indexes
             entity.HasIndex(e => e.Name);
-            entity.HasIndex(e => e.CreatedByUserId);
+            // The library lists `is_public OR owner OR shared ORDER BY created_at DESC` (audit D-6).
+            // One index per OR branch lets Postgres combine them; each also carries created_at so
+            // a single-branch listing (anonymous: public only) is an ordered index scan with no
+            // sort. The owner index replaces the plain created_by_user_id one (same leading column,
+            // so it still serves the foreign key), and the partial public index replaces a boolean
+            // index over every row. created_at alone stays for the unfiltered admin listing.
+            entity.HasIndex(e => new { e.CreatedByUserId, e.CreatedAt });
             entity.HasIndex(e => e.CreatedAt);
-            entity.HasIndex(e => e.Format);
-            entity.HasIndex(e => e.Modality);
-            entity.HasIndex(e => e.IsPublic);
+            // Named, so EF keeps it apart from the unfiltered created_at index above.
+            entity.HasIndex(e => e.CreatedAt, "IX_datasets_created_at_public")
+                .HasFilter("is_public");
+            // No index on modality: every row holds "Image", so it only cost writes (audit D-5).
 
             // Relationships
             entity.HasOne(d => d.CreatedByUser)

@@ -31,13 +31,11 @@ public class DatasetEntity
     [Column("status")]
     public IngestionStatusDto Status { get; set; } = IngestionStatusDto.Pending;
 
-    /// <summary>Dataset format (e.g., "CSV", "Parquet", "HuggingFace")</summary>
-    [Required]
-    [MaxLength(50)]
-    [Column("format")]
-    public string Format { get; set; } = "Unknown";
-
-    /// <summary>Modality type (e.g., "Image", "Text", "Audio", "Video")</summary>
+    /// <summary>
+    /// Modality shown on the library card. Always "Image": the app curates image datasets only.
+    /// (The format, total_size_bytes, parquet_path and metadata columns beside it were never
+    /// written with real values and were dropped, audit D-5.)
+    /// </summary>
     [Required]
     [MaxLength(50)]
     [Column("modality")]
@@ -46,10 +44,6 @@ public class DatasetEntity
     /// <summary>Total number of items in the dataset</summary>
     [Column("total_items")]
     public long TotalItems { get; set; }
-
-    /// <summary>Total size in bytes of the dataset</summary>
-    [Column("total_size_bytes")]
-    public long TotalSizeBytes { get; set; }
 
     /// <summary>Original uploaded file name (if from upload)</summary>
     [MaxLength(500)]
@@ -108,11 +102,6 @@ public class DatasetEntity
     [Column("s3_prefix")]
     public string? S3Prefix { get; set; }
 
-    /// <summary>Path to the Parquet file storing dataset items (for non-streaming datasets)</summary>
-    [MaxLength(1000)]
-    [Column("parquet_path")]
-    public string? ParquetPath { get; set; }
-
     /// <summary>Error message if ingestion/processing failed</summary>
     [Column("error_message")]
     public string? ErrorMessage { get; set; }
@@ -121,10 +110,6 @@ public class DatasetEntity
     /// creators opt in explicitly, rather than every new dataset being world-readable by default.</summary>
     [Column("is_public")]
     public bool IsPublic { get; set; } = false;
-
-    /// <summary>JSON metadata for additional dataset properties</summary>
-    [Column("metadata", TypeName = "jsonb")]
-    public string? Metadata { get; set; }
 
     /// <summary>Timestamp when the dataset was created</summary>
     [Column("created_at")]

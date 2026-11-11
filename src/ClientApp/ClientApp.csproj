@@ -21,9 +21,6 @@
 
     <!-- LocalStorage for browser storage -->
     <PackageReference Include="Blazored.LocalStorage" Version="4.5.0" />
-
-    <!-- CSV/TSV parsing -->
-    <PackageReference Include="CsvHelper" Version="33.1.0" />
   </ItemGroup>
 
   <ItemGroup>

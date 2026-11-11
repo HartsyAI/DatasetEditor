@@ -245,8 +245,8 @@ public sealed class IngestionCompletionReloadTests
     [InlineData(IngestionStatusDto.Processing, IngestionStatusDto.Failed, false)]
     public void FinishedIngesting_OnlyForTheCompletionTransition(IngestionStatusDto before, IngestionStatusDto after, bool expected)
     {
-        DatasetDetailDto previous = new() { Id = DatasetId, Name = "x", Status = before };
-        DatasetDetailDto current = previous with { Status = after };
+        DatasetDto previous = new() { Id = DatasetId, Name = "x", Status = before };
+        DatasetDto current = previous with { Status = after };
 
         Assert.Equal(expected, DatasetCacheService.FinishedIngesting(previous, current));
     }

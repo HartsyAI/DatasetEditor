@@ -12,7 +12,6 @@ using DatasetStudio.ClientApp.Services.Interop;
 using DatasetStudio.ClientApp.Services.StateManagement;
 using DatasetStudio.ClientApp.Shared.Services;
 using DatasetStudio.ClientApp.Features.Datasets.Services;
-using DatasetStudio.Core.Utilities;
 using DatasetStudio.Core.Utilities.Logging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -72,8 +71,7 @@ builder.Services.AddMudServices();
 // LocalStorage for browser storage
 builder.Services.AddBlazoredLocalStorage();
 
-// Dataset data services. (The Core parser/layout/modality registries, FormatDetector, FilterService
-// and SearchService used to be registered here although no UI used them; audit K-2.)
+// Dataset data services.
 builder.Services.AddScoped<DatasetCacheService>();
 builder.Services.AddScoped<IngestionWorkflowService>();
 builder.Services.AddScoped<IndexedDbCache>();
@@ -114,7 +112,7 @@ builder.Services.AddScoped<ApiKeyState>();
 
 WebAssemblyHost host = builder.Build();
 
-// Routes Core.Utilities.Logging.Logs (used across ~25 ClientApp/Core call sites that predate
+// Routes Core.Utilities.Logging.Logs (107 ClientApp call sites in 24 files that predate
 // real DI-based logging) through WASM's built-in browser-console logging provider instead of
 // its Console.WriteLine fallback -- Console output doesn't reach the browser devtools console
 // in a WASM app the way it does in a normal .NET process. See Logs.cs for why this project

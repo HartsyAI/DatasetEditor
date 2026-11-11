@@ -140,40 +140,6 @@ public class ParquetItemReader
         return null;
     }
 
-    /// <summary>Counts items: the manifest's row total, or a scan when filtered.</summary>
-    public async Task<long> CountAsync(
-        ParquetManifest manifest,
-        FilterRequest? filter = null,
-        CancellationToken cancellationToken = default)
-    {
-        if (filter == null)
-        {
-            return manifest.TotalRows;
-        }
-
-        long count = 0;
-        foreach (ParquetSegment segment in manifest.Segments)
-        {
-            ShardRead read = await ReadFromShardAsync(PathOf(segment.File), filter, 0, int.MaxValue, long.MaxValue, cancellationToken);
-            count += read.Items.Count;
-        }
-        return count;
-    }
-
-    /// <summary>Reads every item of the dataset (statistics; use with care on large datasets).</summary>
-    public async Task<List<DatasetItemDto>> ReadAllAsync(
-        ParquetManifest manifest,
-        CancellationToken cancellationToken = default)
-    {
-        List<DatasetItemDto> allItems = new();
-        foreach (ParquetSegment segment in manifest.Segments)
-        {
-            ShardRead read = await ReadFromShardAsync(PathOf(segment.File), null, 0, int.MaxValue, long.MaxValue, cancellationToken);
-            allItems.AddRange(read.Items);
-        }
-        return allItems;
-    }
-
     /// <summary>
     /// Yields a segment one row group at a time, so rewriting or merging segments holds one group
     /// in memory, never a whole file (audit P-3).
@@ -341,7 +307,8 @@ public class ParquetItemReader
         var datasetIds = (Guid[])columns["dataset_id"];
         var externalIds = (string[])columns["external_id"];
         var titles = (string[])columns["title"];
-        var descriptions = (string[])columns["description"];
+        // Nullable column: null stays null (audit P-9). Files written before that fix hold "".
+        var descriptions = (string?[])columns["description"];
         var imageUrls = (string[])columns["image_url"];
         var thumbnailUrls = (string[])columns["thumbnail_url"];
         var widths = (int[])columns["width"];

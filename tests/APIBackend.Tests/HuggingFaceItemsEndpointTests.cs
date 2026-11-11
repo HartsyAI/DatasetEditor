@@ -59,11 +59,11 @@ namespace DatasetStudio.Tests.APIBackend
         }
 
         /// <summary>Creates a public streaming dataset with the given split and total, bypassing ingestion.</summary>
-        private async Task<DatasetDetailDto> CreateStreamingDatasetAsync(string? split, long totalItems = 0)
+        private async Task<DatasetDto> CreateStreamingDatasetAsync(string? split, long totalItems = 0)
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("hf-items-" + Guid.NewGuid().ToString("N")[..8], null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             using IServiceScope scope = _factory.Services.CreateScope();
             DatasetStudioDbContext db = scope.ServiceProvider.GetRequiredService<DatasetStudioDbContext>();
@@ -102,7 +102,7 @@ namespace DatasetStudio.Tests.APIBackend
         [InlineData(HttpStatusCode.Forbidden, HttpStatusCode.Forbidden)]
         public async Task GetItems_UpstreamFailure_ReturnsErrorInsteadOfEmptyPage(HttpStatusCode upstream, HttpStatusCode expected)
         {
-            DatasetDetailDto dataset = await CreateStreamingDatasetAsync(split: "train");
+            DatasetDto dataset = await CreateStreamingDatasetAsync(split: "train");
             _hfServerClientMock
                 .Setup(c => c.GetRowsAsync(
                     It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(),
@@ -117,7 +117,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task GetItems_WithoutSplit_PassesAccessTokenToSizeDiscovery()
         {
-            DatasetDetailDto dataset = await CreateStreamingDatasetAsync(split: null);
+            DatasetDto dataset = await CreateStreamingDatasetAsync(split: null);
             _hfServerClientMock
                 .Setup(c => c.GetDatasetSizeAsync(Repo, null, null, Token, It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new HuggingFaceDatasetSizeInfo { Dataset = Repo, Config = "default", Split = "train", NumRows = 500 });
@@ -134,7 +134,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task GetItems_TotalUnknown_BackfillsTotalFromRowsTotal()
         {
-            DatasetDetailDto dataset = await CreateStreamingDatasetAsync(split: "train", totalItems: 0);
+            DatasetDto dataset = await CreateStreamingDatasetAsync(split: "train", totalItems: 0);
             SetupRows(numRowsTotal: 70_000);
 
             HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{dataset.Id}/items?pageSize=10");
@@ -151,7 +151,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             // Codex P2 on PR #7: /size is best-effort. A failed discovery must not block a dataset whose
             // /rows can still be read; only a failed rows request is an error.
-            DatasetDetailDto dataset = await CreateStreamingDatasetAsync(split: null);
+            DatasetDto dataset = await CreateStreamingDatasetAsync(split: null);
             _hfServerClientMock
                 .Setup(c => c.GetDatasetSizeAsync(Repo, null, null, It.IsAny<string?>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new HuggingFaceUpstreamException("size unavailable", HttpStatusCode.NotFound));
@@ -171,7 +171,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             // Audit G-3: a malformed offset used to restart at row 0 silently. It is rejected up front,
             // before /size discovery or /rows, so no upstream request is made for it.
-            DatasetDetailDto dataset = await CreateStreamingDatasetAsync(split: "train");
+            DatasetDto dataset = await CreateStreamingDatasetAsync(split: "train");
 
             HttpResponseMessage response = await _client.GetAsync(
                 $"/api/datasets/{dataset.Id}/items?pageSize=10&cursor={Uri.EscapeDataString(cursor)}");
@@ -186,7 +186,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task GetItems_StreamingRows_CarryTheirDatasetId()
         {
-            DatasetDetailDto dataset = await CreateStreamingDatasetAsync(split: "train");
+            DatasetDto dataset = await CreateStreamingDatasetAsync(split: "train");
             _hfServerClientMock
                 .Setup(c => c.GetRowsAsync(
                     It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(),
@@ -253,7 +253,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task GetItems_SameRow_HasTheSameIdAcrossRequestsAndSearch()
         {
-            DatasetDetailDto dataset = await CreateStreamingDatasetAsync(split: "train");
+            DatasetDto dataset = await CreateStreamingDatasetAsync(split: "train");
             _hfServerClientMock
                 .Setup(c => c.GetRowsAsync(
                     It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(),
@@ -274,9 +274,9 @@ namespace DatasetStudio.Tests.APIBackend
         }
 
         /// <summary>A streaming dataset serving rows 0..2 on every page request.</summary>
-        private async Task<DatasetDetailDto> CreateDatasetWithRowsAsync()
+        private async Task<DatasetDto> CreateDatasetWithRowsAsync()
         {
-            DatasetDetailDto dataset = await CreateStreamingDatasetAsync(split: "train");
+            DatasetDto dataset = await CreateStreamingDatasetAsync(split: "train");
             _hfServerClientMock
                 .Setup(c => c.GetRowsAsync(
                     It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string>(),
@@ -302,7 +302,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task EditStreamingRow_PersistsAndShowsOnTheNextPage()
         {
-            DatasetDetailDto dataset = await CreateDatasetWithRowsAsync();
+            DatasetDto dataset = await CreateDatasetWithRowsAsync();
             List<DatasetItemDto> before = await GetItemsAsync(dataset.Id);
             before.Should().OnlyContain(i => i.Version == "0");
 
@@ -337,7 +337,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task EditStreamingRow_StaleIfMatch_Gets412_AndMatchingOneSucceeds()
         {
-            DatasetDetailDto dataset = await CreateDatasetWithRowsAsync();
+            DatasetDto dataset = await CreateDatasetWithRowsAsync();
             DatasetItemDto item = (await GetItemsAsync(dataset.Id))[0];
 
             (await PatchAsync(item.Id, new() { DatasetId = dataset.Id, Title = "theirs" }, "\"0\"")).StatusCode.Should().Be(HttpStatusCode.OK);
@@ -359,7 +359,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task EditStreamingRow_ConcurrentEditsOfDifferentFields_BothSurvive()
         {
-            DatasetDetailDto dataset = await CreateDatasetWithRowsAsync();
+            DatasetDto dataset = await CreateDatasetWithRowsAsync();
             Guid itemId = (await GetItemsAsync(dataset.Id))[2].Id;
 
             HttpResponseMessage[] responses = await Task.WhenAll(
@@ -378,7 +378,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task EditStreamingRow_WithoutDatasetId_Is404SayingWhatToSend()
         {
-            DatasetDetailDto dataset = await CreateDatasetWithRowsAsync();
+            DatasetDto dataset = await CreateDatasetWithRowsAsync();
             DatasetItemDto item = (await GetItemsAsync(dataset.Id))[0];
 
             HttpResponseMessage response = await PatchAsync(item.Id, new() { Title = "x" });
@@ -394,7 +394,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task BulkEditStreamingRows_StartsFromShownTags_AndReportsRowsWithout()
         {
-            DatasetDetailDto dataset = await CreateDatasetWithRowsAsync();
+            DatasetDto dataset = await CreateDatasetWithRowsAsync();
             List<DatasetItemDto> items = await GetItemsAsync(dataset.Id);
             items[0].Tags.Should().Equal("source-a", "source-b");
 
@@ -433,7 +433,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task DeleteDataset_RemovesItsOverlays()
         {
-            DatasetDetailDto dataset = await CreateDatasetWithRowsAsync();
+            DatasetDto dataset = await CreateDatasetWithRowsAsync();
             DatasetItemDto item = (await GetItemsAsync(dataset.Id))[0];
             (await PatchAsync(item.Id, new() { DatasetId = dataset.Id, Title = "to be deleted" })).StatusCode.Should().Be(HttpStatusCode.OK);
             (await CountOverlaysAsync(dataset.Id)).Should().Be(1);

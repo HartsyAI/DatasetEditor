@@ -12,8 +12,6 @@ public sealed record HuggingFaceDatasetProfile
 
     public IReadOnlyList<HuggingFaceDatasetFile> ImageFiles { get; init; } = System.Array.Empty<HuggingFaceDatasetFile>();
 
-    public HuggingFaceDatasetFile? PrimaryDataFile { get; init; }
-
     public bool HasDataFiles => DataFiles.Count > 0;
 
     public bool HasImageFiles => ImageFiles.Count > 0;
@@ -32,14 +30,11 @@ public sealed record HuggingFaceDatasetProfile
             })
             .ToList();
 
-        HuggingFaceDatasetFile? primaryDataFile = dataFiles.Count > 0 ? dataFiles[0] : null;
-
         return new HuggingFaceDatasetProfile
         {
             Repository = repository,
             DataFiles = dataFiles,
-            ImageFiles = imageFiles,
-            PrimaryDataFile = primaryDataFile
+            ImageFiles = imageFiles
         };
     }
 }

@@ -900,7 +900,6 @@
           "AWSSDK.S3": "[4.0.102.1, )",
           "BCrypt.Net-Next": "[4.0.3, )",
           "ClientApp": "[0.2.0-alpha, )",
-          "Core": "[0.2.0-alpha, )",
           "CsvHelper": "[33.1.0, )",
           "DTO": "[0.2.0-alpha, )",
           "Extensions.SDK": "[0.2.0-alpha, )",
@@ -918,7 +917,6 @@
         "dependencies": {
           "Blazored.LocalStorage": "[4.5.0, )",
           "Core": "[0.2.0-alpha, )",
-          "CsvHelper": "[33.1.0, )",
           "DTO": "[0.2.0-alpha, )",
           "Microsoft.AspNetCore.Components.Authorization": "[10.0.14, )",
           "Microsoft.AspNetCore.Components.WebAssembly": "[10.0.14, )",
@@ -929,8 +927,6 @@
       "core": {
         "type": "Project",
         "dependencies": {
-          "CsvHelper": "[33.1.0, )",
-          "DTO": "[0.2.0-alpha, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.14, )"
         }
       },

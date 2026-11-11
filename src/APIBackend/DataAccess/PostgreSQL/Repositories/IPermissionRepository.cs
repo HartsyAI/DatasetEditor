@@ -1,7 +1,7 @@
 using DatasetStudio.DTO.Auth;
 using DatasetStudio.DTO.Datasets;
 
-namespace DatasetStudio.Core.Abstractions.Repositories;
+namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 /// <summary>Repository interface for per-dataset, per-user permission grants (PostgreSQL-backed).</summary>
 public interface IPermissionRepository

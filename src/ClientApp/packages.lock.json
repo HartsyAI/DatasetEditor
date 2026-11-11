@@ -11,12 +11,6 @@
           "Microsoft.AspNetCore.Components.Web": "8.0.0"
         }
       },
-      "CsvHelper": {
-        "type": "Direct",
-        "requested": "[33.1.0, )",
-        "resolved": "33.1.0",
-        "contentHash": "kqfTOZGrn7NarNeXgjh86JcpTHUoeQDMB8t9NVa/ZtlSYiV1rxfRnQ49WaJsob4AiGrbK0XDzpyKkBwai4F8eg=="
-      },
       "Microsoft.AspNetCore.App.Internal.Assets": {
         "type": "Direct",
         "requested": "[10.0.14, )",
@@ -329,8 +323,6 @@
       "core": {
         "type": "Project",
         "dependencies": {
-          "CsvHelper": "[33.1.0, )",
-          "DTO": "[0.2.0-alpha, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.14, )"
         }
       },

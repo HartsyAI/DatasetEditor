@@ -28,7 +28,7 @@ public partial class S3SourceForm
             string name = string.IsNullOrWhiteSpace(_name) ? bucket : _name.Trim();
             string description = prefix is null ? $"S3 bucket: {bucket}" : $"S3 bucket: {bucket}/{prefix}";
 
-            DatasetDetailDto dataset = await Workflow.CreateAsync(name, description, IsPublic, cancellationToken);
+            DatasetDto dataset = await Workflow.CreateAsync(name, description, IsPublic, cancellationToken);
             await SetStatusAsync("Connecting to the bucket");
             bool accepted = await Api.ImportFromS3Async(dataset.Id, new ImportS3DatasetRequest(profile, bucket, prefix), cancellationToken);
             if (!accepted)

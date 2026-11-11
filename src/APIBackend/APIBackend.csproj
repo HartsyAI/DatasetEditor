@@ -47,7 +47,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Core\Core.csproj" />
     <ProjectReference Include="..\DTO\DTO.csproj" />
     <ProjectReference Include="..\ClientApp\ClientApp.csproj" />
     <!-- Extension SDK (manifest model, IApiExtension) -->

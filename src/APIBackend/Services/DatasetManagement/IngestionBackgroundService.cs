@@ -3,8 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using CoreItemRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetItemRepository;
-using DatasetRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetRepository;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 namespace DatasetStudio.APIBackend.Services.DatasetManagement;
 
@@ -80,8 +79,8 @@ public sealed class IngestionBackgroundService : BackgroundService
     {
         using IServiceScope scope = _scopeFactory.CreateScope();
         IIngestionJobStore store = scope.ServiceProvider.GetRequiredService<IIngestionJobStore>();
-        DatasetRepository datasets = scope.ServiceProvider.GetRequiredService<DatasetRepository>();
-        CoreItemRepository items = scope.ServiceProvider.GetRequiredService<CoreItemRepository>();
+        IDatasetRepository datasets = scope.ServiceProvider.GetRequiredService<IDatasetRepository>();
+        IDatasetItemRepository items = scope.ServiceProvider.GetRequiredService<IDatasetItemRepository>();
 
         IReadOnlyList<ClaimedIngestionJob> interrupted = await store.GetInterruptedJobsAsync(cancellationToken);
         foreach (ClaimedIngestionJob claimed in interrupted)
@@ -194,7 +193,7 @@ public sealed class IngestionBackgroundService : BackgroundService
     private async Task RunClaimedJobAsync(IServiceScope scope, IIngestionJobStore store, ClaimedIngestionJob claimed, CancellationToken stoppingToken)
     {
         IngestionJob job = claimed.Job;
-        DatasetRepository datasets = scope.ServiceProvider.GetRequiredService<DatasetRepository>();
+        IDatasetRepository datasets = scope.ServiceProvider.GetRequiredService<IDatasetRepository>();
 
         if (claimed.PayloadError is not null)
         {
@@ -204,7 +203,7 @@ public sealed class IngestionBackgroundService : BackgroundService
 
         try
         {
-            CoreItemRepository items = scope.ServiceProvider.GetRequiredService<CoreItemRepository>();
+            IDatasetItemRepository items = scope.ServiceProvider.GetRequiredService<IDatasetItemRepository>();
             long itemsBefore = await items.GetCountAsync(job.DatasetId, stoppingToken);
             await store.SetItemsBeforeAsync(claimed.Id, itemsBefore, stoppingToken);
 
@@ -240,7 +239,7 @@ public sealed class IngestionBackgroundService : BackgroundService
         }
     }
 
-    private async Task FailJobAsync(IIngestionJobStore store, DatasetRepository datasets, ClaimedIngestionJob claimed, string message)
+    private async Task FailJobAsync(IIngestionJobStore store, IDatasetRepository datasets, ClaimedIngestionJob claimed, string message)
     {
         try
         {
@@ -255,7 +254,7 @@ public sealed class IngestionBackgroundService : BackgroundService
         {
             // The ingestion service records its own failures with more detail; this covers the
             // ones it never saw (an undecryptable payload, a failure before it started).
-            DatasetDto? dataset = await datasets.GetByIdAsync(claimed.Job.DatasetId, CancellationToken.None);
+            DatasetRecord? dataset = await datasets.GetByIdAsync(claimed.Job.DatasetId, CancellationToken.None);
             if (dataset is not null && dataset.Status != IngestionStatusDto.Failed)
             {
                 await datasets.UpdateStatusAsync(claimed.Job.DatasetId, IngestionStatusDto.Failed, message, CancellationToken.None);

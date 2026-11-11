@@ -95,7 +95,7 @@ public partial class HuggingFaceSourceForm
         string name = string.IsNullOrWhiteSpace(_name) ? Repository.Split('/').Last() : _name.Trim();
         string description = string.IsNullOrWhiteSpace(_description) ? $"From HuggingFace: {Repository}" : _description.Trim();
 
-        DatasetDetailDto dataset = await Workflow.CreateAsync(name, description, IsPublic, cancellationToken);
+        DatasetDto dataset = await Workflow.CreateAsync(name, description, IsPublic, cancellationToken);
 
         await SetStatusAsync(streaming ? "Connecting to the repository" : "Starting the import");
         bool accepted = await Api.ImportFromHuggingFaceAsync(
@@ -110,8 +110,7 @@ public partial class HuggingFaceSourceForm
                 AccessToken = _accessToken,
                 Config = config,
                 Split = split,
-                DataFilePath = dataFile,
-                ConfirmedDownloadFallback = !streaming && _isStreaming
+                DataFilePath = dataFile
             },
             cancellationToken);
         if (!accepted)
@@ -129,7 +128,7 @@ public partial class HuggingFaceSourceForm
         // Streaming is set up quickly; wait until the server leaves Pending to learn whether the
         // repository can actually be streamed.
         await SetStatusAsync("Checking that the repository can be streamed");
-        DatasetDetailDto? status = await Workflow.WaitForStatusAsync(
+        DatasetDto? status = await Workflow.WaitForStatusAsync(
             dataset.Id, d => d.Status != IngestionStatusDto.Pending, TimeSpan.FromSeconds(30), cancellationToken);
 
         if (status is { Status: IngestionStatusDto.Failed } && status.ErrorMessage?.StartsWith(StreamingUnavailablePrefix, StringComparison.Ordinal) == true)

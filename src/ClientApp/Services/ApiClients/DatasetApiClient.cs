@@ -41,11 +41,11 @@ public sealed class DatasetApiClient
         return datasets ?? new List<DatasetSummaryDto>();
     }
 
-    public async Task<DatasetDetailDto?> CreateDatasetAsync(CreateDatasetRequest request, CancellationToken cancellationToken = default)
+    public async Task<DatasetDto?> CreateDatasetAsync(CreateDatasetRequest request, CancellationToken cancellationToken = default)
     {
         HttpResponseMessage response = await _httpClient.PostAsJsonAsync("api/datasets", request, SerializerOptions, cancellationToken);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<DatasetDetailDto>(SerializerOptions, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<DatasetDto>(SerializerOptions, cancellationToken);
     }
 
     public async Task<bool> DeleteDatasetAsync(Guid datasetId, CancellationToken cancellationToken = default)
@@ -163,9 +163,9 @@ public sealed class DatasetApiClient
         response.EnsureSuccessStatusCode();
     }
 
-    public Task<DatasetDetailDto?> GetDatasetAsync(Guid datasetId, CancellationToken cancellationToken = default)
+    public Task<DatasetDto?> GetDatasetAsync(Guid datasetId, CancellationToken cancellationToken = default)
     {
-        return _httpClient.GetFromJsonAsync<DatasetDetailDto>($"api/datasets/{datasetId}", SerializerOptions, cancellationToken);
+        return _httpClient.GetFromJsonAsync<DatasetDto>($"api/datasets/{datasetId}", SerializerOptions, cancellationToken);
     }
 
     public async Task<PageResponse<DatasetItemDto>?> GetDatasetItemsAsync(Guid datasetId, int pageSize = 100, string? cursor = null, string? huggingFaceAccessToken = null, CancellationToken cancellationToken = default, FilterRequest? filter = null)

@@ -58,7 +58,7 @@ public static class ServiceCollectionExtensions
         // Repositories
         // ========================================
 
-        services.AddScoped<Core.Abstractions.Repositories.IDatasetRepository, DatasetRepository>();
+        services.AddScoped<IDatasetRepository, DatasetRepository>();
 
         // Edits of streamed (HuggingFace, S3) items, which can't be written back (audit E-3).
         services.AddScoped<IItemOverlayRepository, ItemOverlayRepository>();
@@ -105,16 +105,12 @@ public static class ServiceCollectionExtensions
             return new ParquetItemRepository(parquetPath, logger);
         });
 
-        // The dataset/item endpoints and ingestion service depend on the API-layer,
-        // cursor-based IDatasetItemRepository. Resolve it from the same Parquet singleton
-        // so they share its in-memory count cache and write lock. (Without this the item
-        // endpoints fail at runtime: the interface was never registered.)
+        // The item endpoints, ingestion and the ingestion worker all depend on
+        // IDatasetItemRepository. Resolve it from the same Parquet singleton so every caller
+        // shares its per-dataset locks. (There used to be a second, Core-side interface reached
+        // through a scoped pass-through adapter; audit K-4.)
         services.AddSingleton<Services.DatasetManagement.IDatasetItemRepository>(
             serviceProvider => serviceProvider.GetRequiredService<ParquetItemRepository>());
-
-        // Register ItemRepository as scoped adapter that wraps ParquetItemRepository
-        // (Core abstraction used by non-endpoint callers).
-        services.AddScoped<Core.Abstractions.Repositories.IDatasetItemRepository, ItemRepository>();
 
         Directory.CreateDirectory(parquetPath);
         Directory.CreateDirectory(blobPath);

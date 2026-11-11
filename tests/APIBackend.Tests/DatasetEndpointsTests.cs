@@ -75,7 +75,7 @@ namespace DatasetStudio.Tests.APIBackend
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync("/api/datasets", request);
             createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
 
-            DatasetDetailDto? created = await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>();
+            DatasetDto? created = await createResponse.Content.ReadFromJsonAsync<DatasetDto>();
             created.Should().NotBeNull();
             created!.Name.Should().Be("Test Dataset");
             created.Status.Should().Be(IngestionStatusDto.Pending);
@@ -83,7 +83,7 @@ namespace DatasetStudio.Tests.APIBackend
             HttpResponseMessage getResponse = await _client.GetAsync($"/api/datasets/{created.Id}");
             getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
-            DatasetDetailDto? fetched = await getResponse.Content.ReadFromJsonAsync<DatasetDetailDto>();
+            DatasetDto? fetched = await getResponse.Content.ReadFromJsonAsync<DatasetDto>();
             fetched.Should().NotBeNull();
             fetched!.Id.Should().Be(created.Id);
             fetched.Name.Should().Be("Test Dataset");
@@ -103,12 +103,33 @@ namespace DatasetStudio.Tests.APIBackend
             body.TotalCount.Should().Be(1);
         }
 
+        // Regression test for audit D-5: create accepted any SourceType and stored it, although
+        // only an upload starts from a bare create. WebUrl and LocalFolder had no processing path
+        // at all, and a dataset created as HuggingFaceStreaming or ExternalS3Streaming had none of
+        // the repository/bucket fields its items endpoint reads. The import endpoints set those
+        // source types themselves.
+        [Theory]
+        [InlineData(DatasetSourceType.WebUrl)]
+        [InlineData(DatasetSourceType.LocalFolder)]
+        [InlineData(DatasetSourceType.HuggingFace)]
+        [InlineData(DatasetSourceType.HuggingFaceStreaming)]
+        [InlineData(DatasetSourceType.ExternalS3Streaming)]
+        public async Task CreateDataset_WithASourceTypeOtherThanUpload_Returns400AndCreatesNothing(DatasetSourceType sourceType)
+        {
+            HttpResponseMessage response = await _client.PostAsJsonAsync(
+                "/api/datasets", new CreateDatasetRequest("Unsupported source", null, sourceType));
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            DatasetsListResponse? body = await (await _client.GetAsync("/api/datasets")).Content.ReadFromJsonAsync<DatasetsListResponse>();
+            body!.Datasets.Should().BeEmpty();
+        }
+
         [Fact]
         public async Task DeleteDataset_RemovesItFromSubsequentListing()
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("ToDelete", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             HttpResponseMessage deleteResponse = await _client.DeleteAsync($"/api/datasets/{created.Id}");
             deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -137,7 +158,7 @@ namespace DatasetStudio.Tests.APIBackend
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("HF Streaming Test", null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             ImportHuggingFaceDatasetRequest importRequest = new()
             {
@@ -154,7 +175,7 @@ namespace DatasetStudio.Tests.APIBackend
             {
                 await Task.Delay(200);
                 HttpResponseMessage pollResponse = await _client.GetAsync($"/api/datasets/{created.Id}");
-                DatasetDetailDto polled = (await pollResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+                DatasetDto polled = (await pollResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
                 finalStatus = polled.Status;
                 if (finalStatus is IngestionStatusDto.Completed or IngestionStatusDto.Failed)
                 {

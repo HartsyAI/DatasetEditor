@@ -10,14 +10,6 @@ using DatasetStudio.APIBackend.Services.DatasetManagement.Dtos;
 using DatasetStudio.APIBackend.Services.Integration;
 using DatasetStudio.DTO.Common;
 using DatasetStudio.DTO.Datasets;
-using DatasetVisibilityFilter = DatasetStudio.Core.Abstractions.Repositories.DatasetVisibilityFilter;
-using DatasetUpdateConflictException = DatasetStudio.Core.Abstractions.Repositories.DatasetUpdateConflictException;
-
-// IDatasetRepository is referenced fully-qualified (Core.Abstractions.Repositories.IDatasetRepository)
-// rather than via `using`, because this file also uses the unrelated, same-named
-// Services.DatasetManagement.IDatasetItemRepository — a `using` for both namespaces would make
-// IDatasetItemRepository ambiguous. DatasetIngestionService follows the same convention.
-// DatasetVisibilityFilter is aliased individually instead for the same reason.
 
 namespace DatasetStudio.APIBackend.Endpoints;
 
@@ -50,12 +42,13 @@ internal static class DatasetEndpoints
 
         group.MapGet("/{datasetId:guid}", GetDataset)
             .WithName("GetDataset")
-            .Produces<DatasetDetailDto>()
+            .Produces<DatasetDto>()
             .Produces(StatusCodes.Status404NotFound);
 
         group.MapPost("/", CreateDataset)
             .WithName("CreateDataset")
-            .Produces<DatasetDetailDto>(StatusCodes.Status201Created)
+            .Produces<DatasetDto>(StatusCodes.Status201Created)
+            .Produces(StatusCodes.Status400BadRequest)
             .RequireAuthorization();
 
         group.MapPost("/{datasetId:guid}/upload", UploadDatasetFile)
@@ -129,7 +122,7 @@ internal static class DatasetEndpoints
 
     /// <summary>Gets all datasets with pagination, scoped to what the caller may see.</summary>
     public static async Task<IResult> GetAllDatasets(
-        [FromServices] Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        [FromServices] IDatasetRepository datasetRepository,
         HttpContext httpContext,
         [FromQuery] int page = 0,
         [FromQuery] int pageSize = 50,
@@ -141,7 +134,7 @@ internal static class DatasetEndpoints
         page = Math.Max(0, page);
 
         DatasetVisibilityFilter visibility = BuildVisibilityFilter(httpContext.User);
-        List<DatasetDto> pagedDatasets = await datasetRepository.GetAllAsync(page, pageSize, visibility, cancellationToken);
+        List<DatasetRecord> pagedDatasets = await datasetRepository.GetAllAsync(page, pageSize, visibility, cancellationToken);
         long totalCount = await datasetRepository.GetCountAsync(visibility, cancellationToken);
 
         List<DatasetSummaryDto> dtos = pagedDatasets.Select(d => d.ToSummaryDto()).ToList();
@@ -158,12 +151,12 @@ internal static class DatasetEndpoints
     /// <summary>Gets a single dataset by ID. 404s (not 403) if the caller can't see it -- existence of a private dataset isn't revealed to non-owners.</summary>
     public static async Task<IResult> GetDataset(
         Guid datasetId,
-        Core.Abstractions.Repositories.IDatasetRepository repository,
+        IDatasetRepository repository,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
+        DatasetRecord? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
         if (dataset is null)
         {
             return Results.NotFound();
@@ -176,18 +169,32 @@ internal static class DatasetEndpoints
         }
 
         // CanShare tells the viewer whether to offer "Share" (audit D-2).
-        return Results.Ok(dataset.ToDetailDto() with { CanShare = access.CanShare });
+        return Results.Ok(dataset.ToDto() with { CanShare = access.CanShare });
     }
 
     /// <summary>Creates a new dataset, owned by the authenticated caller.</summary>
     public static async Task<IResult> CreateDataset(
         CreateDatasetRequest request,
-        Core.Abstractions.Repositories.IDatasetRepository repository,
+        IDatasetRepository repository,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
+        // A bare create is the start of an upload; every other source type is set by its import
+        // endpoint (folder, HuggingFace, S3) together with the fields it needs. Create used to
+        // store whatever SourceType it was sent, including WebUrl and LocalFolder, which nothing
+        // processes, and streaming types with none of the repository/bucket fields their items
+        // endpoint reads (audit D-5).
+        if (request.SourceType != DatasetSourceType.LocalUpload)
+        {
+            return Results.BadRequest(new
+            {
+                error = $"Datasets are created as {nameof(DatasetSourceType.LocalUpload)}; " +
+                        "use the folder, HuggingFace or S3 import endpoint to set another source."
+            });
+        }
+
         // RequireAuthorization() on this route guarantees GetUserId() is non-null here.
-        DatasetDto dataset = new()
+        DatasetRecord dataset = new()
         {
             Id = Guid.NewGuid(),
             Name = request.Name,
@@ -209,26 +216,26 @@ internal static class DatasetEndpoints
         // missing upload location as a failure and throws, which would 500 every create.
         // Return the row as persisted. CreateAsync stamps CreatedAt/UpdatedAt on the entity it
         // inserts but returns only the id, so the DTO built above still carries 0001-01-01 (audit D-1).
-        DatasetDto? created = await repository.GetByIdAsync(createdId, cancellationToken);
+        DatasetRecord? created = await repository.GetByIdAsync(createdId, cancellationToken);
         if (created is null)
         {
             return Results.Problem("Dataset was created but could not be read back.", statusCode: StatusCodes.Status500InternalServerError);
         }
 
-        return Results.Created($"/api/datasets/{createdId}", created.ToDetailDto());
+        return Results.Created($"/api/datasets/{createdId}", created.ToDto());
     }
 
     /// <summary>Deletes a dataset and all of its items. Requires delete permission (owner, admin, or a granted CanDelete permission).</summary>
     public static async Task<IResult> DeleteDataset(
         Guid datasetId,
-        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        IDatasetRepository datasetRepository,
         IDatasetItemRepository itemRepository,
         IIngestionJobQueue ingestionQueue,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
+        DatasetRecord? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
         if (dataset is null)
         {
             return Results.NotFound();
@@ -259,14 +266,14 @@ internal static class DatasetEndpoints
     public static async Task<IResult> UploadDatasetFile(
         Guid datasetId,
         IFormFile file,
-        Core.Abstractions.Repositories.IDatasetRepository repository,
+        IDatasetRepository repository,
         IIngestionJobQueue ingestionQueue,
         IConfiguration configuration,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
+        DatasetRecord? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
 
         if (dataset is null)
         {
@@ -314,7 +321,7 @@ internal static class DatasetEndpoints
                 await file.CopyToAsync(stream, cancellationToken);
             }
 
-            DatasetDto updated = dataset with { SourceFileName = file.FileName };
+            DatasetRecord updated = dataset with { SourceFileName = file.FileName };
             await repository.UpdateAsync(dataset, updated, cancellationToken);
 
             // Queue ingestion to run in the background; return immediately so a large upload
@@ -406,7 +413,7 @@ internal static class DatasetEndpoints
         Guid datasetId,
         int? pageSize,
         string? cursor,
-        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        IDatasetRepository datasetRepository,
         IDatasetItemRepository itemRepository,
         IHuggingFaceDatasetServerClient huggingFaceDatasetServerClient,
         Services.Storage.IS3StorageService s3StorageService,
@@ -416,7 +423,7 @@ internal static class DatasetEndpoints
         ILogger<Program> logger,
         CancellationToken cancellationToken)
     {
-        DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
+        DatasetRecord? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
         if (dataset is null || !await permissionService.CanReadAsync(dataset, httpContext.User, cancellationToken))
         {
             return Results.NotFound();
@@ -502,7 +509,7 @@ internal static class DatasetEndpoints
                 {
                     config = sizeInfo.Config;
                     split = string.IsNullOrWhiteSpace(sizeInfo.Split) ? "train" : sizeInfo.Split;
-                    DatasetDto resolved = dataset with
+                    DatasetRecord resolved = dataset with
                     {
                         HuggingFaceConfig = config,
                         HuggingFaceSplit = split,
@@ -633,7 +640,7 @@ internal static class DatasetEndpoints
     /// </summary>
     private static async Task<IResult> GetS3DatasetItemsPage(
         Guid datasetId,
-        DatasetDto dataset,
+        DatasetRecord dataset,
         string? cursor,
         int size,
         Services.Storage.IS3StorageService s3StorageService,
@@ -961,13 +968,13 @@ internal static class DatasetEndpoints
     public static async Task<IResult> ImportFromHuggingFace(
         Guid datasetId,
         ImportHuggingFaceDatasetRequest request,
-        Core.Abstractions.Repositories.IDatasetRepository repository,
+        IDatasetRepository repository,
         IIngestionJobQueue ingestionQueue,
         IDatasetPermissionService permissionService,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
+        DatasetRecord? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
 
         if (dataset is null)
         {
@@ -1005,7 +1012,7 @@ internal static class DatasetEndpoints
         // repository metadata". This was invisible until DatasetRepository.UpdateAsync was
         // fixed to actually persist (see the AsTracking fix) — before that, no UpdateAsync call
         // anywhere persisted anything, so this specific gap couldn't manifest on its own.
-        DatasetDto original = dataset;
+        DatasetRecord original = dataset;
         dataset = dataset with
         {
             Name = string.IsNullOrWhiteSpace(request.Name) ? dataset.Name : request.Name,
@@ -1062,14 +1069,14 @@ internal static class DatasetEndpoints
     public static async Task<IResult> ImportFromFolder(
         Guid datasetId,
         ImportFolderRequest request,
-        Core.Abstractions.Repositories.IDatasetRepository repository,
+        IDatasetRepository repository,
         IIngestionJobQueue ingestionQueue,
         HttpContext httpContext,
         IConfiguration configuration,
         ILogger<Program> logger,
         CancellationToken cancellationToken)
     {
-        DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
+        DatasetRecord? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
         if (dataset is null)
         {
             return Results.NotFound(new { error = "Dataset not found" });
@@ -1138,14 +1145,14 @@ internal static class DatasetEndpoints
     public static async Task<IResult> ImportFromS3(
         Guid datasetId,
         ImportS3DatasetRequest request,
-        Core.Abstractions.Repositories.IDatasetRepository repository,
+        IDatasetRepository repository,
         IDatasetPermissionService permissionService,
         Services.Storage.IS3StorageProfileResolver profileResolver,
         Services.Storage.IS3StorageService s3StorageService,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        DatasetDto? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
+        DatasetRecord? dataset = await repository.GetByIdAsync(datasetId, cancellationToken);
         if (dataset is null)
         {
             return Results.NotFound(new { error = "Dataset not found" });
@@ -1188,7 +1195,7 @@ internal static class DatasetEndpoints
             return Results.BadRequest(new { error = $"Could not reach bucket '{request.Bucket}': {ex.Message}" });
         }
 
-        DatasetDto beforeS3 = dataset;
+        DatasetRecord beforeS3 = dataset;
         dataset = dataset with
         {
             SourceType = DatasetSourceType.ExternalS3Streaming,
@@ -1226,7 +1233,7 @@ internal static class DatasetEndpoints
     public static async Task<IResult> ServeDatasetFile(
         Guid datasetId,
         string filePath,
-        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        IDatasetRepository datasetRepository,
         IDatasetPermissionService permissionService,
         Services.Storage.IThumbnailService thumbnailService,
         HttpContext httpContext,
@@ -1235,7 +1242,7 @@ internal static class DatasetEndpoints
         [FromQuery] int? w,
         CancellationToken cancellationToken)
     {
-        DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
+        DatasetRecord? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
         if (dataset is null || !await permissionService.CanReadAsync(dataset, httpContext.User, cancellationToken))
         {
             return Results.NotFound();
@@ -1359,7 +1366,7 @@ internal static class DatasetEndpoints
         Guid datasetId,
         [FromQuery] string? key,
         [FromQuery] int? w,
-        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        IDatasetRepository datasetRepository,
         IDatasetPermissionService permissionService,
         Services.Storage.IS3StorageService s3StorageService,
         Services.Storage.IThumbnailService thumbnailService,
@@ -1368,7 +1375,7 @@ internal static class DatasetEndpoints
         ILogger<Program> logger,
         CancellationToken cancellationToken)
     {
-        DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
+        DatasetRecord? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
         if (dataset is null || !await permissionService.CanReadAsync(dataset, httpContext.User, cancellationToken))
         {
             return Results.NotFound();
@@ -1481,7 +1488,7 @@ internal static class DatasetEndpoints
         Guid datasetId,
         [FromQuery] long? offset,
         [FromQuery] int? w,
-        Core.Abstractions.Repositories.IDatasetRepository datasetRepository,
+        IDatasetRepository datasetRepository,
         IDatasetPermissionService permissionService,
         IHuggingFaceDatasetServerClient huggingFaceDatasetServerClient,
         IHuggingFaceRowPageCache rowPageCache,
@@ -1495,7 +1502,7 @@ internal static class DatasetEndpoints
             return Results.BadRequest(new { error = "offset is required and must be >= 0" });
         }
 
-        DatasetDto? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
+        DatasetRecord? dataset = await datasetRepository.GetByIdAsync(datasetId, cancellationToken);
         if (dataset is null || !await permissionService.CanReadAsync(dataset, httpContext.User, cancellationToken))
         {
             return Results.NotFound();

@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using DatasetStudio.Core.Abstractions.Repositories;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 using DatasetStudio.DTO.Auth;
 using DatasetStudio.DTO.Datasets;
 
@@ -14,7 +14,7 @@ public sealed class DatasetPermissionService : IDatasetPermissionService
         _permissionRepository = permissionRepository ?? throw new ArgumentNullException(nameof(permissionRepository));
     }
 
-    public async Task<bool> CanReadAsync(DatasetDto dataset, ClaimsPrincipal? user, CancellationToken cancellationToken = default)
+    public async Task<bool> CanReadAsync(DatasetRecord dataset, ClaimsPrincipal? user, CancellationToken cancellationToken = default)
     {
         if (dataset.IsPublic)
         {
@@ -23,13 +23,13 @@ public sealed class DatasetPermissionService : IDatasetPermissionService
         return (await GetAccessAsync(dataset, user, cancellationToken)).CanRead;
     }
 
-    public async Task<bool> CanWriteAsync(DatasetDto dataset, ClaimsPrincipal? user, CancellationToken cancellationToken = default) =>
+    public async Task<bool> CanWriteAsync(DatasetRecord dataset, ClaimsPrincipal? user, CancellationToken cancellationToken = default) =>
         (await GetAccessAsync(dataset, user, cancellationToken)).CanWrite;
 
-    public async Task<bool> CanDeleteAsync(DatasetDto dataset, ClaimsPrincipal? user, CancellationToken cancellationToken = default) =>
+    public async Task<bool> CanDeleteAsync(DatasetRecord dataset, ClaimsPrincipal? user, CancellationToken cancellationToken = default) =>
         (await GetAccessAsync(dataset, user, cancellationToken)).CanDelete;
 
-    public async Task<DatasetAccess> GetAccessAsync(DatasetDto dataset, ClaimsPrincipal? user, CancellationToken cancellationToken = default)
+    public async Task<DatasetAccess> GetAccessAsync(DatasetRecord dataset, ClaimsPrincipal? user, CancellationToken cancellationToken = default)
     {
         Guid? userId = user.GetUserId();
         if (userId is null)

@@ -1,4 +1,4 @@
-namespace DatasetStudio.Core.Abstractions.Repositories;
+namespace DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 /// <summary>
 /// A dataset update was refused because a field it changes was changed by someone else after

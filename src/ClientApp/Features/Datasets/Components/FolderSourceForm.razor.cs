@@ -25,7 +25,7 @@ public partial class FolderSourceForm
                 ? Path.GetFileName(folder.TrimEnd('/', '\\')) is { Length: > 0 } leaf ? leaf : folder
                 : _name.Trim();
 
-            DatasetDetailDto dataset = await Workflow.CreateAsync(name, $"Server folder: {folder}", IsPublic, cancellationToken);
+            DatasetDto dataset = await Workflow.CreateAsync(name, $"Server folder: {folder}", IsPublic, cancellationToken);
             await SetStatusAsync("Starting the folder scan");
             bool accepted = await Api.ImportFromFolderAsync(dataset.Id, new ImportFolderRequest(folder), cancellationToken);
             if (!accepted)

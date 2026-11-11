@@ -1,8 +1,7 @@
 using DatasetStudio.APIBackend.Services.Auth;
 using DatasetStudio.DTO.Auth;
 using DatasetStudio.DTO.Datasets;
-using IPermissionRepository = DatasetStudio.Core.Abstractions.Repositories.IPermissionRepository;
-using IUserRepository = DatasetStudio.Core.Abstractions.Repositories.IUserRepository;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 namespace DatasetStudio.APIBackend.Endpoints;
 
@@ -43,13 +42,13 @@ internal static class DatasetShareEndpoints
     /// <summary>Lists everyone the dataset is shared with. Needs the share right.</summary>
     public static async Task<IResult> ListShares(
         Guid datasetId,
-        Core.Abstractions.Repositories.IDatasetRepository datasets,
+        IDatasetRepository datasets,
         IDatasetPermissionService permissions,
         IPermissionRepository grants,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        (DatasetDto? dataset, DatasetAccess access) = await LoadAsync(datasetId, datasets, permissions, httpContext, cancellationToken);
+        (DatasetRecord? dataset, DatasetAccess access) = await LoadAsync(datasetId, datasets, permissions, httpContext, cancellationToken);
         if (dataset is null)
         {
             return Results.NotFound();
@@ -68,14 +67,14 @@ internal static class DatasetShareEndpoints
     public static async Task<IResult> ShareDataset(
         Guid datasetId,
         ShareDatasetRequest request,
-        Core.Abstractions.Repositories.IDatasetRepository datasets,
+        IDatasetRepository datasets,
         IDatasetPermissionService permissions,
         IPermissionRepository grants,
         IUserRepository users,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        (DatasetDto? dataset, DatasetAccess access) = await LoadAsync(datasetId, datasets, permissions, httpContext, cancellationToken);
+        (DatasetRecord? dataset, DatasetAccess access) = await LoadAsync(datasetId, datasets, permissions, httpContext, cancellationToken);
         if (dataset is null)
         {
             return Results.NotFound();
@@ -169,13 +168,13 @@ internal static class DatasetShareEndpoints
     public static async Task<IResult> RevokeShare(
         Guid datasetId,
         Guid userId,
-        Core.Abstractions.Repositories.IDatasetRepository datasets,
+        IDatasetRepository datasets,
         IDatasetPermissionService permissions,
         IPermissionRepository grants,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        (DatasetDto? dataset, DatasetAccess access) = await LoadAsync(datasetId, datasets, permissions, httpContext, cancellationToken);
+        (DatasetRecord? dataset, DatasetAccess access) = await LoadAsync(datasetId, datasets, permissions, httpContext, cancellationToken);
         if (dataset is null)
         {
             return Results.NotFound();
@@ -208,14 +207,14 @@ internal static class DatasetShareEndpoints
     /// exist or the caller can't read it, so a private dataset's existence isn't revealed (404,
     /// as everywhere else).
     /// </summary>
-    private static async Task<(DatasetDto? Dataset, DatasetAccess Access)> LoadAsync(
+    private static async Task<(DatasetRecord? Dataset, DatasetAccess Access)> LoadAsync(
         Guid datasetId,
-        Core.Abstractions.Repositories.IDatasetRepository datasets,
+        IDatasetRepository datasets,
         IDatasetPermissionService permissions,
         HttpContext httpContext,
         CancellationToken cancellationToken)
     {
-        DatasetDto? dataset = await datasets.GetByIdAsync(datasetId, cancellationToken);
+        DatasetRecord? dataset = await datasets.GetByIdAsync(datasetId, cancellationToken);
         if (dataset is null)
         {
             return (null, DatasetAccess.None);

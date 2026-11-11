@@ -64,8 +64,8 @@ namespace DatasetStudio.Tests.APIBackend
         public async Task ItemEdit_LogsTheEditorAndFields_NotTheContent()
         {
             (HttpClient client, AuthUserDto user) = await SignUpAsync("log-editor");
-            DatasetDetailDto dataset = (await (await client.PostAsJsonAsync("/api/datasets", new CreateDatasetRequest("log-edits", null)))
-                .Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto dataset = (await (await client.PostAsJsonAsync("/api/datasets", new CreateDatasetRequest("log-edits", null)))
+                .Content.ReadFromJsonAsync<DatasetDto>())!;
             Guid itemId = Guid.NewGuid();
             using (IServiceScope scope = _factory.Services.CreateScope())
             {
@@ -117,8 +117,8 @@ namespace DatasetStudio.Tests.APIBackend
         public async Task FullImportQueue_IsLoggedWithDatasetAndUser()
         {
             (HttpClient client, AuthUserDto user) = await SignUpAsync("log-queue");
-            DatasetDetailDto dataset = (await (await client.PostAsJsonAsync("/api/datasets", new CreateDatasetRequest("log-queue", null)))
-                .Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto dataset = (await (await client.PostAsJsonAsync("/api/datasets", new CreateDatasetRequest("log-queue", null)))
+                .Content.ReadFromJsonAsync<DatasetDto>())!;
             MultipartFormDataContent form = new();
             ByteArrayContent file = new(System.Text.Encoding.UTF8.GetBytes("image_url,title\nhttps://example.com/a.jpg,a\n"));
             form.Add(file, "file", "items.csv");

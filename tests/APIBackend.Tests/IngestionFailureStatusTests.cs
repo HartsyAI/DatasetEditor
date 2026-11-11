@@ -11,9 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
-// Same aliasing as the other ingestion tests: the service uses the Core repository interfaces.
-using IDatasetRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetRepository;
-using IDatasetItemRepository = DatasetStudio.Core.Abstractions.Repositories.IDatasetItemRepository;
+using DatasetStudio.APIBackend.DataAccess.PostgreSQL.Repositories;
 
 namespace DatasetStudio.Tests.APIBackend
 {

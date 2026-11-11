@@ -11,7 +11,7 @@ namespace DatasetStudio.ClientApp.Features.Datasets.Components;
 public partial class IngestionStatusBanner
 {
     /// <summary>The dataset's current detail record.</summary>
-    [Parameter, EditorRequired] public DatasetDetailDto Detail { get; set; } = default!;
+    [Parameter, EditorRequired] public DatasetDto Detail { get; set; } = default!;
 
     /// <summary>Whether a manual refresh is in flight (disables the button).</summary>
     [Parameter] public bool IsRefreshing { get; set; }

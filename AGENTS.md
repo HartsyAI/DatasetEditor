@@ -19,7 +19,7 @@ Details: README §"How it works".
 ## 2. Repository map
 
 ```
-src/Core/          Domain models, parsers, shared business logic (net10.0; referenced by API and client)
+src/Core/          Client-only domain models and enums, storage keys, the Logs wrapper (net10.0; no DTO reference)
 src/DTO/           Wire contracts shared by API and client (net10.0)
 src/APIBackend/    ASP.NET Core minimal API: Endpoints/, Services/, DataAccess/{PostgreSQL,Parquet}, Configuration/
 src/ClientApp/     Blazor WASM: Features/<Feature>/{Pages,Components,Services}, Shared/{Layout,Components,Services}, Services/{ApiClients,Caching,Interop,StateManagement}, wwwroot/
@@ -167,5 +167,3 @@ Say so rather than building on them:
   loading exists. See README §4.14.
 - AI Tools: nav entry and page are "Coming soon" placeholders.
 - i18n: there is none (the unused `wwwroot/translations` files were deleted in PR 2.6).
-- `Core.BusinessLogic` (parsers, layout/modality registries, `FilterService`, `SearchService`)
-  is no longer registered in the client; the types remain in Core until PR 6.2 deletes them.

@@ -57,11 +57,11 @@ namespace DatasetStudio.Tests.APIBackend
         }
 
         /// <summary>Creates a local dataset owned by the test user, with the given number of items written to Parquet.</summary>
-        private async Task<DatasetDetailDto> CreateLocalDatasetAsync(int itemCount, long totalItems)
+        private async Task<DatasetDto> CreateLocalDatasetAsync(int itemCount, long totalItems)
         {
             HttpResponseMessage createResponse = await _client.PostAsJsonAsync(
                 "/api/datasets", new CreateDatasetRequest("local-" + Guid.NewGuid().ToString("N")[..8], null));
-            DatasetDetailDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await createResponse.Content.ReadFromJsonAsync<DatasetDto>())!;
 
             using IServiceScope scope = _factory.Services.CreateScope();
             DatasetStudioDbContext db = scope.ServiceProvider.GetRequiredService<DatasetStudioDbContext>();
@@ -96,7 +96,7 @@ namespace DatasetStudio.Tests.APIBackend
                 "/api/datasets", new CreateDatasetRequest("stamped-" + Guid.NewGuid().ToString("N")[..8], null));
 
             response.StatusCode.Should().Be(HttpStatusCode.Created);
-            DatasetDetailDto created = (await response.Content.ReadFromJsonAsync<DatasetDetailDto>())!;
+            DatasetDto created = (await response.Content.ReadFromJsonAsync<DatasetDto>())!;
             created.CreatedAt.Should().BeAfter(new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc));
             created.UpdatedAt.Should().BeAfter(new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc));
         }
@@ -104,7 +104,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task GetItems_PageSizeAboveMaximum_IsClampedToMaxPageSize()
         {
-            DatasetDetailDto dataset = await CreateLocalDatasetAsync(itemCount: 150, totalItems: 150);
+            DatasetDto dataset = await CreateLocalDatasetAsync(itemCount: 150, totalItems: 150);
 
             HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{dataset.Id}/items?pageSize=1000000");
 
@@ -127,7 +127,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task GetItems_LocalDataset_ReportsCachedTotalCount()
         {
-            DatasetDetailDto dataset = await CreateLocalDatasetAsync(itemCount: 3, totalItems: 3);
+            DatasetDto dataset = await CreateLocalDatasetAsync(itemCount: 3, totalItems: 3);
 
             HttpResponseMessage response = await _client.GetAsync($"/api/datasets/{dataset.Id}/items?pageSize=10");
 
@@ -144,7 +144,7 @@ namespace DatasetStudio.Tests.APIBackend
         [InlineData("1:2:3")]
         public async Task GetItems_MalformedLocalCursor_Returns400InsteadOfRestarting(string cursor)
         {
-            DatasetDetailDto dataset = await CreateLocalDatasetAsync(itemCount: 3, totalItems: 3);
+            DatasetDto dataset = await CreateLocalDatasetAsync(itemCount: 3, totalItems: 3);
 
             HttpResponseMessage response = await _client.GetAsync(
                 $"/api/datasets/{dataset.Id}/items?pageSize=10&cursor={Uri.EscapeDataString(cursor)}");
@@ -155,7 +155,7 @@ namespace DatasetStudio.Tests.APIBackend
         [Fact]
         public async Task GetItems_ValidLocalCursor_IsAcceptedAndResumesPaging()
         {
-            DatasetDetailDto dataset = await CreateLocalDatasetAsync(itemCount: 150, totalItems: 150);
+            DatasetDto dataset = await CreateLocalDatasetAsync(itemCount: 150, totalItems: 150);
 
             HttpResponseMessage first = await _client.GetAsync($"/api/datasets/{dataset.Id}/items?pageSize=100");
             PageResponse<DatasetItemDto> firstPage = (await first.Content.ReadFromJsonAsync<PageResponse<DatasetItemDto>>())!;
